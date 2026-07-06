@@ -1,0 +1,404 @@
+<!--
+  信息源监控看板 — 创作者个人数据库前端页面 (index.html)
+  核心职责：提供仪表盘概览、思维模型管理、对标博主深度拆解（包含爆款笔记、物理蒸馏报告、创作指南及灵魂底稿）、时效快讯与流量热搜的杂志风单页应用界面。
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>信息源监控看板 — 创作者个人数据库</title>
+    
+    <!-- Google Fonts: Noto Serif SC (Serif) & Space Mono (Monospace) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Serif+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Custom Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- GSAP for Smooth Stagger Animations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <!-- Chart.js for Simple Metrics Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Marked.js for Markdown Rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+    <!-- STICKY STATUS BAR -->
+    <div class="status-bar">
+        <span>SUBJECT: CREATOR DATABASE</span>
+        <span>SYSTEM_STATUS: <span class="status-active">MONITORING</span></span>
+        <span>DB_PATH: distiller.db</span>
+        <span>VERSION: V2.0_STABLE</span>
+    </div>
+
+    <!-- Main Container -->
+    <div class="app-container">
+        
+        <!-- Minimal Asymmetric Header -->
+        <header class="main-header">
+            <div class="brand">
+                <span class="eyebrow-text">MONITORING SUITE</span>
+                <h1 class="logo-title">信息源监控看板</h1>
+            </div>
+            
+            <!-- Elegant Navigation Menu -->
+            <nav class="main-nav">
+                <button class="nav-tab active" data-tab="dashboard">仪表盘</button>
+                <button class="nav-tab" data-tab="knowledge">思维模型</button>
+                <button class="nav-tab" data-tab="bloggers">对标灵感</button>
+                <button class="nav-tab" data-tab="news">时效快讯</button>
+                <button class="nav-tab" data-tab="trending">全网热点</button>
+            </nav>
+            
+            <!-- Theme & Status -->
+            <div class="header-actions">
+                <button id="theme-toggle" class="btn-text">DARK MODE</button>
+                <span class="status-indicator"></span>
+            </div>
+        </header>
+
+        <!-- Asymmetric Border Separator -->
+        <div class="separator-line"></div>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            <!-- PAGE 1: DASHBOARD -->
+            <section id="page-dashboard" class="page-section active">
+                <div class="editorial-grid">
+                    <div class="editorial-main">
+                        <span class="section-label">OVERVIEW</span>
+                        <h2 class="page-header-title">灵感数据总览</h2>
+                        <p class="lead-text">汇集理论深度、对标数据与即时资讯。通过多渠道信息的交叉融合，构建起创作者独立且富有深度的“第二大脑”。</p>
+                        
+                        <div class="dashboard-stats-grid">
+                            <div class="stat-card" data-tab-link="knowledge">
+                                <span class="stat-num" id="stat-k-count">—</span>
+                                <span class="stat-label">思维模型数</span>
+                            </div>
+                            <div class="stat-card" data-tab-link="bloggers">
+                                <span class="stat-num" id="stat-b-count">—</span>
+                                <span class="stat-label">对标账号数</span>
+                            </div>
+                            <div class="stat-card" data-tab-link="news">
+                                <span class="stat-num" id="stat-n-count">—</span>
+                                <span class="stat-label">时效快讯数</span>
+                            </div>
+                            <div class="stat-card" data-tab-link="trending">
+                                <span class="stat-num" id="stat-t-count">—</span>
+                                <span class="stat-label">今日流量热词</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="editorial-aside">
+                        <div class="aside-box">
+                            <h4 class="aside-title">快速录入思维模型</h4>
+                            <form id="quick-knowledge-form" class="editorial-form">
+                                <div class="form-group">
+                                    <label for="form-topic">模型名称</label>
+                                    <input type="text" id="form-topic" placeholder="例如：幸存者偏差" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="form-niche">适用赛道</label>
+                                    <input type="text" id="form-niche" placeholder="例如：商业分析 / 个人成长" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="form-insight">核心洞察</label>
+                                    <textarea id="form-insight" rows="3" placeholder="直白且深刻的原理解释..." required></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label for="form-pitfall">认知误区</label>
+                                    <input type="text" id="form-pitfall" placeholder="普通人常犯的理解错误..." required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="form-analogy">经典类比</label>
+                                    <input type="text" id="form-analogy" placeholder="生活化/大白话的比喻..." required>
+                                </div>
+                                <button type="submit" class="btn-primary">保存至本地卡片库</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PAGE 2: KNOWLEDGE BASE -->
+            <section id="page-knowledge" class="page-section">
+                <span class="section-label">FEEDS 01</span>
+                <h2 class="page-header-title">理论与思维模型库</h2>
+                <div class="filter-bar">
+                    <input type="text" id="k-search" placeholder="搜索主题或核心词..." class="input-search">
+                    <div class="filter-tags" id="k-niche-filters">
+                        <button class="filter-tag active" data-niche="all">全部赛道</button>
+                    </div>
+                </div>
+                <div class="knowledge-cards-list" id="knowledge-list-container">
+                    <!-- Dynamic rendering -->
+                </div>
+            </section>
+
+            <!-- PAGE 3: BLOGGER ANALYSIS (THE CORE DISTILLATION ZONE) -->
+            <section id="page-bloggers" class="page-section">
+                <!-- Wrapper for blogger section header to hide in detail view -->
+                <div id="blogger-header-section">
+                    <span class="section-label">FEEDS 02</span>
+                    <h2 class="page-header-title">对标博主灵感池</h2>
+                    <p class="lead-text">采集竞品的笔记基因，通过确定性公式和统计规律识别其流量内核。点击下方账号卡片进入深度数据拆解页面。</p>
+                    
+                    <!-- Sub Tab Navigation for Blogger feeds -->
+                    <div class="detail-inner-tabs" style="margin-bottom: 2rem;">
+                        <button class="inner-tab active" id="subtab-bloggers-list">博主监控管理</button>
+                        <button class="inner-tab" id="subtab-notes-timeline">最新作品流总览</button>
+                    </div>
+                </div>
+
+                <!-- Blogger List View -->
+                <div id="blogger-list-view" class="subview active-subview">
+                    <!-- Add Blogger Form collapsible -->
+                    <div style="margin-bottom: 1.5rem;">
+                        <button id="btn-toggle-add-blogger" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.35rem 0.85rem;">+ 录入监控博主</button>
+                        <div id="add-blogger-form-container" style="display: none; border: 1px solid var(--ink-primary); padding: 1.25rem; margin-top: 0.75rem; background-color: var(--bg-secondary); max-width: 550px;">
+                            <h4 class="aside-title" style="margin-bottom: 0.75rem; font-size: 1.05rem;">录入对标账号</h4>
+                            <form id="add-blogger-form" class="editorial-form">
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="add-form-name">博主昵称</label>
+                                    <input type="text" id="add-form-name" placeholder="请输入博主名字..." required>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="add-form-url">主页链接</label>
+                                    <input type="text" id="add-form-url" placeholder="配置主页链接（用于后续爬取）...">
+                                </div>
+                                <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.5rem;">保存并录入</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="filter-bar" style="margin-bottom: 1.5rem;">
+                        <span class="k-text" style="font-weight: 500;">展示模式：</span>
+                        <div class="filter-tags">
+                            <button id="toggle-view-table" class="filter-tag active">数据表格</button>
+                            <button id="toggle-view-grid" class="filter-tag">卡片网格</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Table View (Management Mode - Default) -->
+                    <div id="blogger-table-container" class="table-container active-layout">
+                        <table class="magazine-table" id="table-bloggers-management">
+                            <thead>
+                                <tr>
+                                    <th>博主名称</th>
+                                    <th>主页监控链接 (双击编辑)</th>
+                                    <th>均赞</th>
+                                    <th>均收藏/评论</th>
+                                    <th>最新更新动态</th>
+                                    <th>最新发布时间</th>
+                                    <th>管理操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Dynamic rendering -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Grid View (Visual Mode) -->
+                    <div id="blogger-grid-container" class="bloggers-grid">
+                        <!-- Dynamic bloggers list cards -->
+                    </div>
+                </div>
+
+                <!-- Subview 2: All Works Timeline View -->
+                <div id="blogger-timeline-view" class="subview">
+                    <div class="table-container">
+                        <table class="magazine-table" id="table-timeline-notes">
+                            <thead>
+                                <tr>
+                                    <th>发布时间</th>
+                                    <th>对标博主</th>
+                                    <th>笔记/视频标题</th>
+                                    <th>类型</th>
+                                    <th>获赞</th>
+                                    <th>收藏</th>
+                                    <th>评论</th>
+                                    <th>热评监控</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Dynamic rendering -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Blogger Detail Distillation View -->
+                <div id="blogger-detail-view" class="subview">
+                    <div class="detail-nav-back">
+                        <button id="btn-back-bloggers" class="btn-text">← 返回博主列表</button>
+                        <button id="btn-open-ai-report" class="btn-text" style="opacity: 0.45; font-size: 0.8rem; letter-spacing: 0.08em;">↗ AI 蒸馏报告</button>
+                    </div>
+                    
+                    <div class="blogger-detail-profile" id="detail-profile-header">
+                        <!-- Dynamic blogger header details -->
+                    </div>
+
+                    <hr class="magazine-hr">
+
+                    <!-- Inner tab navigation for detail sub-reports -->
+                    <div class="detail-inner-tabs">
+                        <button class="inner-tab active" data-detail-tab="overview">深度拆解概览</button>
+                        <button class="inner-tab" data-detail-tab="writing">写作模式与公式</button>
+                        <button class="inner-tab" data-detail-tab="topics">已验证爆款选题</button>
+                        <button class="inner-tab" data-detail-tab="cognitive">认知层观点句</button>
+                        <button class="inner-tab" data-detail-tab="ai-skill">创作指南 (Skill)</button>
+                        <button class="inner-tab" data-detail-tab="ai-soul">灵魂底稿 (Soul)</button>
+                    </div>
+
+                    <!-- Inner tab sections -->
+                    <div class="detail-tab-contents">
+                        <!-- Detail: Overview -->
+                        <div id="detail-tab-overview" class="detail-tab-section active">
+                            <div class="editorial-detail-grid">
+                                <div class="editorial-detail-left">
+                                    <h3 class="detail-section-title">内容领域与流量表现</h3>
+                                    <div class="chart-container">
+                                        <canvas id="categoryChart"></canvas>
+                                    </div>
+                                    <div id="category-insight-text" class="insight-box"></div>
+                                </div>
+                                <div class="editorial-detail-right">
+                                    <h3 class="detail-section-title">核心统计指标</h3>
+                                    <div id="detail-stats-list"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Detail: Writing -->
+                        <div id="detail-tab-writing" class="detail-tab-section">
+                            <div class="editorial-detail-grid">
+                                <div class="editorial-detail-left">
+                                    <h3 class="detail-section-title">标题策略与特征占比</h3>
+                                    <div id="detail-title-patterns"></div>
+                                </div>
+                                <div class="editorial-detail-right">
+                                    <h3 class="detail-section-title">视觉排版与 CTA 习惯</h3>
+                                    <div id="detail-style-cta"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Detail: Topics -->
+                        <div id="detail-tab-topics" class="detail-tab-section">
+                            <h3 class="detail-section-title">爆款笔记列表 TOP10</h3>
+                            <div class="table-container">
+                                <table class="magazine-table" id="table-top-notes">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>笔记标题</th>
+                                            <th>类型</th>
+                                            <th>获赞</th>
+                                            <th>收藏</th>
+                                            <th>评论</th>
+                                            <th>领域</th>
+                                            <th>热评监控</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Detail: Cognitive -->
+                        <div id="detail-tab-cognitive" class="detail-tab-section">
+                            <h3 class="detail-section-title">提取的立场观点句 (认知底稿)</h3>
+                            <p class="lead-text">利用模式匹配技术从正文提取的观点、断言以及反直觉结论。这些可以作为您的表达 DNA 素材储备。</p>
+                            <div class="cognitive-sentences" id="detail-cognitive-list"></div>
+                        </div>
+
+
+                        <!-- Detail: AI Skill (Markdown) -->
+                        <div id="detail-tab-ai-skill" class="detail-tab-section">
+                            <div class="md-title-row">
+                                <h3 class="detail-section-title">AI 创作指南 (SKILL.md)</h3>
+                                <button class="btn-copy-md" id="btn-copy-skill" title="复制完整内容">复制</button>
+                            </div>
+                            <p class="lead-text">读取自本地物理分析产物 <code>SKILL.md</code>。包含该博主的写作技艺拆解、框架模版与结构化指导。</p>
+                            <div id="ai-skill-content" class="markdown-body" style="display: none;">
+                                <!-- Rendered Markdown content -->
+                            </div>
+                            <div id="ai-skill-empty" class="aside-box info-box" style="margin: 0; display: block;">
+                                <p>未检测到该博主的创作指南 <code>SKILL.md</code> 文件（需生成并放置于 <code>output/{博主名}_创作指南.skill/</code> 目录中）。</p>
+                            </div>
+                        </div>
+
+                        <!-- Detail: AI Soul (Markdown) -->
+                        <div id="detail-tab-ai-soul" class="detail-tab-section">
+                            <div class="md-title-row">
+                                <h3 class="detail-section-title">灵魂底稿 (SOUL.md)</h3>
+                                <button class="btn-copy-md" id="btn-copy-soul" title="复制完整内容">复制</button>
+                            </div>
+                            <p class="lead-text">读取自本地物理分析产物 <code>SOUL.md</code>。包含该博主的价值诉求、语气语调与精神内核定义。</p>
+                            <div id="ai-soul-content" class="markdown-body" style="display: none;">
+                                <!-- Rendered Markdown content -->
+                            </div>
+                            <div id="ai-soul-empty" class="aside-box info-box" style="margin: 0; display: block;">
+                                <p>未检测到该博主的灵魂底稿 <code>SOUL.md</code> 文件（需生成并放置于 <code>output/{博主名}_创作指南.skill/</code> 目录中）。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PAGE 4: INDUSTRY NEWS -->
+            <section id="page-news" class="page-section">
+                <span class="section-label">FEEDS 03</span>
+                <h2 class="page-header-title">行业快讯与时效资讯</h2>
+                <p class="lead-text">追踪各大自媒体平台规则调整、电商风向及科技快讯。为选题提供前沿的市场和政策外壳。</p>
+                <div class="news-timeline" id="news-list-container">
+                    <!-- Dynamic rendering -->
+                </div>
+            </section>
+
+            <!-- PAGE 5: TRENDING TOPICS -->
+            <section id="page-trending" class="page-section">
+                <div class="split-view">
+                    <div class="split-left">
+                        <span class="section-label">FEEDS 04</span>
+                        <h2 class="page-header-title">全网热搜与流量外壳</h2>
+                        <p class="lead-text">这里汇集了百度、微博、抖音等主流平台的今日高频热词。热点代表了当下的集体注意力与流量入口。</p>
+                        
+                        <div class="trending-list" id="trending-list-container">
+                            <!-- Dynamic rendering -->
+                        </div>
+                    </div>
+                    
+                    <div class="split-right">
+                        <div class="aside-box info-box">
+                            <h4 class="aside-title">飞书 API 同步说明</h4>
+                            <p>本板块目前通过本地缓存数据提供占位展示。后续接口设计已在 `kaifa/web_api.md` 中预留完毕。</p>
+                            <p><strong>接口同步说明：</strong>同步后，飞书的多维表格或即时资讯卡片将流式压入 `trending_topics` 数据库表，并根据权重自动进行热度指数排名。</p>
+                            <div class="code-block">
+                                <span># 飞书同步接口原型</span><br>
+                                <span>POST /api/feishu/sync</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="main-footer">
+            <p>© 2026 博主蒸馏器项目组. 杂志风格看板. 本地数据库管理系统.</p>
+        </footer>
+        
+    </div>
+
+    <!-- UI Logic Script -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+{
+  "schema_version": "2.1.0",
+  "subject_id": "self_wechat_gh_demo",
+  "platform": "wechat",
+  "total_count": 2,
+  "sorted_by": "publish_time_desc",
+  "items": [
+    {
+      "content_id": "wx_article_001",
+      "subject_id": "self_wechat_gh_demo",
+      "platform": "wechat",
+      "content_type": "article",
+      "content_format": "long_article",
+      "title": "我把 AI 写作流程拆成了 4 个固定动作",
+      "subtitle": null,
+      "summary": "AI 写作 SOP 拆解。",
+      "cover_url": "https://example.com/wx_article_001.jpg",
+      "source_url": "https://mp.weixin.qq.com/s/demo001",
+      "publish_time": "2026-04-30T08:00:00+08:00",
+      "update_time": null,
+      "duration_sec": null,
+      "language": "zh-CN",
+      "series_name": "AI 写作实践",
+      "episode_index": 4,
+      "is_pinned": false,
+      "is_top": false,
+      "detail_collected": true,
+      "metrics": {
+        "view_count": 8200,
+        "impression_count": null,
+        "reach_count": null,
+        "like_count": 168,
+        "comment_count": null,
+        "share_count": 34,
+        "save_count": null,
+        "reply_count": null,
+        "quote_count": null,
+        "click_count": 96,
+        "subscribe_count": 18,
+        "follow_count": null,
+        "lead_count": 12,
+        "conversion_count": 12,
+        "engagement_count": 202,
+        "engagement_rate": 0.0246
+      },
+      "platform_fields": {
+        "read_count": 8200,
+        "digg_count": 168
+      },
+      "raw": {
+        "article_id": "demo001"
+      }
+    },
+    {
+      "content_id": "wx_article_002",
+      "subject_id": "self_wechat_gh_demo",
+      "platform": "wechat",
+      "content_type": "article",
+      "content_format": "long_article",
+      "title": "为什么你的提示词总是写不出风格",
+      "subtitle": null,
+      "summary": "提示词风格问题分析。",
+      "cover_url": "https://example.com/wx_article_002.jpg",
+      "source_url": "https://mp.weixin.qq.com/s/demo002",
+      "publish_time": "2026-04-22T08:00:00+08:00",
+      "update_time": null,
+      "duration_sec": null,
+      "language": "zh-CN",
+      "series_name": null,
+      "episode_index": null,
+      "is_pinned": false,
+      "is_top": false,
+      "detail_collected": true,
+      "metrics": {
+        "view_count": 5400,
+        "impression_count": null,
+        "reach_count": null,
+        "like_count": 102,
+        "comment_count": null,
+        "share_count": 20,
+        "save_count": null,
+        "reply_count": null,
+        "quote_count": null,
+        "click_count": 41,
+        "subscribe_count": 7,
+        "follow_count": null,
+        "lead_count": 4,
+        "conversion_count": 4,
+        "engagement_count": 122,
+        "engagement_rate": 0.0226
+      },
+      "platform_fields": {
+        "read_count": 5400,
+        "digg_count": 102
+      },
+      "raw": {
+        "article_id": "demo002"
+      }
+    }
+  ]
+}
+

@@ -1,0 +1,38 @@
+{
+  "schema_version": "2.1.0",
+  "platform": "wechat",
+  "subject_id": "self_wechat_gh_demo",
+  "subject_role": "self",
+  "account_id": "gh_demo",
+  "nickname": "增长实验室",
+  "display_name": "增长实验室",
+  "profile_url": "https://mp.weixin.qq.com/",
+  "avatar_url": "https://example.com/avatar_self.jpg",
+  "bio": "记录 AI、内容和增长实验。",
+  "location": "Shanghai",
+  "language": "zh-CN",
+  "verification": true,
+  "account_type": "media",
+  "content_count": 64,
+  "followers_count": null,
+  "following_count": null,
+  "likes_count": null,
+  "total_view_count": null,
+  "created_at": null,
+  "collected_at": "2026-05-05T14:00:00+08:00",
+  "tags": [
+    "AI",
+    "增长"
+  ],
+  "platform_fields": {
+    "wechat_id": "growthlab_demo"
+  },
+  "source": {
+    "source_type": "crawl",
+    "source_url": "https://mp.weixin.qq.com/"
+  },
+  "raw": {
+    "platform_name": "WeChat Official Account"
+  }
+}
+

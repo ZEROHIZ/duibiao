@@ -1,0 +1,133 @@
+{
+  "schema_version": "2.1.0",
+  "subject_id": "target_youtube_UC123",
+  "platform": "youtube",
+  "items": [
+    {
+      "content_id": "yt_video_001",
+      "subject_id": "target_youtube_UC123",
+      "platform": "youtube",
+      "content_type": "video",
+      "content_format": "long_video",
+      "title": "我用 3 个 AI Agent 自动生成一周内容",
+      "subtitle": null,
+      "summary": "从选题到分发的自动化演示。",
+      "content": "这期视频我会完整演示一个 AI 内容系统：选题 Agent、写作 Agent、分发 Agent。先看流程，再看每个环节怎么落地。",
+      "content_text_segments": [
+        "开头：说明目标和结果",
+        "中段：展示工作流结构",
+        "结尾：引导观众领取模板"
+      ],
+      "cover_url": "https://example.com/yt_video_001.jpg",
+      "source_url": "https://www.youtube.com/watch?v=demo001",
+      "publish_time": "2026-04-28T20:00:00+08:00",
+      "update_time": null,
+      "duration_sec": 912,
+      "language": "zh-CN",
+      "series_name": "AI 内容系统",
+      "episode_index": 7,
+      "tags": [
+        "ai agent",
+        "content workflow",
+        "automation"
+      ],
+      "mentions": [
+        "OpenAI",
+        "n8n"
+      ],
+      "topic_terms": [
+        "AI Agent",
+        "内容自动化",
+        "工作流"
+      ],
+      "keywords": [
+        "agent",
+        "workflow",
+        "content system"
+      ],
+      "cta": [
+        "评论区回复模板领取",
+        "订阅频道获取下一集"
+      ],
+      "emoji_list": [],
+      "links": [
+        "https://example.com/template"
+      ],
+      "assets": {
+        "images": [],
+        "video": {
+          "video_url": "https://example.com/yt_video_001.mp4",
+          "cover_url": "https://example.com/yt_video_001.jpg"
+        },
+        "audio": {
+          "audio_url": null,
+          "duration_sec": null
+        }
+      },
+      "metrics": {
+        "view_count": 128000,
+        "impression_count": null,
+        "reach_count": null,
+        "like_count": 6400,
+        "comment_count": 312,
+        "share_count": 480,
+        "save_count": null,
+        "reply_count": null,
+        "quote_count": null,
+        "click_count": null,
+        "subscribe_count": 920,
+        "follow_count": null,
+        "lead_count": 210,
+        "conversion_count": 210,
+        "engagement_count": 7192,
+        "engagement_rate": 0.0562
+      },
+      "comments_summary": {
+        "total_count": 312,
+        "top_comment_ids": [
+          "yt_comment_001",
+          "yt_comment_002"
+        ]
+      },
+      "comments": [
+        {
+          "comment_id": "yt_comment_001",
+          "content_id": "yt_video_001",
+          "parent_comment_id": null,
+          "author_role": "reader",
+          "author_name": null,
+          "content": "终于看到把选题和分发串起来的实操了。",
+          "like_count": 328,
+          "reply_count": 14,
+          "is_hot": true,
+          "language": "zh-CN",
+          "created_at": "2026-04-28T21:05:00+08:00",
+          "platform_fields": {},
+          "raw": {}
+        },
+        {
+          "comment_id": "yt_comment_002",
+          "content_id": "yt_video_001",
+          "parent_comment_id": null,
+          "author_role": "author",
+          "author_name": null,
+          "content": "模板已经放到置顶评论。",
+          "like_count": 142,
+          "reply_count": 8,
+          "is_hot": true,
+          "language": "zh-CN",
+          "created_at": "2026-04-28T21:20:00+08:00",
+          "platform_fields": {},
+          "raw": {}
+        }
+      ],
+      "platform_fields": {
+        "caption_available": true
+      },
+      "raw": {
+        "video_id": "demo001"
+      }
+    }
+  ]
+}
+
