@@ -21,17 +21,30 @@
 docker compose up -d --build
 ```
 
-### 📌 纯 `docker run` 一行命令启动
-如果您不使用 Docker Compose，可以直接使用以下纯 `docker` 命令进行拉取构建与运行（已做好本地数据、输出与截图目录的挂载映射）：
+### 📌 从 GitHub Packages 直接拉取并运行 (免本地构建)
+如果您已经使用 GitHub 自动构建好的镜像，可以直接运行以下一行命令拉取并启动服务：
+
+**Linux / macOS (Bash) 一键拉取运行：**
+```bash
+docker run -d --name blogger-distiller -p 8000:8000 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+```
+
+**Windows (PowerShell) 一键拉取运行：**
+```bash
+docker run -d --name blogger-distiller -p 8000:8000 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+```
+
+### 📌 纯 `docker run` 本地构建与运行
+如果您更偏向在本地构建镜像并运行：
 
 ```bash
-# 构建镜像
+# 1. 本地编译镜像
 docker build -t blogger-distiller .
 
-# Windows (PowerShell) 一行命令运行
+# 2. 运行本地镜像 (Windows PowerShell)
 docker run -d --name blogger-distiller -p 8000:8000 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always blogger-distiller
 
-# Linux / macOS (Bash) 一行命令运行
+# 3. 运行本地镜像 (Linux / macOS Bash)
 docker run -d --name blogger-distiller -p 8000:8000 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always blogger-distiller
 ```
 
