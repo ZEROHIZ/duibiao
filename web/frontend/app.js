@@ -185,58 +185,7 @@ function setupEventListeners() {
         });
     }
 
-    // Toast 弹窗通知辅助函数
-    function showToast(message, type = "info") {
-        const container = document.getElementById("toast-container");
-        if (!container) return;
-        
-        const toast = document.createElement("div");
-        toast.className = "toast";
-        
-        // 状态边框色适配
-        if (type === "success") {
-            toast.style.borderColor = "#4a8a5f";
-        } else if (type === "error") {
-            toast.style.borderColor = "#c94f3b";
-        }
-        
-        toast.innerHTML = `
-            <span>${message}</span>
-            <button class="toast-close">✕</button>
-        `;
-        
-        container.appendChild(toast);
-        
-        // 绑定关闭按钮
-        toast.querySelector(".toast-close").addEventListener("click", () => {
-            gsap.to(toast, {
-                opacity: 0,
-                y: -10,
-                duration: 0.2,
-                onComplete: () => toast.remove()
-            });
-        });
-        
-        // GSAP 飞入动画
-        gsap.to(toast, {
-            opacity: 1,
-            y: 0,
-            duration: 0.35,
-            ease: "power2.out"
-        });
-        
-        // 4秒后自动移除
-        setTimeout(() => {
-            if (toast.parentNode) {
-                gsap.to(toast, {
-                    opacity: 0,
-                    y: -10,
-                    duration: 0.2,
-                    onComplete: () => toast.remove()
-                });
-            }
-        }, 4000);
-    }
+
 
 
     // 博主详情内页 Tab 点击事件
@@ -306,6 +255,59 @@ function setupEventListeners() {
     }
     bindCopyBtn("btn-copy-skill", "ai-skill-content");
     bindCopyBtn("btn-copy-soul",  "ai-soul-content");
+}
+
+// Toast 弹窗通知辅助函数 (全局作用域)
+function showToast(message, type = "info") {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    
+    // 状态边框色适配
+    if (type === "success") {
+        toast.style.borderColor = "#4a8a5f";
+    } else if (type === "error") {
+        toast.style.borderColor = "#c94f3b";
+    }
+    
+    toast.innerHTML = `
+        <span>${message}</span>
+        <button class="toast-close">✕</button>
+    `;
+    
+    container.appendChild(toast);
+    
+    // 绑定关闭按钮
+    toast.querySelector(".toast-close").addEventListener("click", () => {
+        gsap.to(toast, {
+            opacity: 0,
+            y: -10,
+            duration: 0.2,
+            onComplete: () => toast.remove()
+        });
+    });
+    
+    // GSAP 飞入动画
+    gsap.to(toast, {
+        opacity: 1,
+        y: 0,
+        duration: 0.35,
+        ease: "power2.out"
+    });
+    
+    // 4秒后自动移除
+    setTimeout(() => {
+        if (toast.parentNode) {
+            gsap.to(toast, {
+                opacity: 0,
+                y: -10,
+                duration: 0.2,
+                onComplete: () => toast.remove()
+            });
+        }
+    }, 4000);
 }
 
 // 5. 核心：单页面应用 (SPA) Tab 切换控制与 GSAP 动画
@@ -667,9 +669,8 @@ async function loadBloggersList() {
             
             // 是否有深度蒸馏报告判断
             const hasDistilled = b.total_notes > 0;
-            const distillActionHtml = hasDistilled 
-                ? `<button class="btn-text" style="color: var(--accent-primary)" onclick="loadBloggerDetail('${b.name}')">蒸馏拆解</button>`
-                : `<span style="font-size: 0.8rem; color: var(--ink-tertiary);">数据未同步</span>`;
+            // 允许所有博主都可以点击进入详情页，对于未同步博主也提供详情按钮以方便同步
+            const distillActionHtml = `<button class="btn-text" style="color: var(--accent-primary)" onclick="loadBloggerDetail('${b.name}')">蒸馏拆解</button>`;
 
             // 仅保留删除操作按钮，改名改为双击文字
             const deleteHtml = `<button class="btn-text" style="color: var(--accent-primary); margin-left: 0.75rem;" onclick="deleteBloggerConfirm(${b.id}, '${b.name}')">删除</button>`;
@@ -704,11 +705,7 @@ async function loadBloggersList() {
                 if (e.target.closest("button") || e.target.closest("input") || e.target.closest(".editable-field")) {
                     return;
                 }
-                if (hasDistilled) {
-                    loadBloggerDetail(b.name);
-                } else {
-                    showToast(`博主“${b.name}”数据尚未同步，请先点击右侧“同步更新”开始同步数据。`, "info");
-                }
+                loadBloggerDetail(b.name);
             });
 
             tableBody.appendChild(tr);
@@ -740,13 +737,12 @@ async function loadBloggersList() {
                     </span>
                 </div>
             `;
-            if (hasDistilled) {
-                card.addEventListener("click", () => {
-                    loadBloggerDetail(b.name);
-                });
-            } else {
-                card.style.opacity = "0.6";
-                card.style.cursor = "default";
+            card.addEventListener("click", () => {
+                loadBloggerDetail(b.name);
+            });
+            if (!hasDistilled) {
+                card.style.opacity = "0.8";
+                card.style.cursor = "pointer";
             }
             gridContainer.appendChild(card);
         });
@@ -1197,8 +1193,8 @@ function renderBloggerOverviewTab(data) {
     statsContainer.innerHTML = `
         <table class="magazine-table" style="margin-top: 0.5rem;">
             <tbody>
-                <tr><td>视频占比</td><td><strong>${b.video_count} 条 (${(b.video_count/b.total_notes*100).toFixed(0)}%)</strong></td></tr>
-                <tr><td>图文占比</td><td><strong>${b.normal_count} 条 (${(b.normal_count/b.total_notes*100).toFixed(0)}%)</strong></td></tr>
+                <tr><td>视频占比</td><td><strong>${b.video_count} 条 (${b.total_notes > 0 ? (b.video_count/b.total_notes*100).toFixed(0) : 0}%)</strong></td></tr>
+                <tr><td>图文占比</td><td><strong>${b.normal_count} 条 (${b.total_notes > 0 ? (b.normal_count/b.total_notes*100).toFixed(0) : 0}%)</strong></td></tr>
                 <tr><td>总获赞数</td><td><strong>${b.total_likes.toLocaleString()}</strong></td></tr>
                 <tr><td>总收藏数</td><td><strong>${b.total_collects.toLocaleString()}</strong></td></tr>
                 <tr><td>总评论数</td><td><strong>${b.total_comments.toLocaleString()}</strong></td></tr>
@@ -1957,22 +1953,27 @@ async function handleTranscribeNowClick() {
         const res = await fetch(`${API_BASE}/api/transcribe/trigger`, { method: "POST" });
         const json = await res.json();
         if (json.status === "success") {
-            showToast("后台已开始立即扫描并处理转录任务！正在转至转录日志监控...", "success");
-            
-            // 切换到日志监控页面的转录选项卡
-            setTimeout(() => {
-                switchTab("logs");
-                currentTaskTab = "transcribe";
-                const btnTabSync = document.getElementById("task-tab-sync");
-                const btnTabTranscribe = document.getElementById("task-tab-transcribe");
-                if (btnTabSync && btnTabTranscribe) {
-                    btnTabTranscribe.style.color = "var(--accent-primary)";
-                    btnTabTranscribe.style.borderBottom = "2px solid var(--accent-primary)";
-                    btnTabSync.style.color = "var(--ink-secondary)";
-                    btnTabSync.style.borderBottom = "none";
-                }
-                loadSettingsPageTasks();
-            }, 1000);
+            const count = json.count || 0;
+            if (count > 0) {
+                showToast(`后台扫描完成！检测到 ${count} 个视频待转录，已启动处理流程，正在转至监控...`, "success");
+                
+                // 仅在有任务时自动切换到日志监控页面的转录选项卡
+                setTimeout(() => {
+                    switchTab("logs");
+                    currentTaskTab = "transcribe";
+                    const btnTabSync = document.getElementById("task-tab-sync");
+                    const btnTabTranscribe = document.getElementById("task-tab-transcribe");
+                    if (btnTabSync && btnTabTranscribe) {
+                        btnTabTranscribe.style.color = "var(--accent-primary)";
+                        btnTabTranscribe.style.borderBottom = "2px solid var(--accent-primary)";
+                        btnTabSync.style.color = "var(--ink-secondary)";
+                        btnTabSync.style.borderBottom = "none";
+                    }
+                    loadSettingsPageTasks();
+                }, 1000);
+            } else {
+                showToast("后台扫描已完成：当前数据库中没有待转录视频直链（所有视频已转录完成或无视频数据）。", "info");
+            }
         } else {
             showToast(`唤醒转录失败: ${json.message}`, "error");
         }

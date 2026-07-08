@@ -154,6 +154,28 @@ def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless=
     if not run_step(converter_cmd, f"2. 格式转换与快速导入准备 ({blogger})"):
         return False
 
+    # 2.5. 数据分析与特征提取（读取 notes_details 生成 analysis.json 供导入器使用）
+    analyze_cmd = [
+        PYTHON_EXE,
+        os.path.join(ROOT_DIR, "scripts", "analyze.py"),
+        processed_data_path,
+        "-o", os.path.join(ROOT_DIR, "data")
+    ]
+    if not run_step(analyze_cmd, f"2.5. 数据深度分析特征提取 ({blogger})"):
+        return False
+
+    # 2.7. 认知分析与 AI 蒸馏底稿任务生成（生成 AI 蒸馏任务.md 等过程文件）
+    deep_analyze_cmd = [
+        PYTHON_EXE,
+        os.path.join(ROOT_DIR, "scripts", "deep_analyze.py"),
+        os.path.join(ROOT_DIR, "data", f"{blogger}_analysis.json"),
+        blogger,
+        "-o", os.path.join(ROOT_DIR, "output"),
+        "--details", processed_data_path
+    ]
+    if not run_step(deep_analyze_cmd, f"2.7. AI 蒸馏底稿任务生成 ({blogger})"):
+        return False
+
     # 3. 增量导入 SQLite 数据库
     importer_cmd = [
         PYTHON_EXE,

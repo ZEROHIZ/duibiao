@@ -398,6 +398,7 @@ def main():
 
     # 2. 读取已存在的目标输出以复用已有的转录结果
     existing_notes_map = {}
+    existing_list = []
     if os.path.exists(args.output):
         print(f"检测到已存在输出目标文件: {args.output}，正在读取已转录文本...")
         try:
@@ -423,6 +424,19 @@ def main():
         skip_transcribe=args.skip_transcribe
     )
 
+    # 合并新转换的笔记与已存在的笔记（增量追加去重），防止历史数据丢失
+    merged_map = {}
+    if isinstance(existing_list, list):
+        for item in existing_list:
+            fid = item.get("_feed_id")
+            if fid:
+                merged_map[str(fid)] = item
+    for item in converted_list:
+        fid = item.get("_feed_id")
+        if fid:
+            merged_map[str(fid)] = item
+    final_list = list(merged_map.values())
+
     # 3. 保存输出
     print(f"\n正在保存至目标路径: {args.output}")
     try:
@@ -430,7 +444,7 @@ def main():
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
         with open(args.output, "w", encoding="utf-8") as f:
-            json.dump(converted_list, f, ensure_ascii=False, indent=2)
+            json.dump(final_list, f, ensure_ascii=False, indent=2)
         print("🎉 转换并回填完成！")
     except Exception as e:
         print(f"❌ 写入输出 JSON 文件失败: {e}")
@@ -441,17 +455,17 @@ def main():
         print("\n==================== 开始进行数据质量校验 ====================")
         try:
             # V1: 完整性校验
-            ok, msg = check_content_completeness(converted_list)
+            ok, msg = check_content_completeness(final_list)
             print(msg)
             
             # V2: 数量校验（此处将以实际转换的数量为基准进行展示）
-            print(check_note_count(converted_list, len(converted_list)))
+            print(check_note_count(final_list, len(final_list)))
             
             # V3: 时间字段校验
-            print(check_time_field(converted_list))
+            print(check_time_field(final_list))
             
             # V4: 重复校验
-            print(check_duplicates(converted_list))
+            print(check_duplicates(final_list))
             print("==============================================================")
         except Exception as ve:
             print(f"⚠️ 执行数据校验模块时出错: {ve}")

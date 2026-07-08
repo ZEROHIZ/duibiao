@@ -299,6 +299,15 @@ def import_blogger_file(analysis_path):
         else:
             full_desc = note.get("title", "") # 降级使用标题
 
+        # 检查数据库中已存在的记录，防止用未转录的原始 URL 覆盖已成功转录的文字
+        cursor.execute("SELECT desc FROM blogger_notes WHERE id = ?;", (nid,))
+        existing_row = cursor.fetchone()
+        if existing_row:
+            existing_desc = existing_row["desc"]
+            # 如果数据库已有内容，且不是链接也不是未完成的失败标记，则保留已有转录内容
+            if existing_desc and not (existing_desc.startswith("http://") or existing_desc.startswith("https://") or existing_desc.startswith("[转录失败_第")):
+                full_desc = existing_desc
+
         if full_desc:
             all_descs.append(full_desc)
 
@@ -391,6 +400,14 @@ def import_blogger_file(analysis_path):
     conn.commit()
     conn.close()
     print(f"[Importer] Successfully imported blogger data for '{blogger_name}' into SQLite.")
+
+    # 5. 重新基于 SQLite 库的明细数据计算核心指标并回写，确保语义层和数据完整一致
+    try:
+        sys.path.insert(0, os.path.join(ROOT_DIR, "scripts"))
+        from utils.recalculate import recalculate_blogger_stats
+        recalculate_blogger_stats(blogger_name)
+    except Exception as re_err:
+        print(f"[Importer] Warning: Database recalculation failed: {re_err}")
 
 
 def run_full_import(blogger_name=None):

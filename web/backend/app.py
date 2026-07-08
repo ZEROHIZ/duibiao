@@ -218,6 +218,14 @@ def transcription_worker_loop():
                                 json.dump(details_list, f, ensure_ascii=False, indent=2)
                     except Exception as e:
                         print(f"[语音转录后台 Worker] 同步更新 JSON 归档文件失败: {e}")
+
+                    # 4.5. 当视频转录成功时，立刻触发数据库指标重算，把新解析出的文字/词频/观点句合并进大盘和详情页面中
+                    if success:
+                        try:
+                            from utils.recalculate import recalculate_blogger_stats
+                            recalculate_blogger_stats(blogger_name)
+                        except Exception as re_err:
+                            print(f"[语音转录后台 Worker] 重算指标失败: {re_err}")
                         
                     conn.close()
                     time.sleep(1) # 视频间隔安全休眠
@@ -985,8 +993,32 @@ def get_transcribe_tasks():
 
 @app.post("/api/transcribe/trigger")
 def trigger_transcription_scan():
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    count = 0
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) as cnt
+                FROM blogger_notes
+                WHERE type = 'video' AND (
+                    desc LIKE 'http://%' OR 
+                    desc LIKE 'https://%' OR 
+                    desc LIKE '[转录失败_第%'
+                )
+            """)
+            count = cursor.fetchone()[0]
+            conn.close()
+        except Exception as e:
+            print(f"Error checking pending transcription count: {e}")
+            
     transcribe_trigger_event.set()
-    return {"status": "success", "message": "Transcription scan triggered immediately."}
+    return {
+        "status": "success", 
+        "count": count,
+        "message": f"Transcription scan triggered immediately. Found {count} pending video(s)."
+    }
 
 @app.post("/api/crawl/clear")
 def clear_finished_tasks():

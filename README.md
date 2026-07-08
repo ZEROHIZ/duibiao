@@ -26,12 +26,12 @@ docker compose up -d --build
 
 **Linux / macOS (Bash) 一键拉取运行：**
 ```bash
-docker run -d --name blogger-distiller -p 8000:8000 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+docker run -d --name blogger-distiller -p 8899:8000 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
 ```
 
 **Windows (PowerShell) 一键拉取运行：**
 ```bash
-docker run -d --name blogger-distiller -p 8000:8000 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+docker run -d --name blogger-distiller -p 8899:8000 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
 ```
 
 ### 📌 纯 `docker run` 本地构建与运行
