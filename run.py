@@ -4,7 +4,7 @@
 → Phase 2（数据分析）→ Phase 3（蒸馏 + 产出物生成）
 
 用法：
-    python run.py "<博主名>"
+    python run.py "<小A>"
     python run.py "<博主名>" --self "<自己昵称>"
     python run.py "<博主名>" --keywords "烘焙,食谱,探店"
     python run.py "<博主名>" --skip-env

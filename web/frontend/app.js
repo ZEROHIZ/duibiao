@@ -109,6 +109,109 @@ function setupEventListeners() {
         });
     }
 
+    // 同步更新数据按钮事件 (轻量 Toast 排队模式，支持数量自定义)
+    const btnSyncCrawler = document.getElementById("btn-sync-crawler");
+    if (btnSyncCrawler) {
+        btnSyncCrawler.addEventListener("click", () => {
+            if (!activeBloggerName) {
+                showToast("未选定当前激活的博主！", "error");
+                return;
+            }
+            
+            const maxVideosInput = document.getElementById("detail-max-videos");
+            const maxVideos = maxVideosInput ? parseInt(maxVideosInput.value) : 5;
+            
+            showToast(`已开始将博主“${activeBloggerName}”的同步任务(抓取 ${maxVideos} 条)提交至后台队列...`, "info");
+            
+            // 请求后端开始同步，传递 max_videos 覆盖参数
+            fetch(`${API_BASE}/api/crawl/run?blogger=${encodeURIComponent(activeBloggerName)}&max_videos=${maxVideos}`, { method: "POST" })
+                .then(res => res.json())
+                .then(json => {
+                    if (json.status === "success" && json.task_id) {
+                        showToast(`已加入同步队列！正在排队执行。您可以在‘任务日志’页查看进度。`, "success");
+                        if (currentTab === "logs") {
+                            loadSettingsPageTasks();
+                        }
+                    } else {
+                        throw new Error(json.message || "后端任务创建失败");
+                    }
+                })
+                .catch(err => {
+                    showToast(`启动同步任务失败: ${err.message}`, "error");
+                });
+        });
+    }
+
+    // 系统设置页面专属事件绑定
+    const settingsForm = document.getElementById("system-settings-form");
+    if (settingsForm) {
+        settingsForm.addEventListener("submit", handleSystemSettingsSubmit);
+    }
+    
+    const btnSyncAll = document.getElementById("btn-sync-all");
+    if (btnSyncAll) {
+        btnSyncAll.addEventListener("click", handleSyncAllClick);
+    }
+    
+    const btnClearHistory = document.getElementById("btn-clear-history");
+    if (btnClearHistory) {
+        btnClearHistory.addEventListener("click", handleClearHistoryClick);
+    }
+
+    // Toast 弹窗通知辅助函数
+    function showToast(message, type = "info") {
+        const container = document.getElementById("toast-container");
+        if (!container) return;
+        
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        
+        // 状态边框色适配
+        if (type === "success") {
+            toast.style.borderColor = "#4a8a5f";
+        } else if (type === "error") {
+            toast.style.borderColor = "#c94f3b";
+        }
+        
+        toast.innerHTML = `
+            <span>${message}</span>
+            <button class="toast-close">✕</button>
+        `;
+        
+        container.appendChild(toast);
+        
+        // 绑定关闭按钮
+        toast.querySelector(".toast-close").addEventListener("click", () => {
+            gsap.to(toast, {
+                opacity: 0,
+                y: -10,
+                duration: 0.2,
+                onComplete: () => toast.remove()
+            });
+        });
+        
+        // GSAP 飞入动画
+        gsap.to(toast, {
+            opacity: 1,
+            y: 0,
+            duration: 0.35,
+            ease: "power2.out"
+        });
+        
+        // 4秒后自动移除
+        setTimeout(() => {
+            if (toast.parentNode) {
+                gsap.to(toast, {
+                    opacity: 0,
+                    y: -10,
+                    duration: 0.2,
+                    onComplete: () => toast.remove()
+                });
+            }
+        }, 4000);
+    }
+
+
     // 博主详情内页 Tab 点击事件
     document.querySelectorAll(".inner-tab").forEach(tab => {
         tab.addEventListener("click", (e) => {
@@ -244,6 +347,12 @@ function loadTabData(tabId) {
             break;
         case "trending":
             loadTrendingTopicsData();
+            break;
+        case "settings":
+            loadSettingsPageData();
+            break;
+        case "logs":
+            loadLogsPageData();
             break;
     }
 }
@@ -735,6 +844,14 @@ async function saveBloggerHomeUrl(bloggerId, inputId) {
 async function loadBloggerDetail(bloggerName) {
     activeBloggerName = bloggerName;
     showBloggerSubview("detail");
+    
+    // 初始化更新数量为全局设置的值
+    const globalMaxVideosInput = document.getElementById("setting-max-videos");
+    const detailMaxVideosInput = document.getElementById("detail-max-videos");
+    if (globalMaxVideosInput && detailMaxVideosInput) {
+        detailMaxVideosInput.value = globalMaxVideosInput.value || 5;
+    }
+    
     switchBloggerDetailTab("overview");
 
     try {
@@ -1339,5 +1456,259 @@ async function loadTrendingTopicsData() {
         }
     } catch (e) {
         container.innerHTML = `<div class="lead-text" style="color: var(--accent-primary);">流量热搜缓存获取失败。</div>`;
+    }
+}
+
+// ==================================================================
+// 17. 系统设置与任务队列相关前端逻辑
+// ==================================================================
+let activeConsoleTaskId = null;
+let consolePollInterval = null;
+
+async function loadSettingsPageData() {
+    // 加载参数配置
+    try {
+        const res = await fetch(`${API_BASE}/api/settings`);
+        const settings = await res.json();
+        
+        document.getElementById("setting-whisper-url").value = settings.whisper_url || "";
+        document.getElementById("setting-whisper-model").value = settings.whisper_model || "medium";
+        document.getElementById("setting-max-videos").value = settings.max_videos || 5;
+    } catch (e) {
+        console.error("加载系统设置失败:", e);
+        showToast("加载系统设置参数失败", "error");
+    }
+}
+
+async function loadLogsPageData() {
+    // 加载队列任务列表
+    await loadSettingsPageTasks();
+}
+
+async function loadSettingsPageTasks() {
+    try {
+        const res = await fetch(`${API_BASE}/api/crawl/tasks`);
+        const tasks = await res.json();
+        
+        const tbody = document.getElementById("queue-tasks-body");
+        if (!tbody) return;
+        
+        if (tasks.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--ink-secondary);">暂无任务记录</td></tr>`;
+            return;
+        }
+        
+        let hasActiveTasks = false;
+        
+        tbody.innerHTML = tasks.map(t => {
+            let statusText = "未知";
+            let badgeClass = "queued";
+            if (t.status === "queued") { statusText = "排队中"; badgeClass = "queued"; hasActiveTasks = true; }
+            else if (t.status === "running") { statusText = "进行中"; badgeClass = "running"; hasActiveTasks = true; }
+            else if (t.status === "success") { statusText = "成功"; badgeClass = "success"; }
+            else if (t.status === "failed") { statusText = "失败"; badgeClass = "failed"; }
+            
+            const dateStr = t.created_at ? new Date(t.created_at).toLocaleString() : "—";
+            const bloggerName = t.blogger === "all" ? "全部博主" : t.blogger;
+            
+            const isSelected = activeConsoleTaskId === t.id;
+            const btnStyle = isSelected ? "border-color: var(--accent-primary); color: var(--accent-primary);" : "";
+            
+            return `
+                <tr>
+                    <td><strong>${bloggerName}</strong></td>
+                    <td><span class="status-badge ${badgeClass}">${statusText}</span></td>
+                    <td style="font-family: var(--font-mono); font-size: 0.72rem;">${dateStr}</td>
+                    <td style="text-align: right;">
+                        <button class="btn-text btn-view-log" data-id="${t.id}" style="padding: 0.15rem 0.45rem; font-size: 0.72rem; ${btnStyle}">查看日志</button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+        
+        // 绑定“查看日志”按钮事件
+        tbody.querySelectorAll(".btn-view-log").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const taskId = e.currentTarget.getAttribute("data-id");
+                // 移除所有按钮的激活高亮
+                tbody.querySelectorAll(".btn-view-log").forEach(b => {
+                    b.style.borderColor = "";
+                    b.style.color = "";
+                });
+                e.currentTarget.style.borderColor = "var(--accent-primary)";
+                e.currentTarget.style.color = "var(--accent-primary)";
+                selectConsoleTask(taskId);
+            });
+        });
+        
+        // 如果有正在运行的任务，且没有全局的轮询机制，就在日志页每 3 秒刷新一次列表
+        if (hasActiveTasks && currentTab === "logs") {
+            setTimeout(loadSettingsPageTasks, 3000);
+        }
+    } catch (e) {
+        console.error("加载任务队列失败:", e);
+    }
+}
+
+function selectConsoleTask(taskId) {
+    activeConsoleTaskId = taskId;
+    
+    // 更新控制台标题
+    const titleEl = document.getElementById("console-task-title");
+    if (titleEl) {
+        titleEl.textContent = `实时控制台日志 (任务 ID: ${taskId.substring(0, 8)}...)`;
+    }
+    
+    // 立即拉取一次日志并开启日志轮询
+    pollConsoleLog(taskId);
+}
+
+function pollConsoleLog(taskId) {
+    if (consolePollInterval) {
+        clearInterval(consolePollInterval);
+        consolePollInterval = null;
+    }
+    
+    const consoleContent = document.getElementById("settings-console-content");
+    if (!consoleContent) return;
+    
+    const fetchLog = () => {
+        // 如果选定的任务变了，或不再日志页，停止该轮询
+        if (activeConsoleTaskId !== taskId || currentTab !== "logs") {
+            if (consolePollInterval) {
+                clearInterval(consolePollInterval);
+                consolePollInterval = null;
+            }
+            return;
+        }
+        
+        fetch(`${API_BASE}/api/crawl/status/${taskId}`)
+            .then(res => res.json())
+            .then(json => {
+                if (json.status === "error") {
+                    consoleContent.textContent = `❌ 获取日志错误: ${json.message}`;
+                    if (consolePollInterval) clearInterval(consolePollInterval);
+                    return;
+                }
+                
+                // 填充日志
+                consoleContent.textContent = json.logs || "等待日志输出...\n";
+                consoleContent.scrollTop = consoleContent.scrollHeight;
+                
+                // 更新当前运行步骤/卡住位置看板
+                const stepBox = document.getElementById("console-step-box");
+                const stepText = document.getElementById("console-step-text");
+                if (stepBox && stepText) {
+                    if (json.current_step) {
+                        stepText.textContent = json.current_step;
+                        stepBox.style.display = "block";
+                    } else {
+                        stepBox.style.display = "none";
+                    }
+                }
+                
+                // 渲染截图
+                const screenshotBox = document.getElementById("console-screenshots-box");
+                const screenshotContainer = document.getElementById("console-screenshots-container");
+                if (screenshotBox && screenshotContainer) {
+                    if (json.screenshots && json.screenshots.length > 0) {
+                        screenshotContainer.innerHTML = json.screenshots.map(url => {
+                            const basename = url.split("/").pop();
+                            return `
+                                <div style="border: 1px solid var(--ink-primary); padding: 0.25rem; background-color: var(--bg-secondary); text-align: center;">
+                                    <a href="${url}" target="_blank" title="在新标签页中打开完整截图">
+                                        <img src="${url}" alt="${basename}" style="width: 100%; height: auto; display: block; border: 1px solid var(--ink-secondary);" />
+                                    </a>
+                                    <div style="font-family: var(--font-mono); font-size: 0.65rem; margin-top: 0.25rem; word-break: break-all; color: var(--ink-secondary);">${basename}</div>
+                                </div>
+                            `;
+                        }).join("");
+                        screenshotBox.style.display = "block";
+                    } else {
+                        screenshotContainer.innerHTML = "";
+                        screenshotBox.style.display = "none";
+                    }
+                }
+                
+                // 如果任务已经结束，则停止轮询
+                if (json.status === "success" || json.status === "failed") {
+                    if (consolePollInterval) {
+                        clearInterval(consolePollInterval);
+                        consolePollInterval = null;
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("加载日志错误:", err);
+            });
+    };
+    
+    // 立即执行一次
+    fetchLog();
+    
+    // 每 1.5 秒更新一次
+    consolePollInterval = setInterval(fetchLog, 1500);
+}
+
+// 提交系统参数设置
+async function handleSystemSettingsSubmit(e) {
+    e.preventDefault();
+    const whisper_url = document.getElementById("setting-whisper-url").value.trim();
+    const whisper_model = document.getElementById("setting-whisper-model").value;
+    const max_videos = parseInt(document.getElementById("setting-max-videos").value);
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/settings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ whisper_url, whisper_model, max_videos })
+        });
+        const json = await res.json();
+        if (json.status === "success") {
+            showToast("系统设置已成功保存！", "success");
+        } else {
+            showToast(`保存失败: ${json.detail || "未知错误"}`, "error");
+        }
+    } catch (err) {
+        showToast(`请求后端出错: ${err.message}`, "error");
+    }
+}
+
+// 一键更新全部博主 (提交后跳转至日志页方便监控)
+function handleSyncAllClick() {
+    showToast("已开始向队列提交全博主同步更新任务...", "info");
+    fetch(`${API_BASE}/api/crawl/run?blogger=all`, { method: "POST" })
+        .then(res => res.json())
+        .then(json => {
+            if (json.status === "success" && json.task_id) {
+                showToast("全博主同步任务已成功加入队列！正在转至任务日志面...", "success");
+                // 延迟切换标签以给用户时间看到 Toast
+                setTimeout(() => {
+                    switchTab("logs");
+                    loadSettingsPageTasks();
+                    selectConsoleTask(json.task_id);
+                }, 1000);
+            } else {
+                throw new Error(json.message || "任务创建失败");
+            }
+        })
+        .catch(err => {
+            showToast(`同步失败: ${err.message}`, "error");
+        });
+}
+
+// 清除已完成任务历史
+async function handleClearHistoryClick() {
+    try {
+        const res = await fetch(`${API_BASE}/api/crawl/clear`, { method: "POST" });
+        const json = await res.json();
+        if (json.status === "success") {
+            showToast("已清除所有已完成任务历史记录", "success");
+            loadSettingsPageTasks();
+        } else {
+            showToast("清除任务历史记录失败", "error");
+        }
+    } catch (e) {
+        showToast("连接后端出错", "error");
     }
 }

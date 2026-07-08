@@ -248,7 +248,7 @@ def map_comments(raw_comments, blogger_name=None):
     return top_level_comments
 
 
-def convert_notes(input_data, whisper_url, model="medium", blogger_name=None):
+def convert_notes(input_data, whisper_url, model="medium", blogger_name=None, existing_notes_map=None):
     """
     主转换逻辑：把原始字典结构转换为标准列表结构，回填视频转录文本
     """
@@ -275,7 +275,15 @@ def convert_notes(input_data, whisper_url, model="medium", blogger_name=None):
             if desc.startswith("http://") or desc.startswith("https://"):
                 is_link = True
                 
-        if is_link:
+        # 优先读取已存在的转录内容进行复用
+        existing_desc = None
+        if existing_notes_map and str(feed_id) in existing_notes_map:
+            existing_desc = existing_notes_map[str(feed_id)]
+
+        if existing_desc:
+            print(f"检测到视频 [{feed_id}] 已经有转录文本，复用该文本以避免重复调用 Whisper API。")
+            desc_val = existing_desc
+        elif is_link:
             print(f"检测到 desc 为链接，执行第一轮视频转录...")
             success, desc_val = transcribe_with_retry(desc, whisper_url, model=model)
             if not success:
@@ -380,12 +388,30 @@ def main():
         print(f"❌ 读取/解析输入 JSON 文件失败: {e}")
         sys.exit(1)
 
-    # 2. 执行转换
+    # 2. 读取已存在的目标输出以复用已有的转录结果
+    existing_notes_map = {}
+    if os.path.exists(args.output):
+        print(f"检测到已存在输出目标文件: {args.output}，正在读取已转录文本...")
+        try:
+            with open(args.output, "r", encoding="utf-8") as f:
+                existing_list = json.load(f)
+                if isinstance(existing_list, list):
+                    for item in existing_list:
+                        feed_id = item.get("_feed_id")
+                        desc = item.get("note", {}).get("desc")
+                        if feed_id and desc and not (isinstance(desc, str) and (desc.startswith("http://") or desc.startswith("https://"))):
+                            existing_notes_map[str(feed_id)] = desc
+            print(f"  成功载入 {len(existing_notes_map)} 条已完成转录的文本记录。")
+        except Exception as e:
+            print(f"  ⚠️ 读取已有输出文件失败: {e}")
+
+    # 3. 执行转换
     converted_list = convert_notes(
         input_data=input_data,
         whisper_url=args.whisper_url,
         model=args.model,
-        blogger_name=args.blogger
+        blogger_name=args.blogger,
+        existing_notes_map=existing_notes_map
     )
 
     # 3. 保存输出

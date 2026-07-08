@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # 引入本级数据库及导入模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from database import get_db_connection, init_db
@@ -439,6 +441,307 @@ def get_blogger_files_status(name: str):
 
 
 # ----------------------------------------------------------
+# 抖音数据爬取及流水线同步 API (队列管理版)
+# ----------------------------------------------------------
+import uuid
+import queue
+import threading
+import subprocess
+import json
+from datetime import datetime
+
+# FIFO 任务排队队列
+task_queue = queue.Queue()
+
+# 全局内存任务字典 (task_id -> task_info)
+active_crawl_tasks = {}
+tasks_lock = threading.Lock()
+
+# 默认设置参数
+DEFAULT_SETTINGS = {
+    "whisper_url": "http://192.168.110.30:7211/transcribe",
+    "whisper_model": "medium",
+    "max_videos": 5
+}
+
+def get_settings_path():
+    return os.path.join(ROOT_DIR, "data", "config.json")
+
+def load_settings():
+    path = get_settings_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {**DEFAULT_SETTINGS, **data}
+        except Exception as e:
+            print(f"[FastAPI] Failed to read config.json: {e}")
+    return DEFAULT_SETTINGS.copy()
+
+def save_settings(data):
+    path = get_settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        return True
+    except Exception as e:
+        print(f"[FastAPI] Failed to save config.json: {e}")
+        return False
+
+# 后台单线程串行 Worker
+def queue_worker():
+    while True:
+        try:
+            task_id = task_queue.get()
+            if task_id is None:
+                break
+                
+            with tasks_lock:
+                if task_id not in active_crawl_tasks:
+                    task_queue.task_done()
+                    continue
+                task_info = active_crawl_tasks[task_id]
+                task_info["status"] = "running"
+                task_info["started_at"] = datetime.now().isoformat()
+            
+            blogger = task_info["blogger"]
+            log_path = task_info["log_path"]
+            
+            # 读取配置参数并支持任务级别覆盖
+            settings = load_settings()
+            max_videos = task_info.get("max_videos") or settings.get("max_videos", 5)
+            whisper_url = settings.get("whisper_url", "http://192.168.110.30:7211/transcribe")
+            whisper_model = settings.get("whisper_model", "medium")
+            
+            python_exe = os.path.join(ROOT_DIR, ".venv", "Scripts", "python.exe")
+            if not os.path.exists(python_exe):
+                python_exe = sys.executable
+                
+            cmd = [
+                python_exe,
+                os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben", "pipeline.py"),
+                "--max-videos", str(max_videos),
+                "--whisper-url", whisper_url
+            ]
+            if blogger != "all":
+                cmd.extend(["--blogger", blogger])
+                
+            # 强制子进程以 UTF-8 编码模式运行以防 Windows GBK 终端乱码
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
+                
+            try:
+                with open(log_path, "w", encoding="utf-8") as log_file:
+                    log_file.write(f"=== 流水线任务 {task_id} 启动 (博主: '{blogger}') ===\n")
+                    log_file.write(f"配置参数: 抓取上限={max_videos}, Whisper模型={whisper_model}, Whisper接口={whisper_url}\n\n")
+                    
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        env=env,
+                        cwd=ROOT_DIR
+                    )
+                    process.wait()
+                    
+                with tasks_lock:
+                    if process.returncode == 0:
+                        active_crawl_tasks[task_id]["status"] = "success"
+                    else:
+                        active_crawl_tasks[task_id]["status"] = "failed"
+                    active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+            except Exception as err:
+                with tasks_lock:
+                    active_crawl_tasks[task_id]["status"] = "failed"
+                    active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                try:
+                    with open(log_path, "a", encoding="utf-8") as log_file:
+                        log_file.write(f"\n[线程错误] 运行 pipeline 异常: {err}\n")
+                except:
+                    pass
+            
+            task_queue.task_done()
+        except Exception as e:
+            print(f"[Queue Worker] Exception: {e}")
+
+# 开启后台队列消费线程
+worker_thread = threading.Thread(target=queue_worker, daemon=True)
+worker_thread.start()
+
+
+@app.get("/api/settings")
+def get_settings_endpoint():
+    return load_settings()
+
+class SettingsUpdate(BaseModel):
+    whisper_url: str
+    whisper_model: str
+    max_videos: int
+
+@app.post("/api/settings")
+def update_settings_endpoint(settings: SettingsUpdate):
+    data = {
+        "whisper_url": settings.whisper_url,
+        "whisper_model": settings.whisper_model,
+        "max_videos": settings.max_videos
+    }
+    if save_settings(data):
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to save settings")
+
+@app.post("/api/crawl/run")
+def run_crawler_pipeline(blogger: str = "all", max_videos: int = None):
+    task_id = str(uuid.uuid4())
+    log_dir = os.path.join(ROOT_DIR, "data", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f"{task_id}.log")
+    
+    with tasks_lock:
+        active_crawl_tasks[task_id] = {
+            "id": task_id,
+            "blogger": blogger,
+            "status": "queued",
+            "log_path": log_path,
+            "max_videos": max_videos,
+            "created_at": datetime.now().isoformat(),
+            "started_at": None,
+            "finished_at": None
+        }
+        
+    task_queue.put(task_id)
+    return {"status": "success", "task_id": task_id}
+
+@app.get("/api/crawl/tasks")
+def get_all_crawl_tasks():
+    with tasks_lock:
+        tasks_list = list(active_crawl_tasks.values())
+    tasks_list.sort(key=lambda x: x["created_at"], reverse=True)
+    
+    clean_list = []
+    for t in tasks_list:
+        clean_list.append({
+            "id": t["id"],
+            "blogger": t["blogger"],
+            "status": t["status"],
+            "created_at": t["created_at"],
+            "started_at": t["started_at"],
+            "finished_at": t["finished_at"]
+        })
+    return clean_list
+
+@app.post("/api/crawl/clear")
+def clear_finished_tasks():
+    global active_crawl_tasks
+    with tasks_lock:
+        retained_tasks = {}
+        for tid, t in active_crawl_tasks.items():
+            if t["status"] in ["queued", "running"]:
+                retained_tasks[tid] = t
+        active_crawl_tasks = retained_tasks
+    return {"status": "success"}
+
+def analyze_task_step(logs):
+    if not logs:
+        return "排队中"
+    
+    # 检查是否有错误/失败
+    if "错误：" in logs or "运行发生异常错误:" in logs or "❌ 阶段失败" in logs or "Failed to read logs" in logs:
+        for line in reversed(logs.split("\n")):
+            if "错误：" in line or "运行发生异常错误:" in line or "❌ 阶段失败" in line:
+                return f"同步出错: {line.strip()}"
+        return "同步异常终止"
+        
+    if "🎉 同步流水线全部成功！" in logs or "流水线同步运行汇总: 1/1 成功" in logs:
+        return "同步完成"
+        
+    if "[验证码拦截]" in logs or "手动滑块解锁" in logs:
+        return "遇到验证码拦截 (等待手动滑块解锁)"
+        
+    # 从流水线反向查找当前运行的阶段
+    current_phase = ""
+    for line in reversed(logs.split("\n")):
+        if ">>> 开始执行阶段:" in line:
+            current_phase = line.split(">>> 开始执行阶段:")[-1].strip()
+            break
+            
+    # 从爬虫日志反向查找细分动作
+    for line in reversed(logs.split("\n")):
+        if "模拟键盘按下" in line or "ArrowDown" in line:
+            return f"{current_phase} - {line.strip()}"
+        if "当前处理视频 ID" in line:
+            return f"{current_phase} - {line.strip()}"
+        if "正在访问目标主页" in line:
+            return f"{current_phase} - 正在打开抖音主页"
+            
+    if current_phase:
+        return current_phase
+        
+    return "正在执行"
+
+@app.get("/api/crawl/status/{task_id}")
+def get_crawler_status(task_id: str):
+    with tasks_lock:
+        if task_id not in active_crawl_tasks:
+            return {"status": "error", "message": "Task not found"}
+        task_info = active_crawl_tasks[task_id]
+        
+    log_path = task_info["log_path"]
+    logs = ""
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                logs = "".join(lines[-150:])
+        except UnicodeDecodeError:
+            try:
+                # 尝试用 GBK（带 errors="replace"）读取以解决 Windows 编码兼容性问题
+                with open(log_path, "r", encoding="gbk", errors="replace") as f:
+                    lines = f.readlines()
+                    logs = "".join(lines[-150:])
+            except Exception as e:
+                logs = f"Failed to read logs (GBK): {e}"
+        except Exception as e:
+            logs = f"Failed to read logs: {e}"
+            
+    # 分析日志得出当前正在运行或卡住的步骤
+    current_step = analyze_task_step(logs)
+    
+    # 扫描与当前任务运行时间匹配的截图文件
+    screenshots = []
+    screenshots_dir = os.path.join(ROOT_DIR, "screenshots")
+    if os.path.exists(screenshots_dir) and task_info.get("started_at"):
+        try:
+            from datetime import datetime, timedelta
+            started_dt = datetime.fromisoformat(task_info["started_at"])
+            for filename in os.listdir(screenshots_dir):
+                if filename.lower().endswith(".png"):
+                    filepath = os.path.join(screenshots_dir, filename)
+                    mtime = os.path.getmtime(filepath)
+                    mtime_dt = datetime.fromtimestamp(mtime)
+                    # 允许 5 秒的系统启动误差
+                    if mtime_dt >= started_dt - timedelta(seconds=5):
+                        screenshots.append(f"/screenshots/{filename}")
+        except Exception as err:
+            print(f"Error scanning screenshots: {err}")
+            
+    return {
+        "status": task_info["status"],
+        "blogger": task_info["blogger"],
+        "logs": logs,
+        "current_step": current_step,
+        "screenshots": screenshots
+    }
+
+
+
+
+# ----------------------------------------------------------
 # 前端静态文件托管
 # ----------------------------------------------------------
 # 挂载 output 目录用于访问物理蒸馏文件
@@ -446,6 +749,12 @@ OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.pat
 if os.path.exists(OUTPUT_DIR):
     app.mount("/output", StaticFiles(directory=OUTPUT_DIR), name="output")
     print(f"[FastAPI] Mounted output directory: {OUTPUT_DIR}")
+
+# 挂载 screenshots 目录用于前端排查截图访问
+SCREENSHOTS_DIR = os.path.join(ROOT_DIR, "screenshots")
+os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory=SCREENSHOTS_DIR), name="screenshots")
+print(f"[FastAPI] Mounted screenshots directory: {SCREENSHOTS_DIR}")
 
 # 获取前端资源的路径
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")

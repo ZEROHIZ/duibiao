@@ -30,9 +30,20 @@ test_output/
 .env
 .env.*
 tikhub_config.json
-
+API_DOCKER_GUIDE.md
+DESIGN.md
+SECURITY.md
+DISCLAIMER.md
+README2.md
+PRODUCT.md
 # 工作流临时文件
 _参考资料/
 GIT推送指南.md
 GitHub仓库描述_350字符.md
 README.docx
+
+# 验证码/异常截图目录
+screenshots/
+
+# 显式保留的博主配置模板
+!saved_links.json

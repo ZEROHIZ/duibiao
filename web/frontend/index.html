@@ -51,6 +51,8 @@
                 <button class="nav-tab" data-tab="bloggers">对标灵感</button>
                 <button class="nav-tab" data-tab="news">时效快讯</button>
                 <button class="nav-tab" data-tab="trending">全网热点</button>
+                <button class="nav-tab" data-tab="logs">任务日志</button>
+                <button class="nav-tab" data-tab="settings">系统设置</button>
             </nav>
             
             <!-- Theme & Status -->
@@ -237,7 +239,14 @@
                 <div id="blogger-detail-view" class="subview">
                     <div class="detail-nav-back">
                         <button id="btn-back-bloggers" class="btn-text">← 返回博主列表</button>
-                        <button id="btn-open-ai-report" class="btn-text" style="opacity: 0.45; font-size: 0.8rem; letter-spacing: 0.08em;">↗ AI 蒸馏报告</button>
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                <label for="detail-max-videos" style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-secondary);">更新数量:</label>
+                                <input type="number" id="detail-max-videos" value="5" min="1" max="50" style="width: 55px; height: 1.8rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.35rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-primary); text-align: center;">
+                            </div>
+                            <button id="btn-sync-crawler" class="btn-text" style="font-size: 0.8rem; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--ink-primary); padding: 0.35rem 0.75rem;">↻ 同步更新数据</button>
+                            <button id="btn-open-ai-report" class="btn-text" style="opacity: 0.45; font-size: 0.8rem; letter-spacing: 0.08em; border: 1px solid var(--ink-secondary); padding: 0.35rem 0.75rem;">↗ AI 蒸馏报告</button>
+                        </div>
                     </div>
                     
                     <div class="blogger-detail-profile" id="detail-profile-header">
@@ -388,6 +397,98 @@
                     </div>
                 </div>
             </section>
+            
+            <!-- PAGE 6: SYSTEM SETTINGS -->
+            <section id="page-settings" class="page-section">
+                <span class="section-label">CONFIGURATION</span>
+                <h2 class="page-header-title">系统参数配置</h2>
+                <p class="lead-text">在此调整对标账号同步流水线全局参数。保存后，运行同步任务时将自动读取该配置参数。</p>
+                
+                <form id="system-settings-form" class="editorial-form" style="max-width: 600px;">
+                    <div class="form-group">
+                        <label for="setting-whisper-url">Whisper API 接口地址</label>
+                        <input type="url" id="setting-whisper-url" placeholder="http://192.168.110.30:7211/transcribe" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="setting-whisper-model">Whisper 转录模型级别</label>
+                        <select id="setting-whisper-model" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                            <option value="tiny" style="background: var(--bg-secondary);">tiny (最快/极低功耗)</option>
+                            <option value="base" style="background: var(--bg-secondary);">base</option>
+                            <option value="small" style="background: var(--bg-secondary);">small</option>
+                            <option value="medium" style="background: var(--bg-secondary);">medium (推荐/精度高)</option>
+                            <option value="large-v3" style="background: var(--bg-secondary);">large-v3 (极慢/显存要求高)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="setting-max-videos">单次爬取上限数 (视频/笔记条数)</label>
+                        <input type="number" id="setting-max-videos" min="1" max="50" placeholder="5" required>
+                    </div>
+                    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                        <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.5rem;">保存系统设置</button>
+                        <button type="button" id="btn-sync-all" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.35rem 0.85rem;">一键更新全部博主</button>
+                    </div>
+                </form>
+            </section>
+            
+            <!-- PAGE 7: TASK LOGS & CONSOLE -->
+            <section id="page-logs" class="page-section">
+                <div class="settings-grid">
+                    <!-- Left Column: Task Queue List -->
+                    <div class="settings-col-left">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem;">
+                            <div>
+                                <span class="section-label">TASK QUEUE</span>
+                                <h2 class="page-header-title" style="font-size: 2rem; margin-bottom: 0.5rem;">同步任务列表</h2>
+                                <p class="lead-text" style="font-size: 0.9rem; margin-bottom: 1rem;">查看历史与当前的同步排队任务状态。</p>
+                            </div>
+                            <button id="btn-clear-history" class="btn-text" style="border: 1px solid var(--ink-secondary); padding: 0.2rem 0.5rem; font-size: 0.72rem;">清除已完成历史</button>
+                        </div>
+                        
+                        <!-- Task Queue Table List -->
+                        <div class="table-container" style="max-height: 480px; overflow-y: auto; border: 1px solid var(--ink-primary);">
+                            <table class="magazine-table" style="font-size: 0.82rem; margin: 0;">
+                                <thead>
+                                    <tr>
+                                        <th>目标博主</th>
+                                        <th>状态</th>
+                                        <th>创建时间</th>
+                                        <th style="text-align: right;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="queue-tasks-body">
+                                    <tr><td colspan="4" style="text-align: center; color: var(--ink-secondary);">暂无任务记录</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Live Console & Screenshots -->
+                    <div class="settings-col-right">
+                        <span class="section-label">LIVE CONSOLE</span>
+                        <h3 class="detail-section-title" id="console-task-title" style="margin-bottom: 0.75rem; font-size: 1.25rem;">实时控制台日志 (未选定任务)</h3>
+                        
+                        <!-- Step tracker indicator -->
+                        <div id="console-step-box" style="display: none; background-color: var(--bg-secondary); border-left: 3px solid var(--accent-primary); padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;">
+                            <strong>当前状态/卡住位置：</strong><span id="console-step-text" style="color: var(--accent-primary); font-weight: bold;">等待中</span>
+                        </div>
+
+                        <!-- Logs Console -->
+                        <div class="log-console-container" style="margin-bottom: 1.5rem;">
+                            <pre id="settings-console-content" class="log-console">等待选择任务并回显日志输出...</pre>
+                        </div>
+
+                        <!-- Screenshots Investigation -->
+                        <div id="console-screenshots-box" style="display: none;">
+                            <span class="section-label">SCREENSHOTS</span>
+                            <h4 class="aside-title" style="margin-bottom: 0.75rem; font-size: 0.95rem;">异常/验证码截图排查</h4>
+                            <p class="lead-text" style="font-size: 0.82rem; margin-bottom: 0.75rem;">如果在网页爬取时遇到滑动验证码或操作报错，下方将显示对应的浏览器截图。请在服务器/浏览器窗口中配合操作，或根据截图更新规则。</p>
+                            <div id="console-screenshots-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                <!-- Dynamic screenshots img elements -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
         </main>
 
@@ -397,6 +498,9 @@
         </footer>
         
     </div>
+
+    <!-- Toast Notification Container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <!-- UI Logic Script -->
     <script src="app.js"></script>

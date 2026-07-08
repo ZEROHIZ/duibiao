@@ -23,3 +23,14 @@
 - **问题描述**：在“对标灵感”页面点击“最新作品流总览”时，虽然作品时间线显示了出来，但是博主监控管理列表仍然展示在下方，两者同时可见，导致排版混乱。
 - **问题根源**：`blogger-list-view` 容器只添加了 `active-subview` 类，未添加 `subview` 类。在切换页签的 JS 逻辑中，切换子视图是用 `document.querySelectorAll(".subview").forEach(...)` 来移除/添加 `active-subview` 类的。由于 `blogger-list-view` 缺少 `subview` 类，未能被 `querySelectorAll` 选中，导致其高亮状态无法被移除。
 - **解决方案**：在 `index.html` 的 `blogger-list-view` div 容器上增加 `subview` 类名，即 `class="subview active-subview"`。
+
+## 5. 重复爬取导致 Whisper API 重复转录慢
+- **发现时间**：2026-07-07
+- **问题描述**：再次运行爬虫脚本时，已经爬取过的视频仍然被重新完整处理并尝试发起视频转录，导致运行开销很大且极慢。
+- **问题根源**：
+  1. 爬虫脚本没有加载已有的本地数据文件，即使视频 ID 已经存在，仍然会慢速执行 Hover 和评论点击操作并写入已有的 URL 链接到 `douyin_data.json`。
+  2. 格式转换脚本只检测输入的 `desc` 字段是否为链接，但每次爬虫都会写入 URL 链接，导致转换脚本重新下载视频并重复发起 Whisper 请求。
+- **解决方案**：
+  1. 在 `douyin_crawler.py` 中引入 `existing_vids` 过滤。对于已存在的视频，跳过分享 Hover 和评论 API 拦截检测，直接用 `page.url` 快速校验 `ArrowDown` 翻页。
+  2. 在 `convert_douyin_notes.py` 中，读取已存在的处理文件，如 `desc` 已经是解析出的文本，则复用该文本以彻底跳过语音转录请求。
+

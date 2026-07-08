@@ -208,7 +208,10 @@ def import_blogger_file(analysis_path):
         return
 
     # 1. 寻找详情文件，以提取最完整的正文 desc 和热门评论
-    details_path = os.path.join(DATA_DIR, f"{blogger_name}_notes_details.json")
+    details_path = os.path.join(DATA_DIR, "processed", f"{blogger_name}_notes_details.json")
+    if not os.path.exists(details_path):
+        details_path = os.path.join(DATA_DIR, f"{blogger_name}_notes_details.json")
+        
     details_map = {}
     if os.path.exists(details_path):
         print(f"[Importer] Found details file: {details_path}, extracting full texts and comments.")
@@ -390,8 +393,8 @@ def import_blogger_file(analysis_path):
     print(f"[Importer] Successfully imported blogger data for '{blogger_name}' into SQLite.")
 
 
-def run_full_import():
-    """扫描 data/ 目录下一键导入所有博主数据"""
+def run_full_import(blogger_name=None):
+    """扫描 data/ 目录导入博主数据，若指定 blogger_name 则仅导入该博主"""
     # 确保数据库表已建好
     init_db()
 
@@ -404,12 +407,24 @@ def run_full_import():
     imported_any = False
     for filename in os.listdir(DATA_DIR):
         if filename.endswith("_analysis.json"):
+            cur_blogger = filename[:-14] # 去掉 "_analysis.json"
+            if blogger_name and cur_blogger != blogger_name:
+                continue
+                
             filepath = os.path.join(DATA_DIR, filename)
             import_blogger_file(filepath)
             imported_any = True
 
     if not imported_any:
-        print("[Importer] No blogger analysis JSON files found in data/ to import.")
+        if blogger_name:
+            print(f"[Importer] No blogger analysis JSON file found in data/ for '{blogger_name}'.")
+        else:
+            print("[Importer] No blogger analysis JSON files found in data/ to import.")
 
 if __name__ == "__main__":
-    run_full_import()
+    import argparse
+    parser = argparse.ArgumentParser(description="数据导入工具")
+    parser.add_argument("--blogger", default=None, help="仅导入指定的博主名字，留空则导入 data/ 目录下的全部博主")
+    args = parser.parse_args()
+    
+    run_full_import(args.blogger)
