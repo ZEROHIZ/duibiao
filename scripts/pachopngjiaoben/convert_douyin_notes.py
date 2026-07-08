@@ -330,38 +330,41 @@ def convert_notes(input_data, whisper_url, model="medium", blogger_name=None, ex
         output_list.append(mapped_item)
         
     # ==================== 转录失败项循环重试逻辑 ====================
-    max_retry_loops = 5
-    for loop in range(1, max_retry_loops + 1):
-        # 统计当前仍然是 http 链接的未完成项
-        failed_items = []
-        for item in output_list:
-            d = item["note"]["desc"]
-            if isinstance(d, str) and (d.startswith("http://") or d.startswith("https://")):
-                failed_items.append(item)
+    if not skip_transcribe:
+        max_retry_loops = 5
+        for loop in range(1, max_retry_loops + 1):
+            # 统计当前仍然是 http 链接的未完成项
+            failed_items = []
+            for item in output_list:
+                d = item["note"]["desc"]
+                if isinstance(d, str) and (d.startswith("http://") or d.startswith("https://")):
+                    failed_items.append(item)
 
-        if not failed_items:
-            print("\n🎉 所有视频已成功转录完成！")
-            break
+            if not failed_items:
+                print("\n🎉 所有视频已成功转录完成！")
+                break
 
-        print(f"\n==================== 开启第 {loop}/{max_retry_loops} 轮全部失败项重试 (共 {len(failed_items)} 个) ====================")
-        
-        for idx, item in enumerate(failed_items, 1):
-            url = item["note"]["desc"]
-            title = item["note"]["title"]
-            print(f"\n-> 重试项 ({idx}/{len(failed_items)}): {title}")
-            success, desc_val = transcribe_with_retry(url, whisper_url, model=model)
-            if success:
-                item["note"]["desc"] = desc_val
-            else:
-                print(f"⚠️ 第 {loop} 轮重试该项依然失败。")
-
-    # 最终报告失败项目
-    final_failed = [item for item in output_list if isinstance(item["note"]["desc"], str) and (item["note"]["desc"].startswith("http://") or item["note"]["desc"].startswith("https://"))]
-    if final_failed:
-        print(f"\n⚠️ 警告：经过 {max_retry_loops} 轮重试后，仍有 {len(final_failed)} 个视频转录失败，已保留原始视频链接。")
-        for item in final_failed:
-            print(f"   - 标题: {item['note']['title']} | 链接: {item['note']['desc']}")
+            print(f"\n==================== 开启第 {loop}/{max_retry_loops} 轮全部失败项重试 (共 {len(failed_items)} 个) ====================")
             
+            for idx, item in enumerate(failed_items, 1):
+                url = item["note"]["desc"]
+                title = item["note"]["title"]
+                print(f"\n-> 重试项 ({idx}/{len(failed_items)}): {title}")
+                success, desc_val = transcribe_with_retry(url, whisper_url, model=model)
+                if success:
+                    item["note"]["desc"] = desc_val
+                else:
+                    print(f"⚠️ 第 {loop} 轮重试该项依然失败。")
+
+        # 最终报告失败项目
+        final_failed = [item for item in output_list if isinstance(item["note"]["desc"], str) and (item["note"]["desc"].startswith("http://") or item["note"]["desc"].startswith("https://"))]
+        if final_failed:
+            print(f"\n⚠️ 警告：经过 {max_retry_loops} 轮重试后，仍有 {len(final_failed)} 个视频转录失败，已保留原始视频链接。")
+            for item in final_failed:
+                print(f"   - 标题: {item['note']['title']} | 链接: {item['note']['desc']}")
+    else:
+        print("\n已设置 skip-transcribe，跳过第一阶段格式转换中的实时转录与重试逻辑。")
+        
     return output_list
 
 

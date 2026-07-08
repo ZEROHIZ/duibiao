@@ -49,6 +49,7 @@ def run_step(cmd, description):
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
 
     # 开启子进程，并把输出重定向到主进程的标准输出
     process = subprocess.Popen(
@@ -115,7 +116,7 @@ def get_blogger_url_from_db(blogger_name):
         print(f"查询博主 [{blogger_name}] 主页链接失败: {e}")
     return None
 
-def process_single_blogger(blogger, max_videos, whisper_url, url=None):
+def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless="true"):
     """串联执行单个博主的全部处理流程"""
     print(f"\n##################################################")
     print(f" 正在启动博主【{blogger}】的流水线任务 ")
@@ -133,6 +134,8 @@ def process_single_blogger(blogger, max_videos, whisper_url, url=None):
     ]
     if url:
         crawler_cmd.extend(["--url", url])
+    if headless:
+        crawler_cmd.extend(["--headless", headless])
         
     if not run_step(crawler_cmd, f"1. 抖音网页数据爬取 ({blogger})"):
         return False
@@ -168,6 +171,7 @@ def main():
     config_path = os.path.join(ROOT_DIR, "data", "config.json")
     default_max_videos = 5
     default_whisper_url = "http://192.168.110.30:7211/transcribe"
+    default_headless = "true"
     
     if os.path.exists(config_path):
         try:
@@ -175,6 +179,7 @@ def main():
                 config_data = json.load(f)
                 default_max_videos = config_data.get("max_videos", 5)
                 default_whisper_url = config_data.get("whisper_url", "http://192.168.110.30:7211/transcribe")
+                default_headless = "true" if config_data.get("headless", True) else "false"
         except Exception as e:
             pass
 
@@ -184,6 +189,7 @@ def main():
     parser.add_argument("--whisper-url", default=default_whisper_url, help="Whisper API地址")
     parser.add_argument("--url", default=None, help="手动指定该博主的个人主页监控链接 (仅当指定单个博主时有效)")
     parser.add_argument("--all", action="store_true", help="强制更新所有博主")
+    parser.add_argument("--headless", default=default_headless, help="是否无头模式 ('true' 或 'false')")
     args = parser.parse_args()
 
     # 决定运行的博主列表与对应的 URL
@@ -234,14 +240,14 @@ def main():
             sys.exit(1)
 
     print(f"流水线准备就绪。计划更新以下博主: {', '.join(b['name'] for b in bloggers_to_run)}")
-    print(f"每个博主上限抓取 {args.max_videos} 条视频，Whisper API: {args.whisper_url}")
+    print(f"每个博主上限抓取 {args.max_videos} 条视频，无头模式={args.headless}，Whisper API: {args.whisper_url}")
 
     success_count = 0
     for b in bloggers_to_run:
         blogger_name = b["name"]
         blogger_url = b["url"]
         try:
-            if process_single_blogger(blogger_name, args.max_videos, args.whisper_url, url=blogger_url):
+            if process_single_blogger(blogger_name, args.max_videos, args.whisper_url, url=blogger_url, headless=args.headless):
                 success_count += 1
         except Exception as e:
             print(f"博主【{blogger_name}】在流水线运行期间发生未捕获异常: {e}")

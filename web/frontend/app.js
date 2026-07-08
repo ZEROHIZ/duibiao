@@ -157,6 +157,33 @@ function setupEventListeners() {
     if (btnClearHistory) {
         btnClearHistory.addEventListener("click", handleClearHistoryClick);
     }
+    
+    const btnTranscribeNow = document.getElementById("btn-transcribe-now");
+    if (btnTranscribeNow) {
+        btnTranscribeNow.addEventListener("click", handleTranscribeNowClick);
+    }
+    
+    // 绑定任务日志类型的分页选项卡点击切换事件
+    const btnTabSync = document.getElementById("task-tab-sync");
+    const btnTabTranscribe = document.getElementById("task-tab-transcribe");
+    if (btnTabSync && btnTabTranscribe) {
+        btnTabSync.addEventListener("click", () => {
+            currentTaskTab = "sync";
+            btnTabSync.style.color = "var(--accent-primary)";
+            btnTabSync.style.borderBottom = "2px solid var(--accent-primary)";
+            btnTabTranscribe.style.color = "var(--ink-secondary)";
+            btnTabTranscribe.style.borderBottom = "none";
+            loadSettingsPageTasks();
+        });
+        btnTabTranscribe.addEventListener("click", () => {
+            currentTaskTab = "transcribe";
+            btnTabTranscribe.style.color = "var(--accent-primary)";
+            btnTabTranscribe.style.borderBottom = "2px solid var(--accent-primary)";
+            btnTabSync.style.color = "var(--ink-secondary)";
+            btnTabSync.style.borderBottom = "none";
+            loadSettingsPageTasks();
+        });
+    }
 
     // Toast 弹窗通知辅助函数
     function showToast(message, type = "info") {
@@ -1648,6 +1675,9 @@ async function loadSettingsPageData() {
         document.getElementById("setting-whisper-url").value = settings.whisper_url || "";
         document.getElementById("setting-whisper-model").value = settings.whisper_model || "medium";
         document.getElementById("setting-max-videos").value = settings.max_videos || 5;
+        document.getElementById("setting-transcribe-interval").value = settings.transcribe_interval || 5;
+        document.getElementById("setting-headless").checked = settings.headless !== false;
+        document.getElementById("setting-enable-transcribe").checked = settings.enable_transcribe !== false;
     } catch (e) {
         console.error("加载系统设置失败:", e);
         showToast("加载系统设置参数失败", "error");
@@ -1659,13 +1689,21 @@ async function loadLogsPageData() {
     await loadSettingsPageTasks();
 }
 
+let currentTaskTab = "sync";
+
 async function loadSettingsPageTasks() {
     try {
-        const res = await fetch(`${API_BASE}/api/crawl/tasks`);
+        const url = currentTaskTab === "sync" ? `${API_BASE}/api/crawl/tasks` : `${API_BASE}/api/transcribe/tasks`;
+        const res = await fetch(url);
         const tasks = await res.json();
         
         const tbody = document.getElementById("queue-tasks-body");
         if (!tbody) return;
+        
+        const headerEl = document.getElementById("queue-task-header-target");
+        if (headerEl) {
+            headerEl.textContent = currentTaskTab === "sync" ? "目标博主" : "转录目标/视频";
+        }
         
         if (tasks.length === 0) {
             tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--ink-secondary);">暂无任务记录</td></tr>`;
@@ -1683,14 +1721,21 @@ async function loadSettingsPageTasks() {
             else if (t.status === "failed") { statusText = "失败"; badgeClass = "failed"; }
             
             const dateStr = t.created_at ? new Date(t.created_at).toLocaleString() : "—";
-            const bloggerName = t.blogger === "all" ? "全部博主" : t.blogger;
+            
+            let displayBlogger = "";
+            if (currentTaskTab === "sync") {
+                displayBlogger = `<strong>${t.blogger === "all" ? "全部博主" : t.blogger}</strong>`;
+            } else {
+                const cleanTitle = t.title ? (t.title.length > 25 ? t.title.substring(0, 25) + "..." : t.title) : "无标题";
+                displayBlogger = `<div style="font-size:0.75rem; color:var(--ink-secondary); font-weight:normal; line-height:1.2;">${t.blogger}</div><strong style="line-height:1.3; display:block; margin-top:0.15rem;">${cleanTitle}</strong>`;
+            }
             
             const isSelected = activeConsoleTaskId === t.id;
             const btnStyle = isSelected ? "border-color: var(--accent-primary); color: var(--accent-primary);" : "";
             
             return `
                 <tr>
-                    <td><strong>${bloggerName}</strong></td>
+                    <td>${displayBlogger}</td>
                     <td><span class="status-badge ${badgeClass}">${statusText}</span></td>
                     <td style="font-family: var(--font-mono); font-size: 0.72rem;">${dateStr}</td>
                     <td style="text-align: right;">
@@ -1772,10 +1817,24 @@ function pollConsoleLog(taskId) {
                 // 更新当前运行步骤/卡住位置看板
                 const stepBox = document.getElementById("console-step-box");
                 const stepText = document.getElementById("console-step-text");
+                const screenshotTitle = document.getElementById("console-screenshots-title");
+                const screenshotDesc = document.getElementById("console-screenshots-desc");
+                
                 if (stepBox && stepText) {
                     if (json.current_step) {
                         stepText.textContent = json.current_step;
                         stepBox.style.display = "block";
+                        
+                        // 动态改变截图提示，指导用户进行登录
+                        if (json.current_step.includes("扫码登录") && screenshotTitle && screenshotDesc) {
+                            screenshotTitle.textContent = "⚠️ 请使用抖音 APP 扫码登录";
+                            screenshotTitle.style.color = "var(--accent-primary)";
+                            screenshotDesc.textContent = "系统检测到未登录状态。请使用手机抖音 APP 扫描下方二维码完成登录。登录完成后系统将自动刷新页面验证并继续抓取。";
+                        } else if (screenshotTitle && screenshotDesc) {
+                            screenshotTitle.textContent = "异常/验证码截图排查";
+                            screenshotTitle.style.color = "";
+                            screenshotDesc.textContent = "如果在网页爬取时遇到滑动验证码或操作报错，下方将显示对应的浏览器截图。请在服务器/浏览器窗口中配合操作，或根据截图更新规则。";
+                        }
                     } else {
                         stepBox.style.display = "none";
                     }
@@ -1804,12 +1863,13 @@ function pollConsoleLog(taskId) {
                     }
                 }
                 
-                // 如果任务已经结束，则停止轮询
+                // 如果任务已经结束，则停止轮询，并立即触发一次左侧任务列表刷新
                 if (json.status === "success" || json.status === "failed") {
                     if (consolePollInterval) {
                         clearInterval(consolePollInterval);
                         consolePollInterval = null;
                     }
+                    loadSettingsPageTasks();
                 }
             })
             .catch(err => {
@@ -1830,12 +1890,15 @@ async function handleSystemSettingsSubmit(e) {
     const whisper_url = document.getElementById("setting-whisper-url").value.trim();
     const whisper_model = document.getElementById("setting-whisper-model").value;
     const max_videos = parseInt(document.getElementById("setting-max-videos").value);
+    const transcribe_interval = parseInt(document.getElementById("setting-transcribe-interval").value);
+    const headless = document.getElementById("setting-headless").checked;
+    const enable_transcribe = document.getElementById("setting-enable-transcribe").checked;
     
     try {
         const res = await fetch(`${API_BASE}/api/settings`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ whisper_url, whisper_model, max_videos })
+            body: JSON.stringify({ whisper_url, whisper_model, max_videos, transcribe_interval, headless, enable_transcribe })
         });
         const json = await res.json();
         if (json.status === "success") {
@@ -1884,5 +1947,36 @@ async function handleClearHistoryClick() {
         }
     } catch (e) {
         showToast("连接后端出错", "error");
+    }
+}
+
+// 立即触发后台数据库扫描转录任务
+async function handleTranscribeNowClick() {
+    showToast("已向后台发送立即扫描数据库转录指令...", "info");
+    try {
+        const res = await fetch(`${API_BASE}/api/transcribe/trigger`, { method: "POST" });
+        const json = await res.json();
+        if (json.status === "success") {
+            showToast("后台已开始立即扫描并处理转录任务！正在转至转录日志监控...", "success");
+            
+            // 切换到日志监控页面的转录选项卡
+            setTimeout(() => {
+                switchTab("logs");
+                currentTaskTab = "transcribe";
+                const btnTabSync = document.getElementById("task-tab-sync");
+                const btnTabTranscribe = document.getElementById("task-tab-transcribe");
+                if (btnTabSync && btnTabTranscribe) {
+                    btnTabTranscribe.style.color = "var(--accent-primary)";
+                    btnTabTranscribe.style.borderBottom = "2px solid var(--accent-primary)";
+                    btnTabSync.style.color = "var(--ink-secondary)";
+                    btnTabSync.style.borderBottom = "none";
+                }
+                loadSettingsPageTasks();
+            }, 1000);
+        } else {
+            showToast(`唤醒转录失败: ${json.message}`, "error");
+        }
+    } catch (e) {
+        showToast(`请求后端出错: ${e.message}`, "error");
     }
 }

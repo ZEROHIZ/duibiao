@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+.dockerignore
+
+# Virtual Environment
+.venv
+venv
+ENV
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Local runtime data & output (these will be mapped via volumes in docker-compose)
+data/
+output/
+screenshots/
+测试文本/
+
+# IDE/Editor config & plugin
+.vscode/
+.idea/
+.agent
+soulforge_plugin/
+kaifa/
+
+# Log files
+*.log

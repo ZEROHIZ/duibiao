@@ -254,10 +254,13 @@ def save_to_json(new_items, filename="douyin_data.json"):
 # 4. 后台并发监测与交互辅助函数
 # ------------------------------------------------------------------
 
+ENABLE_POPUP_MONITOR = False
+
 async def close_login_popup_monitor(page):
     """
     后台轻量级协程：实时监控 `douyin-login-new-id` 并点击其下的 SVG 进行关闭。
     """
+    global ENABLE_POPUP_MONITOR
     popup_selectors = [
         '#douyin-login-new-id',
         '.douyin-login-new-id',
@@ -265,6 +268,9 @@ async def close_login_popup_monitor(page):
         '[class*="douyin-login-new-id"]'
     ]
     while True:
+        if not ENABLE_POPUP_MONITOR:
+            await asyncio.sleep(1.0)
+            continue
         try:
             for selector in popup_selectors:
                 popup = page.locator(selector).first
@@ -383,7 +389,158 @@ async def hover_share_button(page):
 # 5. 核心自动化操纵逻辑
 # ------------------------------------------------------------------
 
-async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.json"):
+async def ensure_login(page, context):
+    print("[登录检测] 正在检查当前页面登录状态...")
+    
+    # 检查是否已经显示了登录弹窗
+    is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+    
+    # 检查是否有显示“登录”字样的 semi-button-content
+    login_btn_visible = False
+    login_btns = page.locator('.semi-button-content')
+    count = await login_btns.count()
+    for i in range(count):
+        btn = login_btns.nth(i)
+        if await btn.is_visible():
+            text = await btn.text_content()
+            if "登录" in text:
+                login_btn_visible = True
+                break
+                
+    if not is_popup_visible and not login_btn_visible:
+        print("[登录检测] 未检测到登录弹窗与登录按钮，判定为已登录状态，继续执行...")
+        return True
+        
+    # 如果没显示弹窗但是有登录按钮，点击触发它
+    if not is_popup_visible and login_btn_visible:
+        print("[登录检测] 检测到页面处于未登录状态（存在登录按钮），尝试触发登录弹窗...")
+        try:
+            # 找到那个有“登录”文字的按钮并点击
+            for i in range(count):
+                btn = login_btns.nth(i)
+                if await btn.is_visible():
+                    text = await btn.text_content()
+                    if "登录" in text:
+                        await btn.click()
+                        await asyncio.sleep(3.0)
+                        break
+        except Exception as e:
+            print(f"[登录检测] 点击登录按钮出错: {e}")
+            
+    # 再次检测弹窗是否成功弹出
+    is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+    if is_popup_visible:
+        print("[验证码拦截] ⚠️ 检测到未登录状态且已弹出登录框！")
+        print("  >> 等待 5 秒确保二维码加载完成...")
+        await asyncio.sleep(5.0)
+        
+        max_wait = 180  # 最多等待 180 秒
+        qr_path = os.path.join(ROOT_DIR, "screenshots", "login_qr.png")
+        os.makedirs(os.path.dirname(qr_path), exist_ok=True)
+        
+        for sec in range(0, max_wait, 3):
+            # 截图整页供用户扫码
+            try:
+                await page.screenshot(path=qr_path)
+            except Exception as se:
+                print(f"[登录检测] 截图失败: {se}")
+                
+            print(f"[验证码拦截] ⚠️ 请使用手机扫码登录！登录二维码截图已更新，已等待 {sec} 秒...")
+            
+            # 检测登录弹窗是否关闭
+            is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+            if not is_popup_visible:
+                print("[登录检测] 检测到登录弹窗已关闭，正在刷新页面验证登录状态...")
+                await page.reload()
+                await asyncio.sleep(5.0) # 等待页面刷新加载完毕
+                
+                # 重新检查是否有登录按钮
+                login_btn_visible = False
+                login_btns = page.locator('.semi-button-content')
+                count = await login_btns.count()
+                for i in range(count):
+                    btn = login_btns.nth(i)
+                    if await btn.is_visible():
+                        text = await btn.text_content()
+                        if "登录" in text:
+                            login_btn_visible = True
+                            break
+                            
+                if not login_btn_visible:
+                    print("[登录检测] 🎉 页面刷新后未检测到登录按钮，登录成功！")
+                    if os.path.exists(qr_path):
+                        try:
+                            os.remove(qr_path)
+                        except:
+                            pass
+                    return True
+                else:
+                    print("[登录检测] ⚠️ 页面刷新后依然检测到登录按钮，登录未成功，重新调起登录弹窗并继续等待...")
+                    # 重新点击登录按钮触发弹窗
+                    for i in range(count):
+                        btn = login_btns.nth(i)
+                        if await btn.is_visible():
+                            text = await btn.text_content()
+                            if "登录" in text:
+                                await btn.click()
+                                await asyncio.sleep(3.0)
+                                break
+                                
+            await asyncio.sleep(3.0)
+            
+        print("[登录检测] ❌ 等待扫码登录超时 (3 分钟)，脚本终止。")
+        return False
+    else:
+        # 如果无法成功拉起弹窗，尝试检查一下 cookies
+        cookies = await context.cookies()
+        if any(c['name'] == 'sessionid' for c in cookies):
+            print("[登录检测] 登录成功（Cookie 自动同步生效）。")
+            return True
+        print("[登录检测] 无法成功调起登录弹窗，将直接尝试继续执行任务...")
+        return True
+
+
+async def scroll_comments_container(page, scroll_times=4):
+    print("  [交互] 正在下滚评论区以加载更多评论...")
+    
+    # 优先指定稳定且精确的 data-e2e 属性和类名
+    container_selectors = [
+        '[data-e2e="comment-list"]',
+        '.comment-mainContent',
+        '.comment-list'
+    ]
+    
+    container = None
+    for sel in container_selectors:
+        try:
+            loc = page.locator(sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                container = loc
+                print(f"  [交互] 成功定位评论容器: {sel}")
+                break
+        except:
+            pass
+            
+    if container:
+        for t in range(scroll_times):
+            try:
+                await container.evaluate("el => el.scrollTop = el.scrollHeight")
+                print(f"    下滚第 {t + 1}/{scroll_times} 次...")
+                await asyncio.sleep(random.uniform(1.2, 1.8))
+            except Exception as se:
+                print(f"    下滚失败: {se}")
+    else:
+        print("  [交互] 未能定位到滚动评论容器，尝试 PageDown 键下滚评论...")
+        try:
+            await page.keyboard.press("PageDown")
+            await asyncio.sleep(1.5)
+            await page.keyboard.press("PageDown")
+            await asyncio.sleep(1.5)
+        except Exception as se:
+            print(f"  [交互] 按键下滚失败: {se}")
+
+
+async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.json", headless=True):
     print(f"\n正在启动浏览器，目标博主 [{name}]，链接: {url}")
     print(f"本次抓取上限为 {max_videos} 个视频，正在初始化中...")
 
@@ -485,26 +642,49 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
             except Exception:
                 pass
 
+    user_data_dir = os.path.join(ROOT_DIR, "data", "browser_context")
+    os.makedirs(user_data_dir, exist_ok=True)
+    
     async with async_playwright() as p:
-        # 使用有头模式启动，以便必要时手动滑块，并避免反爬检测
-        browser = await p.chromium.launch(headless=False)
+        print(f"[浏览器启动] 使用持久化会话数据目录: {user_data_dir}, 无头模式: {headless}")
         
-        # 伪造上下文环境
-        context = await browser.new_context(
+        # 启动持久化上下文
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
             viewport={'width': 1280, 'height': 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled"
+            ]
         )
         
-        page = await context.new_page()
+        page = context.pages[0] if context.pages else await context.new_page()
         page.on("response", handle_response)
         
         popup_monitor_task = None
         tutorial_monitor_task = None
 
         try:
-            # 1. 访问博主主页
-            print(f"正在访问目标主页...")
+            # 1. 直接访问目标主页
+            print(f"正在访问目标主页: {url} ...")
             await page.goto(url, timeout=60000)
+            
+            # 关闭弹窗监控（登录期间不自动关闭登录弹窗）
+            global ENABLE_POPUP_MONITOR
+            ENABLE_POPUP_MONITOR = False
+            
+            # 校验并执行扫码登录流程
+            login_success = await ensure_login(page, context)
+            if not login_success:
+                print("登录状态校验失败，终止任务。")
+                await context.close()
+                return False
+                
+            # 登录成功，启用自动清理弹窗协程
+            ENABLE_POPUP_MONITOR = True
             
             # 激活后台登录弹窗与教程关闭实时检测任务
             popup_monitor_task = asyncio.create_task(close_login_popup_monitor(page))
@@ -635,6 +815,8 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
 
                 if not comments_loaded:
                     raise Exception(f"错误：多次尝试后仍未捕获到首个视频 [{first_vid}] 的评论接口响应 (comment/list)！抓取中断。")
+                else:
+                    await scroll_comments_container(page, scroll_times=4)
 
             # 4. 拟人操纵循环：Hover分享 -> 校验短链 -> 按方向下键 -> 校验下一页评论
             print(f"\n开始循环模拟键盘切换视频，计划抓取前 {max_videos} 个视频：")
@@ -692,6 +874,9 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                                 pass
                     else:
                         print("  [校验] 跳过 Hover 分享按钮 (免登录直链模式)")
+                        
+                    # B. 下滚评论区以获取更多评论
+                    await scroll_comments_container(page, scroll_times=4)
 
                 # 如果是最后一个，不需要按向下键了
                 if idx == max_videos - 1:
@@ -837,7 +1022,8 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
             if tutorial_monitor_task:
                 tutorial_monitor_task.cancel()
             await asyncio.sleep(2.0)
-            await browser.close()
+            if 'context' in locals() and context:
+                await context.close()
 
 
 # ------------------------------------------------------------------
@@ -850,6 +1036,7 @@ async def main():
     parser.add_argument("--blogger", default=None, help="指定爬取的博主姓名 (如果未指定，默认爬取所有配置的博主)")
     parser.add_argument("--max-videos", type=int, default=5, help="每个博主爬取的最大视频数")
     parser.add_argument("--url", default=None, help="指定爬取的博主主页链接")
+    parser.add_argument("--headless", default="true", help="是否无头模式 ('true' 或 'false')")
     args = parser.parse_args()
 
     # 如果传入了 url 和 blogger 名字，直接组装使用，无需读取 saved_links.json
@@ -880,6 +1067,9 @@ async def main():
     
     results = []
     
+    # 确定无头模式
+    headless_val = (args.headless.lower() == "true")
+    
     for idx, link in enumerate(links):
         if "示例链接" in link['url'] or not link['url']:
             print(f"\n跳过未正确配置的占位模板博主: [{link['name']}]")
@@ -890,7 +1080,7 @@ async def main():
         print(f"==================================================")
         
         filename = os.path.join(ROOT_DIR, "data", "raw", link['name'], "douyin_data.json")
-        success = await collect_douyin_data(link['url'], link['name'], max_videos=args.max_videos, filename=filename)
+        success = await collect_douyin_data(link['url'], link['name'], max_videos=args.max_videos, filename=filename, headless=headless_val)
         results.append({
             "name": link['name'],
             "url": link['url'],

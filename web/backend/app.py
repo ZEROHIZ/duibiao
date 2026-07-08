@@ -52,20 +52,33 @@ def transcription_worker_loop():
         print(f"[语音转录后台 Worker] 导入转录模块失败: {ie}")
         return
 
+    import re
+    import contextlib
+
     while True:
         try:
-            # 1. 加载配置参数
+            # 1. 加载配置参数并校验是否启用转录
             config_path = os.path.join(ROOT_DIR, "data", "config.json")
             whisper_url = "http://192.168.110.30:7211/transcribe"
             whisper_model = "medium"
+            enable_transcribe = True
+            transcribe_interval = 5
             if os.path.exists(config_path):
                 try:
                     with open(config_path, "r", encoding="utf-8") as f:
                         cfg = json.load(f)
                         whisper_url = cfg.get("whisper_url", whisper_url)
                         whisper_model = cfg.get("whisper_model", whisper_model)
+                        enable_transcribe = cfg.get("enable_transcribe", True)
+                        transcribe_interval = int(cfg.get("transcribe_interval", 5))
                 except:
                     pass
+            
+            if not enable_transcribe:
+                # 若未开启转录，等待触发事件或扫描间隔时间（分钟）后继续检查
+                transcribe_trigger_event.wait(timeout=transcribe_interval * 60)
+                transcribe_trigger_event.clear()
+                continue
             
             # 2. 查询需要转录的视频（desc 是包含 http 的视频直链，或者标记了转录重试且未达上限的记录）
             db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
@@ -74,7 +87,7 @@ def transcription_worker_loop():
             cursor = conn.cursor()
             
             pending_notes = cursor.execute("""
-                SELECT n.id, n.desc, n.blogger_id, b.name as blogger_name 
+                SELECT n.id, n.title, n.desc, n.blogger_id, b.name as blogger_name 
                 FROM blogger_notes n
                 JOIN bloggers b ON n.blogger_id = b.id
                 WHERE n.type = 'video' AND (
@@ -86,12 +99,23 @@ def transcription_worker_loop():
             conn.close()
             
             if pending_notes:
-                import re
                 print(f"[语音转录后台 Worker] 扫描到 {len(pending_notes)} 个待转录/重试视频。")
                 for note in pending_notes:
+                    # 再次加载配置，保证在循环执行期间如果用户关闭了开关，能立即感知并退出
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, "r", encoding="utf-8") as f:
+                                cfg = json.load(f)
+                                if not cfg.get("enable_transcribe", True):
+                                    print("[语音转录后台 Worker] 用户在任务执行间隙关闭了转录功能，挂起任务。")
+                                    break
+                        except:
+                            pass
+
                     note_id = note["id"]
                     raw_desc = note["desc"]
                     blogger_name = note["blogger_name"]
+                    title = note["title"]
                     
                     # 确定真正的视频 URL 和当前的重试次数
                     video_url = raw_desc
@@ -105,9 +129,46 @@ def transcription_worker_loop():
                         if idx != -1:
                             video_url = raw_desc[idx:]
                             
-                    print(f"[语音转录后台 Worker] 正在转录视频 [{note_id}] (第 {retry_count + 1} 次尝试), 链接: {video_url}")
-                    success, text = transcribe_with_retry(video_url, whisper_url, model=whisper_model, retries=2)
+                    task_id = f"tx_{note_id}"
+                    log_dir = os.path.join(ROOT_DIR, "data", "logs")
+                    os.makedirs(log_dir, exist_ok=True)
+                    log_path = os.path.join(log_dir, f"{task_id}.log")
                     
+                    # 注册/更新内存任务状态为 running
+                    with tasks_lock:
+                        active_transcribe_tasks[task_id] = {
+                            "id": task_id,
+                            "note_id": note_id,
+                            "title": title,
+                            "blogger": f"{blogger_name}",
+                            "status": "running",
+                            "log_path": log_path,
+                            "created_at": datetime.now().isoformat(),
+                            "started_at": datetime.now().isoformat(),
+                            "finished_at": None,
+                            "current_step": f"正在转录视频 [{retry_count + 1}/3 次重试]"
+                        }
+                    
+                    success = False
+                    text = ""
+                    
+                    # 将转录的详细控制台信息写入专属 log 文件中，实现任务日志回显
+                    try:
+                        with open(log_path, "w", encoding="utf-8") as log_file:
+                            log_file.write(f"=== 语音转录后台任务 {task_id} 启动 ===\n")
+                            log_file.write(f"博主: {blogger_name}\n")
+                            log_file.write(f"视频标题: {title}\n")
+                            log_file.write(f"视频 URL: {video_url}\n")
+                            log_file.write(f"Whisper 配置: model={whisper_model}, url={whisper_url}\n")
+                            log_file.write(f"尝试次数: 第 {retry_count + 1} 次尝试\n\n")
+                            log_file.flush()
+                            
+                            # 捕获 transcribe_with_retry 的标准输出重定向到日志文件中
+                            with contextlib.redirect_stdout(log_file):
+                                success, text = transcribe_with_retry(video_url, whisper_url, model=whisper_model, retries=2)
+                    except Exception as le:
+                        print(f"[语音转录后台 Worker] 写入任务日志错误: {le}")
+                        
                     # 3. 回写数据库
                     conn = sqlite3.connect(db_path, timeout=30.0)
                     cursor = conn.cursor()
@@ -117,18 +178,30 @@ def transcription_worker_loop():
                         final_text = text
                         cursor.execute("UPDATE blogger_notes SET desc = ? WHERE id = ?", (final_text, note_id))
                         print(f"[语音转录后台 Worker] 视频 [{note_id}] 转录成功，内容已回填。")
+                        with tasks_lock:
+                            active_transcribe_tasks[task_id]["status"] = "success"
+                            active_transcribe_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                            active_transcribe_tasks[task_id]["current_step"] = "转录成功，正文回填完成"
                     else:
                         if retry_count < 3:
                             # 允许重试，更新状态标记为下一轮重试
                             final_text = f"[转录失败_第{retry_count + 1}次重试]: {video_url}"
                             cursor.execute("UPDATE blogger_notes SET desc = ? WHERE id = ?", (final_text, note_id))
                             print(f"[语音转录后台 Worker] 视频 [{note_id}] 本轮转录失败，标记以待下轮重试：{text}")
+                            with tasks_lock:
+                                active_transcribe_tasks[task_id]["status"] = "failed"
+                                active_transcribe_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                                active_transcribe_tasks[task_id]["current_step"] = f"本轮转录失败: {text}"
                         else:
                             # 达到上限，放弃重试
                             final_text = f"[转录失败_已达上限]: {video_url}"
                             cursor.execute("UPDATE blogger_notes SET desc = ? WHERE id = ?", (final_text, note_id))
                             print(f"[语音转录后台 Worker] 视频 [{note_id}] 转录失败已达上限，停止重试：{text}")
-                            
+                            with tasks_lock:
+                                active_transcribe_tasks[task_id]["status"] = "failed"
+                                active_transcribe_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                                active_transcribe_tasks[task_id]["current_step"] = "转录失败已达上限"
+                                
                     conn.commit()
                     
                     # 4. 同步更新 processed 目录下的 JSON 归档文件
@@ -149,7 +222,9 @@ def transcription_worker_loop():
                     conn.close()
                     time.sleep(1) # 视频间隔安全休眠
             else:
-                time.sleep(10) # 任务空闲休眠
+                # 任务空闲时，等待触发事件或扫描间隔时间（分钟）后自动扫库
+                transcribe_trigger_event.wait(timeout=transcribe_interval * 60)
+                transcribe_trigger_event.clear()
         except Exception as e:
             print(f"[语音转录后台 Worker] 循环出错: {e}")
             time.sleep(10)
@@ -642,13 +717,20 @@ task_queue = queue.Queue()
 
 # 全局内存任务字典 (task_id -> task_info)
 active_crawl_tasks = {}
+active_transcribe_tasks = {}
 tasks_lock = threading.Lock()
+
+# 用于立即唤醒后台转录 Worker 的线程同步事件
+transcribe_trigger_event = threading.Event()
 
 # 默认设置参数
 DEFAULT_SETTINGS = {
     "whisper_url": "http://192.168.110.30:7211/transcribe",
     "whisper_model": "medium",
-    "max_videos": 5
+    "max_videos": 5,
+    "headless": True,
+    "enable_transcribe": True,
+    "transcribe_interval": 5
 }
 
 def get_settings_path():
@@ -700,6 +782,7 @@ def queue_worker():
             max_videos = task_info.get("max_videos") or settings.get("max_videos", 5)
             whisper_url = settings.get("whisper_url", "http://192.168.110.30:7211/transcribe")
             whisper_model = settings.get("whisper_model", "medium")
+            headless = "true" if settings.get("headless", True) else "false"
             
             python_exe = os.path.join(ROOT_DIR, ".venv", "Scripts", "python.exe")
             if not os.path.exists(python_exe):
@@ -709,32 +792,41 @@ def queue_worker():
                 python_exe,
                 os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben", "pipeline.py"),
                 "--max-videos", str(max_videos),
-                "--whisper-url", whisper_url
+                "--whisper-url", whisper_url,
+                "--headless", headless
             ]
             if blogger != "all":
                 cmd.extend(["--blogger", blogger])
                 
-            # 强制子进程以 UTF-8 编码模式运行以防 Windows GBK 终端乱码
+            # 强制子进程以 UTF-8 编码模式运行以防 Windows GBK 终端乱码，且关闭缓冲以防无法实时读取输出
             env = os.environ.copy()
             env["PYTHONUTF8"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUNBUFFERED"] = "1"
                 
             try:
-                with open(log_path, "w", encoding="utf-8") as log_file:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=env,
+                    cwd=ROOT_DIR
+                )
+                
+                with open(log_path, "w", encoding="utf-8", buffering=1) as log_file:
                     log_file.write(f"=== 流水线任务 {task_id} 启动 (博主: '{blogger}') ===\n")
                     log_file.write(f"配置参数: 抓取上限={max_videos}, Whisper模型={whisper_model}, Whisper接口={whisper_url}\n\n")
+                    log_file.flush()
                     
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=log_file,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        env=env,
-                        cwd=ROOT_DIR
-                    )
-                    process.wait()
+                    # 实时按行读取并清刷输出，确保控制台能实时看到数据而非等结束后一次性呈现
+                    for line in process.stdout:
+                        log_file.write(line)
+                        log_file.flush()
+                        
+                process.wait()
                     
                 with tasks_lock:
                     if process.returncode == 0:
@@ -769,13 +861,19 @@ class SettingsUpdate(BaseModel):
     whisper_url: str
     whisper_model: str
     max_videos: int
+    transcribe_interval: int = 5
+    headless: bool = True
+    enable_transcribe: bool = True
 
 @app.post("/api/settings")
 def update_settings_endpoint(settings: SettingsUpdate):
     data = {
         "whisper_url": settings.whisper_url,
         "whisper_model": settings.whisper_model,
-        "max_videos": settings.max_videos
+        "max_videos": settings.max_videos,
+        "transcribe_interval": settings.transcribe_interval,
+        "headless": settings.headless,
+        "enable_transcribe": settings.enable_transcribe
     }
     if save_settings(data):
         return {"status": "success"}
@@ -822,15 +920,89 @@ def get_all_crawl_tasks():
         })
     return clean_list
 
+@app.get("/api/transcribe/tasks")
+def get_transcribe_tasks():
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if not os.path.exists(db_path):
+        return []
+        
+    try:
+        conn = sqlite3.connect(db_path, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        pending_notes = cursor.execute("""
+            SELECT n.id, n.title, b.name as blogger_name
+            FROM blogger_notes n
+            JOIN bloggers b ON n.blogger_id = b.id
+            WHERE n.type = 'video' AND (
+                n.desc LIKE 'http://%' OR 
+                n.desc LIKE 'https://%' OR 
+                n.desc LIKE '[转录失败_第%'
+            )
+        """).fetchall()
+        conn.close()
+    except Exception as e:
+        print(f"Error querying pending transcribe tasks: {e}")
+        pending_notes = []
+        
+    tasks_list = []
+    processed_note_ids = set()
+    
+    # 1. 内存中已启动过的转录任务
+    with tasks_lock:
+        for tid, t in list(active_transcribe_tasks.items()):
+            processed_note_ids.add(str(t["note_id"]))
+            tasks_list.append({
+                "id": tid,
+                "blogger": t["blogger"],
+                "title": t["title"],
+                "status": t["status"],
+                "created_at": t["created_at"],
+                "started_at": t["started_at"],
+                "finished_at": t["finished_at"]
+            })
+            
+    # 2. 数据库中仍在排队等待的转录视频项
+    for note in pending_notes:
+        nid = str(note["id"])
+        if nid in processed_note_ids:
+            continue
+        tid = f"tx_{nid}"
+        tasks_list.append({
+            "id": tid,
+            "blogger": note["blogger_name"],
+            "title": note["title"],
+            "status": "queued",
+            "created_at": None,
+            "started_at": None,
+            "finished_at": None
+        })
+        
+    # 按状态排序：进行中 (running) > 排队中 (queued) > 成功 (success) > 失败 (failed)
+    status_order = {"running": 0, "queued": 1, "success": 2, "failed": 3}
+    tasks_list.sort(key=lambda x: (status_order.get(x["status"], 4), x["created_at"] or ""))
+    return tasks_list
+
+@app.post("/api/transcribe/trigger")
+def trigger_transcription_scan():
+    transcribe_trigger_event.set()
+    return {"status": "success", "message": "Transcription scan triggered immediately."}
+
 @app.post("/api/crawl/clear")
 def clear_finished_tasks():
-    global active_crawl_tasks
+    global active_crawl_tasks, active_transcribe_tasks
     with tasks_lock:
         retained_tasks = {}
         for tid, t in active_crawl_tasks.items():
             if t["status"] in ["queued", "running"]:
                 retained_tasks[tid] = t
         active_crawl_tasks = retained_tasks
+        
+        retained_tx = {}
+        for tid, t in active_transcribe_tasks.items():
+            if t["status"] in ["queued", "running"]:
+                retained_tx[tid] = t
+        active_transcribe_tasks = retained_tx
     return {"status": "success"}
 
 def analyze_task_step(logs):
@@ -847,6 +1019,9 @@ def analyze_task_step(logs):
     if "🎉 同步流水线全部成功！" in logs or "流水线同步运行汇总: 1/1 成功" in logs:
         return "同步完成"
         
+    if "请使用手机" in logs and "扫码登录" in logs:
+        return "等待手机扫码登录中..."
+
     if "[验证码拦截]" in logs or "手动滑块解锁" in logs:
         return "遇到验证码拦截 (等待手动滑块解锁)"
         
@@ -874,9 +1049,14 @@ def analyze_task_step(logs):
 @app.get("/api/crawl/status/{task_id}")
 def get_crawler_status(task_id: str):
     with tasks_lock:
-        if task_id not in active_crawl_tasks:
+        if task_id in active_crawl_tasks:
+            task_info = active_crawl_tasks[task_id]
+            is_crawl = True
+        elif task_id in active_transcribe_tasks:
+            task_info = active_transcribe_tasks[task_id]
+            is_crawl = False
+        else:
             return {"status": "error", "message": "Task not found"}
-        task_info = active_crawl_tasks[task_id]
         
     log_path = task_info["log_path"]
     logs = ""
@@ -897,7 +1077,10 @@ def get_crawler_status(task_id: str):
             logs = f"Failed to read logs: {e}"
             
     # 分析日志得出当前正在运行或卡住的步骤
-    current_step = analyze_task_step(logs)
+    if is_crawl:
+        current_step = analyze_task_step(logs)
+    else:
+        current_step = task_info.get("current_step", "正在进行后台语音转录...")
     
     # 扫描与当前任务运行时间匹配的截图文件
     screenshots = []
@@ -954,5 +1137,8 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    # 端口绑定为 8000
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    # 支持从环境变量读取 HOST 和 PORT，方便 Docker 部署时绑定 0.0.0.0
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", 8000))
+    # 端口绑定，且仅监控 web 目录，避免数据及缓存写入引发服务异常重启与队列丢失
+    uvicorn.run("app:app", host=host, port=port, reload=True, reload_dirs=["web"])

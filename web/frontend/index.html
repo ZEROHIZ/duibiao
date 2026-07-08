@@ -404,14 +404,14 @@
                 <h2 class="page-header-title">系统参数配置</h2>
                 <p class="lead-text">在此调整对标账号同步流水线全局参数。保存后，运行同步任务时将自动读取该配置参数。</p>
                 
-                <form id="system-settings-form" class="editorial-form" style="max-width: 600px;">
-                    <div class="form-group">
-                        <label for="setting-whisper-url">Whisper API 接口地址</label>
-                        <input type="url" id="setting-whisper-url" placeholder="http://192.168.110.30:7211/transcribe" required>
+                <form id="system-settings-form" class="editorial-form" style="max-width: 600px; display: flex; flex-direction: column; gap: 1.5rem;">
+                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                        <label for="setting-whisper-url" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER API 接口地址</label>
+                        <input type="url" id="setting-whisper-url" placeholder="http://192.168.110.30:7211/transcribe" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
                     </div>
-                    <div class="form-group">
-                        <label for="setting-whisper-model">Whisper 转录模型级别</label>
-                        <select id="setting-whisper-model" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                        <label for="setting-whisper-model" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER 转录模型级别</label>
+                        <select id="setting-whisper-model" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
                             <option value="tiny" style="background: var(--bg-secondary);">tiny (最快/极低功耗)</option>
                             <option value="base" style="background: var(--bg-secondary);">base</option>
                             <option value="small" style="background: var(--bg-secondary);">small</option>
@@ -419,13 +419,30 @@
                             <option value="large-v3" style="background: var(--bg-secondary);">large-v3 (极慢/显存要求高)</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label for="setting-max-videos">单次爬取上限数 (视频/笔记条数)</label>
-                        <input type="number" id="setting-max-videos" min="1" max="50" placeholder="5" required>
+                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                        <label for="setting-max-videos" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">单次爬取上限数 (视频/笔记条数)</label>
+                        <input type="number" id="setting-max-videos" min="1" max="50" placeholder="5" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
                     </div>
-                    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-                        <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.5rem;">保存系统设置</button>
-                        <button type="button" id="btn-sync-all" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.35rem 0.85rem;">一键更新全部博主</button>
+                    
+                    <!-- 新增：后台转录扫描数据库轮询时间参数 -->
+                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                        <label for="setting-transcribe-interval" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">后台转录扫描数据库间隔 (分钟)</label>
+                        <input type="number" id="setting-transcribe-interval" min="1" max="1440" placeholder="10" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                    </div>
+                    
+                    <div class="form-group" style="display: flex; align-items: flex-start; gap: 0.75rem; margin-top: 0.25rem;">
+                        <input type="checkbox" id="setting-headless" style="width: 1.1rem; height: 1.1rem; cursor: pointer; margin-top: 0.15rem; flex-shrink: 0;">
+                        <label for="setting-headless" style="font-size: 0.85rem; line-height: 1.4; color: var(--ink-secondary); cursor: pointer; user-select: none;">开启无头模式 (在 Docker / 无 GUI 环境下运行请勾选)</label>
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                        <input type="checkbox" id="setting-enable-transcribe" style="width: 1.1rem; height: 1.1rem; cursor: pointer; margin-top: 0.15rem; flex-shrink: 0;">
+                        <label for="setting-enable-transcribe" style="font-size: 0.85rem; line-height: 1.4; color: var(--ink-secondary); cursor: pointer; user-select: none;">开启后台语音转录 (自动扫描数据库并调用 WHISPER 转录视频)</label>
+                    </div>
+                    
+                    <div style="display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.75rem; background-color: var(--ink-primary); color: var(--bg-primary); border: 1px solid var(--ink-primary); cursor: pointer; font-family: var(--font-sans); font-size: 0.82rem; font-weight: bold; letter-spacing: 0.05em;">保存系统设置</button>
+                        <button type="button" id="btn-sync-all" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center;">一键更新全部博主</button>
+                        <button type="button" id="btn-transcribe-now" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center; background-color: var(--bg-secondary); color: var(--accent-primary); border-color: var(--accent-primary);">立即扫描转录</button>
                     </div>
                 </form>
             </section>
@@ -438,10 +455,16 @@
                         <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem;">
                             <div>
                                 <span class="section-label">TASK QUEUE</span>
-                                <h2 class="page-header-title" style="font-size: 2rem; margin-bottom: 0.5rem;">同步任务列表</h2>
-                                <p class="lead-text" style="font-size: 0.9rem; margin-bottom: 1rem;">查看历史与当前的同步排队任务状态。</p>
+                                <h2 class="page-header-title" style="font-size: 2rem; margin-bottom: 0.5rem;">任务队列监控</h2>
+                                <p class="lead-text" style="font-size: 0.9rem; margin-bottom: 1rem;">查看历史与当前的排队任务状态。</p>
                             </div>
                             <button id="btn-clear-history" class="btn-text" style="border: 1px solid var(--ink-secondary); padding: 0.2rem 0.5rem; font-size: 0.72rem;">清除已完成历史</button>
+                        </div>
+                        
+                        <!-- 任务类型分页标签切换 -->
+                        <div class="task-tabs-container" style="display: flex; gap: 1.25rem; border-bottom: 1px solid var(--ink-secondary); margin-bottom: 1.25rem; padding-bottom: 0.35rem;">
+                            <span id="task-tab-sync" style="cursor: pointer; font-weight: bold; font-size: 0.88rem; color: var(--accent-primary); border-bottom: 2px solid var(--accent-primary); padding-bottom: 0.25rem;">🔄 同步数据任务</span>
+                            <span id="task-tab-transcribe" style="cursor: pointer; font-weight: bold; font-size: 0.88rem; color: var(--ink-secondary); padding-bottom: 0.25rem;">🎙️ 后台语音转录</span>
                         </div>
                         
                         <!-- Task Queue Table List -->
@@ -449,7 +472,7 @@
                             <table class="magazine-table" style="font-size: 0.82rem; margin: 0;">
                                 <thead>
                                     <tr>
-                                        <th>目标博主</th>
+                                        <th id="queue-task-header-target">目标博主</th>
                                         <th>状态</th>
                                         <th>创建时间</th>
                                         <th style="text-align: right;">操作</th>
@@ -480,8 +503,8 @@
                         <!-- Screenshots Investigation -->
                         <div id="console-screenshots-box" style="display: none;">
                             <span class="section-label">SCREENSHOTS</span>
-                            <h4 class="aside-title" style="margin-bottom: 0.75rem; font-size: 0.95rem;">异常/验证码截图排查</h4>
-                            <p class="lead-text" style="font-size: 0.82rem; margin-bottom: 0.75rem;">如果在网页爬取时遇到滑动验证码或操作报错，下方将显示对应的浏览器截图。请在服务器/浏览器窗口中配合操作，或根据截图更新规则。</p>
+                            <h4 id="console-screenshots-title" class="aside-title" style="margin-bottom: 0.75rem; font-size: 0.95rem;">异常/验证码截图排查</h4>
+                            <p id="console-screenshots-desc" class="lead-text" style="font-size: 0.82rem; margin-bottom: 0.75rem;">如果在网页爬取时遇到滑动验证码或操作报错，下方将显示对应的浏览器截图。请在服务器/浏览器窗口中配合操作，或根据截图更新规则。</p>
                             <div id="console-screenshots-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                                 <!-- Dynamic screenshots img elements -->
                             </div>

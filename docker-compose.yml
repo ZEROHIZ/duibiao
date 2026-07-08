@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  distiller:
+    build: .
+    container_name: blogger-distiller
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # 持久化数据库、配置参数、浏览器 Session 与转录日志，避免容器重启数据丢失
+      - ./data:/app/data
+      # 持久化输出的博主拆解指南 Markdown 文件夹，方便在宿主机直接查阅与复制
+      - ./output:/app/output
+      # 映射扫码登录截图目录，便于调试与查看登录二维码
+      - ./screenshots:/app/screenshots
+    restart: always
