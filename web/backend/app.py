@@ -7,6 +7,9 @@ FastAPI 后端应用入口 (app.py)
 import os
 import sqlite3
 import sys
+import json
+import threading
+import time
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +36,130 @@ app.add_middleware(
 
 
 # ----------------------------------------------------------
+# 异步后台语音转录 Worker (支持静默下载、Whisper 翻译与数据库增量回写)
+# ----------------------------------------------------------
+def transcription_worker_loop():
+    print("[语音转录后台 Worker] 启动成功，开启待转录视频扫描...")
+    
+    # 动态把 scripts/pachopngjiaoben 加载到路径，便于复用转录代码
+    pachopng_dir = os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben")
+    if pachopng_dir not in sys.path:
+        sys.path.insert(0, pachopng_dir)
+        
+    try:
+        from convert_douyin_notes import transcribe_with_retry
+    except ImportError as ie:
+        print(f"[语音转录后台 Worker] 导入转录模块失败: {ie}")
+        return
+
+    while True:
+        try:
+            # 1. 加载配置参数
+            config_path = os.path.join(ROOT_DIR, "data", "config.json")
+            whisper_url = "http://192.168.110.30:7211/transcribe"
+            whisper_model = "medium"
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        whisper_url = cfg.get("whisper_url", whisper_url)
+                        whisper_model = cfg.get("whisper_model", whisper_model)
+                except:
+                    pass
+            
+            # 2. 查询需要转录的视频（desc 是包含 http 的视频直链，或者标记了转录重试且未达上限的记录）
+            db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            pending_notes = cursor.execute("""
+                SELECT n.id, n.desc, n.blogger_id, b.name as blogger_name 
+                FROM blogger_notes n
+                JOIN bloggers b ON n.blogger_id = b.id
+                WHERE n.type = 'video' AND (
+                    n.desc LIKE 'http://%' OR 
+                    n.desc LIKE 'https://%' OR 
+                    n.desc LIKE '[转录失败_第%'
+                )
+            """).fetchall()
+            conn.close()
+            
+            if pending_notes:
+                import re
+                print(f"[语音转录后台 Worker] 扫描到 {len(pending_notes)} 个待转录/重试视频。")
+                for note in pending_notes:
+                    note_id = note["id"]
+                    raw_desc = note["desc"]
+                    blogger_name = note["blogger_name"]
+                    
+                    # 确定真正的视频 URL 和当前的重试次数
+                    video_url = raw_desc
+                    retry_count = 0
+                    if raw_desc.startswith("[转录失败_第"):
+                        match = re.search(r'第(\d+)次重试', raw_desc)
+                        if match:
+                            retry_count = int(match.group(1))
+                        # 从中解析出真正的 http 地址
+                        idx = raw_desc.find("http")
+                        if idx != -1:
+                            video_url = raw_desc[idx:]
+                            
+                    print(f"[语音转录后台 Worker] 正在转录视频 [{note_id}] (第 {retry_count + 1} 次尝试), 链接: {video_url}")
+                    success, text = transcribe_with_retry(video_url, whisper_url, model=whisper_model, retries=2)
+                    
+                    # 3. 回写数据库
+                    conn = sqlite3.connect(db_path, timeout=30.0)
+                    cursor = conn.cursor()
+                    
+                    final_text = ""
+                    if success:
+                        final_text = text
+                        cursor.execute("UPDATE blogger_notes SET desc = ? WHERE id = ?", (final_text, note_id))
+                        print(f"[语音转录后台 Worker] 视频 [{note_id}] 转录成功，内容已回填。")
+                    else:
+                        if retry_count < 3:
+                            # 允许重试，更新状态标记为下一轮重试
+                            final_text = f"[转录失败_第{retry_count + 1}次重试]: {video_url}"
+                            cursor.execute("UPDATE blogger_notes SET desc = ? WHERE id = ?", (final_text, note_id))
+                            print(f"[语音转录后台 Worker] 视频 [{note_id}] 本轮转录失败，标记以待下轮重试：{text}")
+                        else:
+                            # 达到上限，放弃重试
+                            final_text = f"[转录失败_已达上限]: {video_url}"
+                            cursor.execute("UPDATE blogger_notes SET desc = ? WHERE id = ?", (final_text, note_id))
+                            print(f"[语音转录后台 Worker] 视频 [{note_id}] 转录失败已达上限，停止重试：{text}")
+                            
+                    conn.commit()
+                    
+                    # 4. 同步更新 processed 目录下的 JSON 归档文件
+                    try:
+                        processed_file = os.path.join(ROOT_DIR, "data", "processed", f"{blogger_name}_notes_details.json")
+                        if os.path.exists(processed_file):
+                            with open(processed_file, "r", encoding="utf-8") as f:
+                                details_list = json.load(f)
+                            for item in details_list:
+                                if str(item.get("_feed_id")) == str(note_id):
+                                    item["note"]["desc"] = text if success else f"[转录失败]: {text}"
+                                    break
+                            with open(processed_file, "w", encoding="utf-8") as f:
+                                json.dump(details_list, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        print(f"[语音转录后台 Worker] 同步更新 JSON 归档文件失败: {e}")
+                        
+                    conn.close()
+                    time.sleep(1) # 视频间隔安全休眠
+            else:
+                time.sleep(10) # 任务空闲休眠
+        except Exception as e:
+            print(f"[语音转录后台 Worker] 循环出错: {e}")
+            time.sleep(10)
+
+def start_transcription_worker():
+    t = threading.Thread(target=transcription_worker_loop, daemon=True)
+    t.start()
+
+
+# ----------------------------------------------------------
 # 启动时挂载逻辑
 # ----------------------------------------------------------
 @app.on_event("startup")
@@ -43,6 +170,8 @@ def startup_event():
     seed_all()
     # 3. 将本地已有的 data/ 下的博主 JSON 数据导进数据库
     run_full_import()
+    # 4. 启动异步后台转录服务
+    start_transcription_worker()
 
 
 class KnowledgeCreate(BaseModel):
@@ -55,6 +184,10 @@ class KnowledgeCreate(BaseModel):
 
 class BloggerUrlUpdate(BaseModel):
     home_url: str
+
+
+class BloggerNameUpdate(BaseModel):
+    name: str
 
 
 class BloggerCreate(BaseModel):
@@ -267,6 +400,60 @@ def create_blogger(body: BloggerCreate):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+@app.put("/api/bloggers/{blogger_id}/name")
+def update_blogger_name(blogger_id: int, body: BloggerNameUpdate):
+    """更新指定博主的名称"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+        
+        # 检查新名字是否与其他博主冲突
+        cursor.execute("SELECT id FROM bloggers WHERE name = ? AND id != ?;", (body.name, blogger_id))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Blogger name already exists.")
+
+        cursor.execute("""
+        UPDATE bloggers
+        SET name = ?
+        WHERE id = ?;
+        """, (body.name, blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "Blogger name updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.delete("/api/bloggers/{blogger_id}")
+def delete_blogger(blogger_id: int):
+    """删除指定的对标博主及相关全部数据"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+        
+        # 开启事务，级联删除该博主的其它所有关联数据
+        cursor.execute("DELETE FROM blogger_distilled WHERE blogger_id = ?;", (blogger_id,))
+        cursor.execute("DELETE FROM blogger_notes WHERE blogger_id = ?;", (blogger_id,))
+        cursor.execute("DELETE FROM bloggers WHERE id = ?;", (blogger_id,))
+        conn.commit()
+        return {"status": "success", "message": "Blogger and all associated data deleted successfully."}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+
 
 
 @app.get("/api/notes/all")

@@ -77,10 +77,50 @@ def run_step(cmd, description):
     print(f"✅ 阶段成功: [{description}] 已顺利结束。")
     return True
 
-def process_single_blogger(blogger, max_videos, whisper_url):
+def load_bloggers_from_db():
+    """从 SQLite 数据库获取所有配置的博主和主页链接"""
+    import sqlite3
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if not os.path.exists(db_path):
+        return []
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT name, home_url FROM bloggers").fetchall()
+        conn.close()
+        bloggers = []
+        for r in rows:
+            name = r["name"]
+            url = r["home_url"]
+            if name and "示例" not in name:
+                bloggers.append({"name": name, "url": url})
+        return bloggers
+    except Exception as e:
+        print(f"读取 SQLite 数据库博主列表失败: {e}")
+        return []
+
+def get_blogger_url_from_db(blogger_name):
+    """根据博主名称从数据库中查询其个人主页链接"""
+    import sqlite3
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if not os.path.exists(db_path):
+        return None
+    try:
+        conn = sqlite3.connect(db_path)
+        r = conn.execute("SELECT home_url FROM bloggers WHERE name = ?", (blogger_name,)).fetchone()
+        conn.close()
+        if r:
+            return r[0]
+    except Exception as e:
+        print(f"查询博主 [{blogger_name}] 主页链接失败: {e}")
+    return None
+
+def process_single_blogger(blogger, max_videos, whisper_url, url=None):
     """串联执行单个博主的全部处理流程"""
     print(f"\n##################################################")
     print(f" 正在启动博主【{blogger}】的流水线任务 ")
+    if url:
+        print(f" 监控链接: {url}")
     print(f"##################################################")
 
     # 1. 爬虫抓取原始数据
@@ -91,10 +131,13 @@ def process_single_blogger(blogger, max_videos, whisper_url):
         "--blogger", blogger,
         "--max-videos", str(max_videos)
     ]
+    if url:
+        crawler_cmd.extend(["--url", url])
+        
     if not run_step(crawler_cmd, f"1. 抖音网页数据爬取 ({blogger})"):
         return False
 
-    # 2. 转换及视频转录
+    # 2. 转换及视频数据整理（跳过 Whisper 语音转录，以便快速入库）
     processed_data_path = os.path.join(ROOT_DIR, "data", "processed", f"{blogger}_notes_details.json")
     converter_cmd = [
         PYTHON_EXE,
@@ -102,9 +145,10 @@ def process_single_blogger(blogger, max_videos, whisper_url):
         "-i", raw_data_path,
         "-o", processed_data_path,
         "-b", blogger,
-        "--whisper-url", whisper_url
+        "--whisper-url", whisper_url,
+        "--skip-transcribe"
     ]
-    if not run_step(converter_cmd, f"2. 格式转换与 Whisper 语音转录 ({blogger})"):
+    if not run_step(converter_cmd, f"2. 格式转换与快速导入准备 ({blogger})"):
         return False
 
     # 3. 增量导入 SQLite 数据库
@@ -138,28 +182,69 @@ def main():
     parser.add_argument("--blogger", default=None, help="指定需要更新的单个博主姓名。如果不指定，则更新全部博主")
     parser.add_argument("--max-videos", type=int, default=default_max_videos, help="每次更新抓取的最大视频条数")
     parser.add_argument("--whisper-url", default=default_whisper_url, help="Whisper API地址")
-    parser.add_argument("--all", action="store_true", help="强制更新 saved_links.json 中配置的所有博主")
+    parser.add_argument("--url", default=None, help="手动指定该博主的个人主页监控链接 (仅当指定单个博主时有效)")
+    parser.add_argument("--all", action="store_true", help="强制更新所有博主")
     args = parser.parse_args()
 
-    # 决定运行的博主列表
+    # 决定运行的博主列表与对应的 URL
+    bloggers_to_run = []
+    
     if args.blogger:
-        bloggers_to_run = [args.blogger]
+        # 如果是单博主模式
+        url = args.url or get_blogger_url_from_db(args.blogger)
+        if not url:
+            # 兼容回退读取 saved_links.json
+            links = load_all_bloggers()
+            # 这里 load_all_bloggers 会返回博主名字列表，但如果是 saved_links.json，我们需要去取对应的 url
+            # 为了兼容性，如果没有从数据库找到，我们回退读取 saved_links.json 来寻找
+            filepath = os.path.join(ROOT_DIR, "saved_links.json")
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        for category, items in data.items():
+                            for item in items:
+                                if item.get("name") == args.blogger:
+                                    url = item.get("url")
+                                    break
+                except:
+                    pass
+        bloggers_to_run.append({"name": args.blogger, "url": url})
     else:
-        bloggers_to_run = load_all_bloggers()
+        # 如果是全博主模式，优先从 SQLite 加载
+        bloggers_to_run = load_bloggers_from_db()
         if not bloggers_to_run:
-            print("未在 saved_links.json 中找到任何有效的博主配置。")
+            # 回退读取 saved_links.json
+            filepath = os.path.join(ROOT_DIR, "saved_links.json")
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        for category, items in data.items():
+                            for item in items:
+                                name = item.get("name")
+                                url = item.get("url")
+                                if name and "示例" not in name:
+                                    bloggers_to_run.append({"name": name, "url": url})
+                except:
+                    pass
+                    
+        if not bloggers_to_run:
+            print("未在数据库或 saved_links.json 中找到任何有效的博主配置。")
             sys.exit(1)
 
-    print(f"流水线准备就绪。计划更新以下博主: {', '.join(bloggers_to_run)}")
+    print(f"流水线准备就绪。计划更新以下博主: {', '.join(b['name'] for b in bloggers_to_run)}")
     print(f"每个博主上限抓取 {args.max_videos} 条视频，Whisper API: {args.whisper_url}")
 
     success_count = 0
-    for blogger in bloggers_to_run:
+    for b in bloggers_to_run:
+        blogger_name = b["name"]
+        blogger_url = b["url"]
         try:
-            if process_single_blogger(blogger, args.max_videos, args.whisper_url):
+            if process_single_blogger(blogger_name, args.max_videos, args.whisper_url, url=blogger_url):
                 success_count += 1
         except Exception as e:
-            print(f"博主【{blogger}】在流水线运行期间发生未捕获异常: {e}")
+            print(f"博主【{blogger_name}】在流水线运行期间发生未捕获异常: {e}")
 
     print(f"\n==================================================")
     print(f"流水线同步运行汇总: {success_count}/{len(bloggers_to_run)} 成功")

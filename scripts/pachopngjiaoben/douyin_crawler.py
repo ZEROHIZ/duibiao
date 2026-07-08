@@ -38,7 +38,7 @@ if sys.stderr.encoding != 'utf-8':
 # 1. 基础数据工具函数
 # ------------------------------------------------------------------
 
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def load_links(filepath="saved_links.json"):
     """
@@ -783,6 +783,8 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
             for vid, entity in video_entities.items():
                 if vid in captured_comments:
                     raw_comments = captured_comments[vid]
+                    # 按照 digg_count 点赞数从高到低排序评论
+                    raw_comments = sorted(raw_comments, key=lambda x: x.get("digg_count", 0), reverse=True)
                     comment_list = []
                     for rc in raw_comments:
                         user_info = rc.get("user", {})
@@ -847,18 +849,28 @@ async def main():
     parser = argparse.ArgumentParser(description="抖音博主数据爬取脚本")
     parser.add_argument("--blogger", default=None, help="指定爬取的博主姓名 (如果未指定，默认爬取所有配置的博主)")
     parser.add_argument("--max-videos", type=int, default=5, help="每个博主爬取的最大视频数")
+    parser.add_argument("--url", default=None, help="指定爬取的博主主页链接")
     args = parser.parse_args()
 
-    links = load_links()
-    if not links:
-        print("未在 saved_links.json 中找到任何可用链接，或刚才已为您自动初始化空模板。请检查并配置后重试。")
-        sys.exit(1)
-        
-    if args.blogger:
-        links = [link for link in links if link['name'] == args.blogger]
+    # 如果传入了 url 和 blogger 名字，直接组装使用，无需读取 saved_links.json
+    if args.url and args.blogger:
+        links = [{
+            "category": "自定义",
+            "name": args.blogger,
+            "id": args.blogger,
+            "url": args.url
+        }]
+    else:
+        links = load_links()
         if not links:
-            print(f"未在 saved_links.json 中找到名字为 [{args.blogger}] 的博主，请检查配置。")
+            print("未在 saved_links.json 中找到任何可用链接，或刚才已为您自动初始化空模板。请检查并配置后重试。")
             sys.exit(1)
+            
+        if args.blogger:
+            links = [link for link in links if link['name'] == args.blogger]
+            if not links:
+                print(f"未在 saved_links.json 中找到名字为 [{args.blogger}] 的博主，请检查配置。")
+                sys.exit(1)
 
     print(f"共读取到 {len(links)} 个目标博主账号：")
     for idx, link in enumerate(links):

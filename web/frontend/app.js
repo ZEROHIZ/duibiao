@@ -616,7 +616,8 @@ async function loadBloggersList() {
     gridContainer.innerHTML = `<div class="lead-text">加载对标账号中...</div>`;
 
     try {
-        const res = await fetch(`${API_BASE}/api/bloggers`);
+        // 使用时间戳参数进行防浏览器缓存处理，保证删除/修改后立即可见
+        const res = await fetch(`${API_BASE}/api/bloggers?t=${Date.now()}`);
         const data = await res.json();
 
         if (data.length === 0) {
@@ -630,7 +631,7 @@ async function loadBloggersList() {
         tableBody.innerHTML = "";
         data.forEach(b => {
             const tr = document.createElement("tr");
-            const urlInputId = `url-input-${b.id}`;
+            tr.style.cursor = "pointer";
             const urlVal = b.home_url || "";
             
             // 处理最新视频数据
@@ -643,17 +644,16 @@ async function loadBloggersList() {
                 ? `<button class="btn-text" style="color: var(--accent-primary)" onclick="loadBloggerDetail('${b.name}')">蒸馏拆解</button>`
                 : `<span style="font-size: 0.8rem; color: var(--ink-tertiary);">数据未同步</span>`;
 
+            // 仅保留删除操作按钮，改名改为双击文字
+            const deleteHtml = `<button class="btn-text" style="color: var(--accent-primary); margin-left: 0.75rem;" onclick="deleteBloggerConfirm(${b.id}, '${b.name}')">删除</button>`;
+            const actionsHtml = `<div style="display: flex; align-items: center; justify-content: flex-start;">${distillActionHtml}${deleteHtml}</div>`;
+
             tr.innerHTML = `
                 <td>
-                    <button class="btn-text" style="font-size: 1.05rem; font-family: var(--font-serif); font-weight: 600; text-align: left;" onclick="${hasDistilled ? `loadBloggerDetail('${b.name}')` : 'void(0)'}">
-                        ${b.name}
-                    </button>
+                    <span class="editable-field" data-id="${b.id}" data-field="name" title="双击可直接修改博主名称" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-size: 1.05rem; font-family: var(--font-serif); font-weight: 600; display: inline-block; padding-bottom: 2px;">${b.name}</span>
                 </td>
                 <td>
-                    <div style="display: flex; align-items: center; width: 100%;">
-                        <input type="text" class="input-url-edit" id="${urlInputId}" value="${urlVal}" placeholder="配置个人主页链接...">
-                        <button class="btn-inline-save" onclick="saveBloggerHomeUrl(${b.id}, '${urlInputId}')">保存</button>
-                    </div>
+                    <span class="editable-field" data-id="${b.id}" data-field="home_url" title="双击可直接修改监控主页链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-family: var(--font-mono); font-size: 0.85rem; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; padding-bottom: 2px; vertical-align: middle;">${urlVal || "双击配置个人主页链接..."}</span>
                 </td>
                 <td style="font-family: var(--font-serif); color: var(--accent-primary); font-weight: 500;">
                     ${hasDistilled ? b.avg_likes.toLocaleString() : '待同步/0'}
@@ -668,10 +668,30 @@ async function loadBloggersList() {
                 </td>
                 <td style="font-size: 0.85rem; color: var(--ink-tertiary);">${latestTime}</td>
                 <td>
-                    ${distillActionHtml}
+                    ${actionsHtml}
                 </td>
             `;
+
+            // 单击整行（避开编辑状态、按钮）即可直接进入深度蒸馏页面
+            tr.addEventListener("click", (e) => {
+                if (e.target.closest("button") || e.target.closest("input") || e.target.closest(".editable-field")) {
+                    return;
+                }
+                if (hasDistilled) {
+                    loadBloggerDetail(b.name);
+                } else {
+                    showToast(`博主“${b.name}”数据尚未同步，请先点击右侧“同步更新”开始同步数据。`, "info");
+                }
+            });
+
             tableBody.appendChild(tr);
+        });
+
+        // 绑定双击编辑事件
+        tableBody.querySelectorAll(".editable-field").forEach(el => {
+            el.addEventListener("dblclick", (e) => {
+                startInlineEdit(e.currentTarget);
+            });
         });
 
         // 2. 渲染网格卡片视图
@@ -731,6 +751,93 @@ async function loadBloggersList() {
     }
 }
 
+// 双击编辑内联元素实现函数
+function startInlineEdit(el) {
+    if (el.classList.contains("editing")) return;
+    el.classList.add("editing");
+    
+    const bloggerId = el.getAttribute("data-id");
+    const field = el.getAttribute("data-field");
+    const originalValue = el.innerText === "双击配置个人主页链接..." ? "" : el.innerText;
+    
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = originalValue;
+    input.style.width = "100%";
+    input.style.fontFamily = field === "home_url" ? "var(--font-mono)" : "var(--font-sans)";
+    input.style.fontSize = el.style.fontSize;
+    input.style.fontWeight = el.style.fontWeight;
+    input.style.border = "1px solid var(--accent-primary)";
+    input.style.background = "var(--bg-secondary)";
+    input.style.color = "var(--ink-primary)";
+    input.style.padding = "0.2rem 0.4rem";
+    input.style.boxSizing = "border-box";
+    
+    el.innerHTML = "";
+    el.appendChild(input);
+    input.focus();
+    input.select();
+    
+    let finished = false;
+    
+    const finishEdit = async (save) => {
+        if (finished) return;
+        finished = true;
+        
+        const newValue = input.value.trim();
+        if (save && newValue !== originalValue) {
+            el.innerText = "保存中...";
+            try {
+                const url = field === "home_url" 
+                    ? `${API_BASE}/api/bloggers/${bloggerId}/home_url`
+                    : `${API_BASE}/api/bloggers/${bloggerId}/name`;
+                
+                const payload = field === "home_url" 
+                    ? { home_url: newValue }
+                    : { name: newValue };
+                    
+                const res = await fetch(url, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    showToast("保存成功", "success");
+                    loadBloggersList();
+                    if (field === "name") {
+                        fetchDashboardStats();
+                    }
+                } else {
+                    const err = await res.json();
+                    showToast(`修改失败: ${err.detail || "冲突或错误"}`, "error");
+                    el.innerText = originalValue || (field === "home_url" ? "双击配置个人主页链接..." : "");
+                    el.classList.remove("editing");
+                }
+            } catch (err) {
+                showToast("网络请求失败", "error");
+                el.innerText = originalValue || (field === "home_url" ? "双击配置个人主页链接..." : "");
+                el.classList.remove("editing");
+            }
+        } else {
+            el.innerText = originalValue || (field === "home_url" ? "双击配置个人主页链接..." : "");
+            el.classList.remove("editing");
+        }
+    };
+    
+    input.addEventListener("blur", () => {
+        finishEdit(true);
+    });
+    
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            finishEdit(true);
+        } else if (e.key === "Escape") {
+            finishEdit(false);
+        }
+    });
+}
+
 // 渲染全局最新作品时间流总览
 async function loadAllWorksTimeline() {
     const tbody = document.querySelector("#table-timeline-notes tbody");
@@ -770,6 +877,19 @@ async function loadAllWorksTimeline() {
             commentTr.className = "row-comments-drawer";
             commentTr.setAttribute("id", `comments-drawer-${note.id}`);
             
+            // 格式化正文/转录状态
+            let descHtml = "";
+            const isUrl = note.desc && (note.desc.startsWith("http://") || note.desc.startsWith("https://"));
+            const isFailed = note.desc && note.desc.startsWith("[转录失败]");
+            if (isUrl) {
+                descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">⏳ 视频已导入，后台语音转录队列正在排队处理中... (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+            } else if (isFailed) {
+                const cleanUrl = note.desc.includes("http") ? note.desc.substring(note.desc.indexOf("http")) : "#";
+                descHtml = `<span style="color: var(--accent-primary); font-size: 0.82rem; font-style: italic;">❌ 语音转译失败 (Whisper 服务繁忙)。原视频链接: <a href="${cleanUrl}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">点击去原视频播放</a></span>`;
+            } else {
+                descHtml = note.desc || "无描述文本";
+            }
+
             let commentsHtml = "";
             const commentsList = note.comments_list || [];
             if (commentsList.length > 0) {
@@ -789,6 +909,12 @@ async function loadAllWorksTimeline() {
             commentTr.innerHTML = `
                 <td colspan="8">
                     <div class="comments-drawer-inner" id="drawer-inner-${note.id}">
+                        <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px dashed var(--border-color);">
+                            <h4 class="comments-drawer-title" style="margin-bottom: 0.4rem;">作品文案 / 视频语音转录</h4>
+                            <p style="font-size: 0.85rem; line-height: 1.6; color: var(--ink-secondary); white-space: pre-wrap; margin-bottom: 0;">
+                                ${descHtml}
+                            </p>
+                        </div>
                         <h4 class="comments-drawer-title">脱敏热门评论与作者互动监控</h4>
                         <div class="drawer-comments-box">
                             ${commentsHtml}
@@ -815,28 +941,57 @@ async function loadAllWorksTimeline() {
 }
 
 // 修改主页链接 API 对接
-async function saveBloggerHomeUrl(bloggerId, inputId) {
-    const inputEl = document.getElementById(inputId);
-    if (!inputEl) return;
+// 删除博主 API 对接（使用自定义模态框取代系统 confirm 弹窗）
+function deleteBloggerConfirm(bloggerId, name) {
+    const modal = document.getElementById("delete-modal-overlay");
+    const modalBody = document.getElementById("delete-modal-body");
+    const confirmBtn = document.getElementById("btn-delete-confirm");
+    const cancelBtn = document.getElementById("btn-delete-cancel");
+    
+    if (!modal || !modalBody || !confirmBtn || !cancelBtn) {
+        // Fallback to system confirm
+        if (confirm(`警告：您确定要删除对标博主“${name}”吗？此操作会同时级联删除该博主关联的全部笔记及分析数据，且不可恢复！`)) {
+            executeDelete(bloggerId);
+        }
+        return;
+    }
+    
+    modalBody.innerHTML = `警告：您确定要删除对标博主“<strong>${name}</strong>”吗？<br/><br/>此操作会同时级联删除该博主在 SQLite 中的<b>全部作品/笔记数据、作者评论以及 AI 蒸馏分析分析结果</b>，且完全不可恢复！`;
+    modal.style.display = "flex";
+    
+    // 克隆按钮清除之前的事件绑定以防累积
+    const newConfirmBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+    
+    const newCancelBtn = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+    
+    newCancelBtn.addEventListener("click", () => {
+        modal.style.display = "none";
+    });
+    
+    newConfirmBtn.addEventListener("click", async () => {
+        modal.style.display = "none";
+        await executeDelete(bloggerId);
+    });
+}
 
-    const newUrl = inputEl.value.trim();
-
+async function executeDelete(bloggerId) {
     try {
-        const res = await fetch(`${API_BASE}/api/bloggers/${bloggerId}/home_url`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ home_url: newUrl })
+        const res = await fetch(`${API_BASE}/api/bloggers/${bloggerId}`, {
+            method: "DELETE"
         });
 
         if (res.ok) {
-            alert("监控主页链接保存成功！");
-            loadBloggersList(); // 重新加载以刷新表格
+            showToast("博主已成功删除！", "success");
+            fetchDashboardStats();
+            loadBloggersList();
         } else {
             const err = await res.json();
-            alert(`修改失败: ${err.detail || "错误"}`);
+            showToast(`删除失败: ${err.detail || "未知错误"}`, "error");
         }
     } catch (e) {
-        alert("网络接口调用失败。");
+        showToast("网络连接失败，请确认后端服务状态。", "error");
     }
 }
 
@@ -1258,6 +1413,19 @@ async function loadBloggerNotesList(bloggerName) {
             commentTr.className = "row-comments-drawer";
             commentTr.setAttribute("id", `comments-drawer-${note.id}`);
             
+            // 格式化正文/转录状态
+            let descHtml = "";
+            const isUrl = note.desc && (note.desc.startsWith("http://") || note.desc.startsWith("https://"));
+            const isFailed = note.desc && note.desc.startsWith("[转录失败]");
+            if (isUrl) {
+                descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">⏳ 视频已导入，后台语音转录队列正在排队处理中... (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+            } else if (isFailed) {
+                const cleanUrl = note.desc.includes("http") ? note.desc.substring(note.desc.indexOf("http")) : "#";
+                descHtml = `<span style="color: var(--accent-primary); font-size: 0.82rem; font-style: italic;">❌ 语音转译失败 (Whisper 服务繁忙)。原视频链接: <a href="${cleanUrl}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">点击去原视频播放</a></span>`;
+            } else {
+                descHtml = note.desc || "无描述文本";
+            }
+
             let commentsHtml = "";
             const commentsList = note.comments_list || [];
             if (commentsList.length > 0) {
@@ -1277,6 +1445,12 @@ async function loadBloggerNotesList(bloggerName) {
             commentTr.innerHTML = `
                 <td colspan="8">
                     <div class="comments-drawer-inner" id="drawer-inner-${note.id}">
+                        <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px dashed var(--border-color);">
+                            <h4 class="comments-drawer-title" style="margin-bottom: 0.4rem;">作品文案 / 视频语音转录</h4>
+                            <p style="font-size: 0.85rem; line-height: 1.6; color: var(--ink-secondary); white-space: pre-wrap; margin-bottom: 0;">
+                                ${descHtml}
+                            </p>
+                        </div>
                         <h4 class="comments-drawer-title">脱敏热门评论与作者互动监控</h4>
                         <div class="drawer-comments-box">
                             ${commentsHtml}

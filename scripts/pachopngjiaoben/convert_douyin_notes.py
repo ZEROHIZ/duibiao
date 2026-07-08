@@ -248,7 +248,7 @@ def map_comments(raw_comments, blogger_name=None):
     return top_level_comments
 
 
-def convert_notes(input_data, whisper_url, model="medium", blogger_name=None, existing_notes_map=None):
+def convert_notes(input_data, whisper_url, model="medium", blogger_name=None, existing_notes_map=None, skip_transcribe=False):
     """
     主转换逻辑：把原始字典结构转换为标准列表结构，回填视频转录文本
     """
@@ -284,11 +284,15 @@ def convert_notes(input_data, whisper_url, model="medium", blogger_name=None, ex
             print(f"检测到视频 [{feed_id}] 已经有转录文本，复用该文本以避免重复调用 Whisper API。")
             desc_val = existing_desc
         elif is_link:
-            print(f"检测到 desc 为链接，执行第一轮视频转录...")
-            success, desc_val = transcribe_with_retry(desc, whisper_url, model=model)
-            if not success:
-                print(f"⚠️ 第一轮转录失败，将作为待重试项保留 URL。")
-                desc_val = desc  # 第一轮失败，保留原始 URL 以便后续重试
+            if skip_transcribe:
+                print(f"检测到 desc 为链接，已设置 skip-transcribe，保留原始 URL 快速入库。")
+                desc_val = desc
+            else:
+                print(f"检测到 desc 为链接，执行第一轮视频转录...")
+                success, desc_val = transcribe_with_retry(desc, whisper_url, model=model)
+                if not success:
+                    print(f"⚠️ 第一轮转录失败，将作为待重试项保留 URL。")
+                    desc_val = desc  # 第一轮失败，保留原始 URL 以便后续重试
         else:
             print(f"desc 为文本，直接跳过转录。")
             desc_val = desc
@@ -368,6 +372,7 @@ def main():
     parser.add_argument("-b", "--blogger", required=True, help="博主昵称（用于识别作者评论，并作为默认的输出文件名）")
     parser.add_argument("--whisper-url", default="http://192.168.110.30:7211/transcribe", help="Whisper API transcribe 接口地址")
     parser.add_argument("--model", default="medium", help="Whisper 模型名称")
+    parser.add_argument("--skip-transcribe", action="store_true", help="是否跳过 Whisper 语音转文字（快速入库模式）")
     args = parser.parse_args()
 
     # 1. 检查输入文件
@@ -411,7 +416,8 @@ def main():
         whisper_url=args.whisper_url,
         model=args.model,
         blogger_name=args.blogger,
-        existing_notes_map=existing_notes_map
+        existing_notes_map=existing_notes_map,
+        skip_transcribe=args.skip_transcribe
     )
 
     # 3. 保存输出
