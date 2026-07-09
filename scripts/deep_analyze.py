@@ -300,7 +300,7 @@ def gen_enhanced_deep_analysis(nickname, stats, top10, category_stats, tag_freq,
         lines.append(f"\n| 标题模式 | 使用次数 | 占比 | 示例 |")
         lines.append(f"|----------|---------|------|------|")
         for pattern_name, data in sorted(title_patterns.items(), key=lambda x: x[1]["count"], reverse=True):
-            example = data["examples"][0][:20] if data["examples"] else ""
+            example = data["examples"][0] if data["examples"] else ""
             lines.append(f"| {pattern_name} | {data['count']} | {data['pct']}% | {example} |")
         
         top_pattern = max(title_patterns.items(), key=lambda x: x[1]["count"])
@@ -649,7 +649,7 @@ def gen_data_draft(nickname, stats, top10, category_stats, tag_freq,
         lines.append(f"\n| 模式 | 条数 | 占比 | 示例 |")
         lines.append(f"|------|------|------|------|")
         for pname, data in sorted(title_patterns.items(), key=lambda x: x[1]["count"], reverse=True):
-            ex = data["examples"][0][:20] if data["examples"] else ""
+            ex = data["examples"][0] if data["examples"] else ""
             lines.append(f"| {pname} | {data['count']} | {data['pct']}% | {ex} |")
 
     lines.append(f"\n## Emoji 使用")
@@ -898,7 +898,7 @@ def gen_distill_task(nickname, stats, top10, category_stats, tag_freq,
     if title_patterns:
         lines += [f"| 模式 | 条数 | 占比 | 示例 |", f"|------|------|------|------|"]
         for pname, data in sorted(title_patterns.items(), key=lambda x: x[1]["count"], reverse=True):
-            ex = data["examples"][0][:20] if data["examples"] else ""
+            ex = data["examples"][0] if data["examples"] else ""
             lines.append(f"| {pname} | {data['count']} | {data['pct']}% | {ex} |")
     else:
         lines.append("（无标题模式数据）")
@@ -1631,7 +1631,7 @@ def gen_distill_task(nickname, stats, top10, category_stats, tag_freq,
 
     if sorted_patterns:
         for i, (pname, data) in enumerate(sorted_patterns):
-            ex = data["examples"][0][:20] if data["examples"] else "（示例）"
+            ex = data["examples"][0] if data["examples"] else "（示例）"
             lines.append(f'| {i+1} | {pname} | {data["pct"]}% | "{{填空模板}}" | "{ex}" | {{改编建议}} |')
         for i in range(len(sorted_patterns), 5):
             lines.append(f'| {i+1} | {{公式名称}} | {{X}}% | "{{模板}}" | "{{博主原标题}}" | {{改编建议}} |')

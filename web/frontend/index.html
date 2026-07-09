@@ -239,16 +239,17 @@
                 <div id="blogger-detail-view" class="subview">
                     <div class="detail-nav-back">
                         <button id="btn-back-bloggers" class="btn-text">← 返回博主列表</button>
-                        <div style="display: flex; gap: 1rem; align-items: center;">
-                            <div style="display: flex; align-items: center; gap: 0.4rem;">
+                        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 0.3rem;">
                                 <label for="detail-max-videos" style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-secondary);">更新数量:</label>
-                                <input type="number" id="detail-max-videos" value="5" min="1" max="50" style="width: 55px; height: 1.8rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.35rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-primary); text-align: center;">
+                                <input type="number" id="detail-max-videos" value="5" min="1" max="50" style="width: 45px; height: 1.8rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.25rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-primary); text-align: center;">
                             </div>
-                            <button id="btn-sync-crawler" class="btn-text" style="font-size: 0.8rem; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--ink-primary); padding: 0.35rem 0.75rem;">↻ 同步更新数据</button>
-                            <button id="btn-open-ai-report" class="btn-text" style="opacity: 0.45; font-size: 0.8rem; letter-spacing: 0.08em; border: 1px solid var(--ink-secondary); padding: 0.35rem 0.75rem;">↗ AI 蒸馏报告</button>
+                            <button id="btn-sync-crawler" class="btn-text" style="font-size: 0.8rem; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 0.3rem; border: 1px solid var(--ink-primary); padding: 0.35rem 0.65rem;">↻ 同步更新数据</button>
+                            <button id="btn-open-ai-report" class="btn-text" style="opacity: 0.35; font-size: 0.8rem; letter-spacing: 0.08em; border: 1px solid var(--ink-secondary); padding: 0.35rem 0.65rem;">↗ AI 蒸馏报告</button>
+                            <button id="btn-open-ai-diagnosis" class="btn-text" style="opacity: 0.35; font-size: 0.8rem; letter-spacing: 0.08em; border: 1px solid var(--ink-secondary); padding: 0.35rem 0.65rem;">↗ AI 诊断报告</button>
                         </div>
                     </div>
-                    
+
                     <div class="blogger-detail-profile" id="detail-profile-header">
                         <!-- Dynamic blogger header details -->
                     </div>
@@ -332,7 +333,13 @@
                         <div id="detail-tab-ai-skill" class="detail-tab-section">
                             <div class="md-title-row">
                                 <h3 class="detail-section-title">AI 创作指南 (SKILL.md)</h3>
-                                <button class="btn-copy-md" id="btn-copy-skill" title="复制完整内容">复制</button>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <div class="mode-toggle-bar" data-toggle-target="skill" style="display: flex; gap: 0.25rem; font-family: var(--font-mono); font-size: 0.72rem;">
+                                        <button class="btn-mode-toggle active" data-mode-val="A" style="border: 1px solid var(--ink-primary); padding: 0.2rem 0.5rem; background: var(--ink-primary); color: var(--bg-primary); cursor: pointer; font-family: var(--font-mono);">对标模式 A</button>
+                                        <button class="btn-mode-toggle" data-mode-val="B" style="border: 1px solid var(--ink-primary); padding: 0.2rem 0.5rem; background: transparent; color: var(--ink-primary); cursor: pointer; font-family: var(--font-mono);">诊断模式 B</button>
+                                    </div>
+                                    <button class="btn-copy-md" id="btn-copy-skill" title="复制完整内容" style="padding: 0.2rem 0.5rem;">复制</button>
+                                </div>
                             </div>
                             <p class="lead-text">读取自本地物理分析产物 <code>SKILL.md</code>。包含该博主的写作技艺拆解、框架模版与结构化指导。</p>
                             <div id="ai-skill-content" class="markdown-body" style="display: none;">
@@ -347,7 +354,13 @@
                         <div id="detail-tab-ai-soul" class="detail-tab-section">
                             <div class="md-title-row">
                                 <h3 class="detail-section-title">灵魂底稿 (SOUL.md)</h3>
-                                <button class="btn-copy-md" id="btn-copy-soul" title="复制完整内容">复制</button>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <div class="mode-toggle-bar" data-toggle-target="soul" style="display: flex; gap: 0.25rem; font-family: var(--font-mono); font-size: 0.72rem;">
+                                        <button class="btn-mode-toggle active" data-mode-val="A" style="border: 1px solid var(--ink-primary); padding: 0.2rem 0.5rem; background: var(--ink-primary); color: var(--bg-primary); cursor: pointer; font-family: var(--font-mono);">对标模式 A</button>
+                                        <button class="btn-mode-toggle" data-mode-val="B" style="border: 1px solid var(--ink-primary); padding: 0.2rem 0.5rem; background: transparent; color: var(--ink-primary); cursor: pointer; font-family: var(--font-mono);">诊断模式 B</button>
+                                    </div>
+                                    <button class="btn-copy-md" id="btn-copy-soul" title="复制完整内容" style="padding: 0.2rem 0.5rem;">复制</button>
+                                </div>
                             </div>
                             <p class="lead-text">读取自本地物理分析产物 <code>SOUL.md</code>。包含该博主的价值诉求、语气语调与精神内核定义。</p>
                             <div id="ai-soul-content" class="markdown-body" style="display: none;">
@@ -404,42 +417,61 @@
                 <h2 class="page-header-title">系统参数配置</h2>
                 <p class="lead-text">在此调整对标账号同步流水线全局参数。保存后，运行同步任务时将自动读取该配置参数。</p>
                 
-                <form id="system-settings-form" class="editorial-form" style="max-width: 600px; display: flex; flex-direction: column; gap: 1.5rem;">
-                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
-                        <label for="setting-whisper-url" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER API 接口地址</label>
-                        <input type="url" id="setting-whisper-url" placeholder="http://192.168.110.30:7211/transcribe" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                <form id="system-settings-form" class="editorial-form" style="max-width: 1200px; display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; margin-top: 1.5rem;">
+                    <!-- Left Column: Transcribe & System Settings -->
+                    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                        <span class="section-label" style="font-size: 0.65rem; color: var(--ink-secondary); letter-spacing: 0.1em; display: block; margin-bottom: 0.25rem;">SYSTEM & TRANSCRIBER CONFIG</span>
+                        
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-whisper-url" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER API 接口地址</label>
+                            <input type="url" id="setting-whisper-url" placeholder="http://192.168.110.30:7211/transcribe" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+                        
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-whisper-model" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER 转录模型级别</label>
+                            <select id="setting-whisper-model" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="tiny" style="background: var(--bg-secondary);">tiny (最快/极低功耗)</option>
+                                <option value="base" style="background: var(--bg-secondary);">base</option>
+                                <option value="small" style="background: var(--bg-secondary);">small</option>
+                                <option value="medium" style="background: var(--bg-secondary);">medium (推荐/精度高)</option>
+                                <option value="large-v3" style="background: var(--bg-secondary);">large-v3 (极慢/显存要求高)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-transcribe-interval" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">后台转录扫描数据库间隔 (分钟)</label>
+                            <input type="number" id="setting-transcribe-interval" min="1" max="1440" placeholder="10" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-enable-transcribe" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">后台语音转录服务 (TRANSCRIBER)</label>
+                            <select id="setting-enable-transcribe" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="true" style="background: var(--bg-secondary);">开启自动转录 (自动扫描数据库并调用 WHISPER 转录视频)</option>
+                                <option value="false" style="background: var(--bg-secondary);">关闭自动转录 (停止扫描转录服务)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-headless" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">浏览器运行模式 (HEADLESS)</label>
+                            <select id="setting-headless" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="true" style="background: var(--bg-secondary);">开启无头模式 (在后台静默运行，Docker/无 GUI 推荐)</option>
+                                <option value="false" style="background: var(--bg-secondary);">关闭无头模式 (显示浏览器操作界面以进行调试)</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
-                        <label for="setting-whisper-model" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER 转录模型级别</label>
-                        <select id="setting-whisper-model" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
-                            <option value="tiny" style="background: var(--bg-secondary);">tiny (最快/极低功耗)</option>
-                            <option value="base" style="background: var(--bg-secondary);">base</option>
-                            <option value="small" style="background: var(--bg-secondary);">small</option>
-                            <option value="medium" style="background: var(--bg-secondary);">medium (推荐/精度高)</option>
-                            <option value="large-v3" style="background: var(--bg-secondary);">large-v3 (极慢/显存要求高)</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
-                        <label for="setting-max-videos" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">单次爬取上限数 (视频/笔记条数)</label>
-                        <input type="number" id="setting-max-videos" min="1" max="50" placeholder="5" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+
+                    <!-- Right Column: Crawler Limits -->
+                    <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                        <span class="section-label" style="font-size: 0.65rem; color: var(--ink-secondary); letter-spacing: 0.1em; display: block; margin-bottom: 0.25rem;">CRAWLER CONFIG</span>
+                        
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-max-videos" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">单次爬取上限数 (视频/笔记条数)</label>
+                            <input type="number" id="setting-max-videos" min="1" max="50" placeholder="5" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
                     </div>
                     
-                    <!-- 新增：后台转录扫描数据库轮询时间参数 -->
-                    <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
-                        <label for="setting-transcribe-interval" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">后台转录扫描数据库间隔 (分钟)</label>
-                        <input type="number" id="setting-transcribe-interval" min="1" max="1440" placeholder="10" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
-                    </div>
-                    
-                    <div class="form-group" style="display: flex; align-items: flex-start; gap: 0.75rem; margin-top: 0.25rem;">
-                        <input type="checkbox" id="setting-headless" style="width: 1.1rem; height: 1.1rem; cursor: pointer; margin-top: 0.15rem; flex-shrink: 0;">
-                        <label for="setting-headless" style="font-size: 0.85rem; line-height: 1.4; color: var(--ink-secondary); cursor: pointer; user-select: none;">开启无头模式 (在 Docker / 无 GUI 环境下运行请勾选)</label>
-                    </div>
-                    <div class="form-group" style="display: flex; align-items: flex-start; gap: 0.75rem;">
-                        <input type="checkbox" id="setting-enable-transcribe" style="width: 1.1rem; height: 1.1rem; cursor: pointer; margin-top: 0.15rem; flex-shrink: 0;">
-                        <label for="setting-enable-transcribe" style="font-size: 0.85rem; line-height: 1.4; color: var(--ink-secondary); cursor: pointer; user-select: none;">开启后台语音转录 (自动扫描数据库并调用 WHISPER 转录视频)</label>
-                    </div>
-                    
-                    <div style="display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <!-- Full Width Buttons Container -->
+                    <div style="grid-column: span 2; display: flex; gap: 1rem; margin-top: 1rem; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--ink-primary); padding-top: 1.5rem;">
                         <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.75rem; background-color: var(--ink-primary); color: var(--bg-primary); border: 1px solid var(--ink-primary); cursor: pointer; font-family: var(--font-sans); font-size: 0.82rem; font-weight: bold; letter-spacing: 0.05em;">保存系统设置</button>
                         <button type="button" id="btn-sync-all" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center;">一键更新全部博主</button>
                         <button type="button" id="btn-transcribe-now" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center; background-color: var(--bg-secondary); color: var(--accent-primary); border-color: var(--accent-primary);">立即扫描转录</button>
@@ -521,7 +553,6 @@
         </footer>
         
     </div>
-
     <!-- Custom Deletion Confirm Modal -->
     <div id="delete-modal-overlay" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
         <div class="modal-box" style="background: var(--bg-primary); border: 2px solid var(--accent-primary); width: 90%; max-width: 500px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.3); font-family: var(--font-sans); color: var(--ink-primary); position: relative;">

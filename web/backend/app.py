@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from typing import Optional, List
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -671,16 +672,35 @@ def get_blogger_notes(name: str, limit: int = Query(50)):
 
 
 @app.get("/api/bloggers/{name}/files_status")
-def get_blogger_files_status(name: str):
-    """检测博主的物理蒸馏文件存在性，并返回静态访问路径"""
+def get_blogger_files_status(name: str, mode: str = "A"):
+    """检测博主的物理蒸馏文件存在性，并根据当前 mode 返回静态访问路径"""
     import urllib.parse
     
     output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "output")
     
-    report_filename = f"{name}_蒸馏报告.html"
-    skill_filename = f"{name}_创作指南.skill/SKILL.md"
-    soul_filename = f"{name}_创作指南.skill/SOUL.md"
+    # 模式 A: 对标分析
+    a_report = f"{name}_蒸馏报告.html"
+    a_skill = f"{name}_创作指南.skill/SKILL.md"
+    a_soul = f"{name}_创作指南.skill/SOUL.md"
     
+    # 模式 B: 自我诊断
+    b_report = f"{name}_诊断报告.html"
+    b_skill = f"{name}_创作基因.skill/SKILL.md"
+    b_soul = f"{name}_创作基因.skill/SOUL.md"
+    
+    a_report_exists = os.path.exists(os.path.join(output_dir, a_report))
+    b_report_exists = os.path.exists(os.path.join(output_dir, b_report))
+    
+    # 按照当前请求的 mode 决定主要返回哪个
+    if mode == "B":
+        report_filename = b_report
+        skill_filename = b_skill
+        soul_filename = b_soul
+    else:
+        report_filename = a_report
+        skill_filename = a_skill
+        soul_filename = a_soul
+        
     report_exists = os.path.exists(os.path.join(output_dir, report_filename))
     skill_exists = os.path.exists(os.path.join(output_dir, skill_filename))
     soul_exists = os.path.exists(os.path.join(output_dir, soul_filename))
@@ -705,9 +725,88 @@ def get_blogger_files_status(name: str):
             "soul": {
                 "exists": soul_exists,
                 "url": get_url(soul_filename) if soul_exists else None
-            }
+            },
+            "has_mode_a": a_report_exists,
+            "has_mode_b": b_report_exists
         }
     }
+
+# ----------------------------------------------------------
+# Codex AI 蒸馏集成 API 接口
+# ----------------------------------------------------------
+
+class DistillUpload(BaseModel):
+    blogger: str
+    mode: str = "A"  # "A" 或 "B"
+    report_html: str
+    skill_md: str
+    soul_md: Optional[str] = None
+
+
+@app.get("/api/distill/pending_tasks")
+def list_pending_distill_tasks():
+    """获取所有处于待分析状态的博主蒸馏任务底稿列表"""
+    raw_material_dir = os.path.join(ROOT_DIR, "output", "_过程文件", "原始素材")
+    tasks = []
+    if os.path.exists(raw_material_dir):
+        for filename in os.listdir(raw_material_dir):
+            if filename.endswith("_AI蒸馏任务.md"):
+                blogger_name = filename.replace("_AI蒸馏任务.md", "")
+                tasks.append({
+                    "blogger": blogger_name,
+                    "filename": filename,
+                    "filepath": f"output/_过程文件/原始素材/{filename}"
+                })
+    return tasks
+
+
+@app.get("/api/distill/pending_tasks/{blogger}/content")
+def get_pending_distill_task_content(blogger: str):
+    """读取指定博主的蒸馏任务底稿原始 Markdown 文本内容"""
+    task_file = os.path.join(ROOT_DIR, "output", "_过程文件", "原始素材", f"{blogger}_AI蒸馏任务.md")
+    if not os.path.exists(task_file):
+        raise HTTPException(status_code=404, detail=f"Blogger '{blogger}' AI distillation task draft file not found.")
+    try:
+        with open(task_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"blogger": blogger, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/distill/upload")
+def upload_distill_results(data: DistillUpload):
+    """接收 Codex 蒸馏产物文本，保存到 output/ 并自动完成前端渲染准备"""
+    name = data.blogger
+    mode = data.mode
+    output_dir = os.path.join(ROOT_DIR, "output")
+    
+    if mode == "B":
+        report_path = os.path.join(output_dir, f"{name}_诊断报告.html")
+        skill_dir = os.path.join(output_dir, f"{name}_创作基因.skill")
+    else:
+        report_path = os.path.join(output_dir, f"{name}_蒸馏报告.html")
+        skill_dir = os.path.join(output_dir, f"{name}_创作指南.skill")
+        
+    try:
+        # 1. 写入 HTML 报告
+        os.makedirs(os.path.dirname(report_path), exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(data.report_html)
+            
+        # 2. 写入 SKILL.md
+        os.makedirs(skill_dir, exist_ok=True)
+        with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+            f.write(data.skill_md)
+            
+        # 3. 写入 SOUL.md (可选)
+        if data.soul_md:
+            with open(os.path.join(skill_dir, "SOUL.md"), "w", encoding="utf-8") as f:
+                f.write(data.soul_md)
+                
+        return {"status": "success", "message": f"Successfully written distillation outputs for blogger '{name}'"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded files: {str(e)}")
 
 
 # ----------------------------------------------------------
@@ -738,7 +837,10 @@ DEFAULT_SETTINGS = {
     "max_videos": 5,
     "headless": True,
     "enable_transcribe": True,
-    "transcribe_interval": 5
+    "transcribe_interval": 5,
+    "openai_api_key": "",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_model_name": "gpt-4"
 }
 
 def get_settings_path():
@@ -872,6 +974,9 @@ class SettingsUpdate(BaseModel):
     transcribe_interval: int = 5
     headless: bool = True
     enable_transcribe: bool = True
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model_name: str = "gpt-4"
 
 @app.post("/api/settings")
 def update_settings_endpoint(settings: SettingsUpdate):
@@ -881,7 +986,10 @@ def update_settings_endpoint(settings: SettingsUpdate):
         "max_videos": settings.max_videos,
         "transcribe_interval": settings.transcribe_interval,
         "headless": settings.headless,
-        "enable_transcribe": settings.enable_transcribe
+        "enable_transcribe": settings.enable_transcribe,
+        "openai_api_key": settings.openai_api_key,
+        "openai_base_url": settings.openai_base_url,
+        "openai_model_name": settings.openai_model_name
     }
     if save_settings(data):
         return {"status": "success"}
@@ -1080,15 +1188,19 @@ def analyze_task_step(logs):
 
 @app.get("/api/crawl/status/{task_id}")
 def get_crawler_status(task_id: str):
+    is_crawl = False
+    
     with tasks_lock:
         if task_id in active_crawl_tasks:
             task_info = active_crawl_tasks[task_id]
             is_crawl = True
         elif task_id in active_transcribe_tasks:
             task_info = active_transcribe_tasks[task_id]
-            is_crawl = False
         else:
-            return {"status": "error", "message": "Task not found"}
+            task_info = None
+
+    if not task_info:
+        return {"status": "error", "message": "Task not found"}
         
     log_path = task_info["log_path"]
     logs = ""

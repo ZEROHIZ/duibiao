@@ -96,7 +96,7 @@ function setupEventListeners() {
         showBloggerSubview("list");
     });
 
-    // AI 蒸馏报告跳转按钮（右上角）
+    // AI 蒸馏报告跳转按钮（右上角，模式 A）
     const btnOpenReport = document.getElementById("btn-open-ai-report");
     if (btnOpenReport) {
         btnOpenReport.addEventListener("click", () => {
@@ -104,10 +104,48 @@ function setupEventListeners() {
             if (reportUrl) {
                 window.open(reportUrl, "_blank");
             } else {
-                alert(`博主“${activeBloggerName}”的 AI 蒸馏报告尚未生成（请先运行后台蒸馏脚本生成该文件）。`);
+                alert(`博主“${activeBloggerName}”的 AI 蒸馏报告 (模式 A) 尚未生成。请等待 Codex 后台蒸馏任务生成并上传。`);
             }
         });
     }
+
+    // AI 诊断报告跳转按钮（右上角，模式 B）
+    const btnOpenDiagnosis = document.getElementById("btn-open-ai-diagnosis");
+    if (btnOpenDiagnosis) {
+        btnOpenDiagnosis.addEventListener("click", () => {
+            const reportUrl = btnOpenDiagnosis.getAttribute("data-report-url");
+            if (reportUrl) {
+                window.open(reportUrl, "_blank");
+            } else {
+                alert(`博主“${activeBloggerName}”的 AI 诊断报告 (模式 B) 尚未生成。请等待 Codex 后台诊断任务生成并上传。`);
+            }
+        });
+    }
+
+    // 绑定 Markdown 选项卡内的模式切换
+    document.querySelectorAll(".mode-toggle-bar").forEach(bar => {
+        const targetType = bar.getAttribute("data-toggle-target"); // "skill" 或 "soul"
+        bar.querySelectorAll(".btn-mode-toggle").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                // 清理同级的 active 并给当前加上
+                bar.querySelectorAll(".btn-mode-toggle").forEach(b => {
+                    b.classList.remove("active");
+                    b.style.background = "transparent";
+                    b.style.color = "var(--ink-primary)";
+                });
+                
+                e.target.classList.add("active");
+                e.target.style.background = "var(--ink-primary)";
+                e.target.style.color = "var(--bg-primary)";
+                
+                const modeVal = e.target.getAttribute("data-mode-val");
+                
+                if (activeBloggerName) {
+                    loadMarkdownFile(activeBloggerName, targetType, modeVal);
+                }
+            });
+        });
+    });
 
     // 同步更新数据按钮事件 (轻量 Toast 排队模式，支持数量自定义)
     const btnSyncCrawler = document.getElementById("btn-sync-crawler");
@@ -1051,80 +1089,88 @@ async function loadBloggerDetail(bloggerName) {
     }
 }
 
+// 异步从指定的物理 Skill 文件夹中加载并渲染 Markdown 文件 (SKILL.md / SOUL.md)
+async function loadMarkdownFile(bloggerName, fileType, mode) {
+    const contentDiv = document.getElementById(`ai-${fileType}-content`);
+    const emptyDiv = document.getElementById(`ai-${fileType}-empty`);
+    
+    if (!contentDiv || !emptyDiv) return;
+
+    contentDiv.innerHTML = "";
+    contentDiv.style.display = "none";
+    emptyDiv.style.display = "block";
+    
+    const folderSuffix = mode === "B" ? "创作基因.skill" : "创作指南.skill";
+    const filename = fileType === "soul" ? "SOUL.md" : "SKILL.md";
+    const displayLabel = fileType === "soul" ? "灵魂底稿 SOUL.md" : "创作指南 SKILL.md";
+    
+    emptyDiv.querySelector("p").innerHTML = `未检测到该博主的${displayLabel}文件（需生成并放置于 <code>output/${bloggerName}_${folderSuffix}/</code> 目录中）。`;
+    
+    try {
+        const url = `/output/${encodeURIComponent(bloggerName)}_${folderSuffix}/${filename}?t=${Date.now()}`;
+        const res = await fetch(url);
+        if (res.ok) {
+            const text = await res.text();
+            if (window.marked && typeof window.marked.parse === "function") {
+                contentDiv.innerHTML = window.marked.parse(text);
+            } else {
+                contentDiv.innerHTML = formatMarkdownFallback(text);
+            }
+            contentDiv.dataset.rawMd = text;
+            contentDiv.style.display = "block";
+            emptyDiv.style.display = "none";
+        }
+    } catch (err) {
+        console.error(`Failed to load ${filename}`, err);
+    }
+}
+
 // 异步加载博主物理蒸馏文件并进行渲染
 async function loadBloggerPhysicalFiles(bloggerName) {
     const reportBtn = document.getElementById("btn-open-ai-report");
+    const diagnosisBtn = document.getElementById("btn-open-ai-diagnosis");
+    
     if (reportBtn) {
         reportBtn.removeAttribute('data-report-url');
-        reportBtn.style.opacity = '0.45';
+        reportBtn.style.opacity = '0.35';
     }
-
-    const skillContent = document.getElementById("ai-skill-content");
-    const skillEmpty = document.getElementById("ai-skill-empty");
-    skillContent.innerHTML = "";
-    skillContent.style.display = "none";
-    skillEmpty.style.display = "block";
-    skillEmpty.querySelector("p").innerHTML = `未检测到该博主的创作指南 <code>SKILL.md</code> 文件（需生成并放置于 <code>output/${bloggerName}_创作指南.skill/</code> 目录中）。`;
-
-    const soulContent = document.getElementById("ai-soul-content");
-    const soulEmpty = document.getElementById("ai-soul-empty");
-    soulContent.innerHTML = "";
-    soulContent.style.display = "none";
-    soulEmpty.style.display = "block";
-    soulEmpty.querySelector("p").innerHTML = `未检测到该博主的灵魂底稿 <code>SOUL.md</code> 文件（需生成并放置于 <code>output/${bloggerName}_创作指南.skill/</code> 目录中）。`;
-
+    if (diagnosisBtn) {
+        diagnosisBtn.removeAttribute('data-report-url');
+        diagnosisBtn.style.opacity = '0.35';
+    }
+    
     try {
-        const res = await fetch(`${API_BASE}/api/bloggers/${encodeURIComponent(bloggerName)}/files_status`);
-        const json = await res.json();
-        if (json.status === "success") {
-            const files = json.data;
-
-            // 1. AI 蒸馏报告
-            if (files.report && files.report.exists) {
-                if (reportBtn) {
-                    reportBtn.setAttribute('data-report-url', files.report.url);
-                    reportBtn.style.opacity = '1';
-                }
-            }
-
-            // 2. 创作指南 (SKILL.md)
-            if (files.skill && files.skill.exists) {
-                try {
-                    const txtRes = await fetch(files.skill.url);
-                    const markdownText = await txtRes.text();
-                    if (window.marked && typeof window.marked.parse === "function") {
-                        skillContent.innerHTML = window.marked.parse(markdownText);
-                    } else {
-                        skillContent.innerHTML = formatMarkdownFallback(markdownText);
-                    }
-                    skillContent.dataset.rawMd = markdownText;
-                    skillContent.style.display = "block";
-                    skillEmpty.style.display = "none";
-                } catch (err) {
-                    console.error("Failed to load SKILL.md", err);
-                }
-            }
-
-            // 3. 灵魂底稿 (SOUL.md)
-            if (files.soul && files.soul.exists) {
-                try {
-                    const txtRes = await fetch(files.soul.url);
-                    const markdownText = await txtRes.text();
-                    if (window.marked && typeof window.marked.parse === "function") {
-                        soulContent.innerHTML = window.marked.parse(markdownText);
-                    } else {
-                        soulContent.innerHTML = formatMarkdownFallback(markdownText);
-                    }
-                    soulContent.dataset.rawMd = markdownText;
-                    soulContent.style.display = "block";
-                    soulEmpty.style.display = "none";
-                } catch (err) {
-                    console.error("Failed to load SOUL.md", err);
-                }
+        // 1. 检测并获取模式 A (对标) 的报告状态
+        const resA = await fetch(`${API_BASE}/api/bloggers/${encodeURIComponent(bloggerName)}/files_status?mode=A&t=${Date.now()}`);
+        const jsonA = await resA.json();
+        if (jsonA.status === "success" && jsonA.data.report.exists) {
+            if (reportBtn) {
+                reportBtn.setAttribute('data-report-url', jsonA.data.report.url);
+                reportBtn.style.opacity = '1';
             }
         }
+        
+        // 2. 检测并获取模式 B (诊断) 的报告状态
+        const resB = await fetch(`${API_BASE}/api/bloggers/${encodeURIComponent(bloggerName)}/files_status?mode=B&t=${Date.now()}`);
+        const jsonB = await resB.json();
+        if (jsonB.status === "success" && jsonB.data.report.exists) {
+            if (diagnosisBtn) {
+                diagnosisBtn.setAttribute('data-report-url', jsonB.data.report.url);
+                diagnosisBtn.style.opacity = '1';
+            }
+        }
+        
+        // 3. 根据当前选中的模式，动态展示 Markdown 页签内容
+        const skillToggle = document.querySelector('.mode-toggle-bar[data-toggle-target="skill"] .btn-mode-toggle.active');
+        const activeSkillMode = skillToggle ? skillToggle.getAttribute('data-mode-val') : "A";
+        
+        const soulToggle = document.querySelector('.mode-toggle-bar[data-toggle-target="soul"] .btn-mode-toggle.active');
+        const activeSoulMode = soulToggle ? soulToggle.getAttribute('data-mode-val') : "A";
+        
+        loadMarkdownFile(bloggerName, "skill", activeSkillMode);
+        loadMarkdownFile(bloggerName, "soul", activeSoulMode);
     } catch (e) {
-        console.error("Failed to check blogger files status", e);
+        console.error("Failed to load blogger physical files", e);
     }
 }
 
@@ -1672,8 +1718,8 @@ async function loadSettingsPageData() {
         document.getElementById("setting-whisper-model").value = settings.whisper_model || "medium";
         document.getElementById("setting-max-videos").value = settings.max_videos || 5;
         document.getElementById("setting-transcribe-interval").value = settings.transcribe_interval || 5;
-        document.getElementById("setting-headless").checked = settings.headless !== false;
-        document.getElementById("setting-enable-transcribe").checked = settings.enable_transcribe !== false;
+        document.getElementById("setting-headless").value = settings.headless !== false ? "true" : "false";
+        document.getElementById("setting-enable-transcribe").value = settings.enable_transcribe !== false ? "true" : "false";
     } catch (e) {
         console.error("加载系统设置失败:", e);
         showToast("加载系统设置参数失败", "error");
@@ -1887,14 +1933,21 @@ async function handleSystemSettingsSubmit(e) {
     const whisper_model = document.getElementById("setting-whisper-model").value;
     const max_videos = parseInt(document.getElementById("setting-max-videos").value);
     const transcribe_interval = parseInt(document.getElementById("setting-transcribe-interval").value);
-    const headless = document.getElementById("setting-headless").checked;
-    const enable_transcribe = document.getElementById("setting-enable-transcribe").checked;
+    const headless = document.getElementById("setting-headless").value === "true";
+    const enable_transcribe = document.getElementById("setting-enable-transcribe").value === "true";
     
     try {
         const res = await fetch(`${API_BASE}/api/settings`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ whisper_url, whisper_model, max_videos, transcribe_interval, headless, enable_transcribe })
+            body: JSON.stringify({ 
+                whisper_url, 
+                whisper_model, 
+                max_videos, 
+                transcribe_interval, 
+                headless, 
+                enable_transcribe
+            })
         });
         const json = await res.json();
         if (json.status === "success") {
