@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional, List
+import requests
+from datetime import datetime
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -256,6 +258,8 @@ def startup_event():
     run_full_import()
     # 4. 启动异步后台转录服务
     start_transcription_worker()
+    # 5. 启动自动定时对标更新调度器
+    start_auto_crawl_scheduler()
 
 
 class KnowledgeCreate(BaseModel):
@@ -840,7 +844,13 @@ DEFAULT_SETTINGS = {
     "transcribe_interval": 5,
     "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
-    "openai_model_name": "gpt-4"
+    "openai_model_name": "gpt-4",
+    "enable_auto_crawl": True,
+    "crawl_time": "03:00",
+    "enable_feishu": False,
+    "feishu_chat_id": "",
+    "feishu_app_id": "",
+    "feishu_app_secret": ""
 }
 
 def get_settings_path():
@@ -867,6 +877,254 @@ def save_settings(data):
     except Exception as e:
         print(f"[FastAPI] Failed to save config.json: {e}")
         return False
+
+# ----------------------------------------------------------
+# 飞书报警通知逻辑 (自建应用版，含图片上传与富文本发送)
+# ----------------------------------------------------------
+def get_feishu_tenant_token(app_id: str, app_secret: str) -> str:
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    payload = {"app_id": app_id, "app_secret": app_secret}
+    res = requests.post(url, json=payload, headers=headers, timeout=15)
+    res_data = res.json()
+    if res_data.get("code") == 0:
+        return res_data["tenant_access_token"]
+    else:
+        raise Exception(f"获取 Token 失败: {res_data.get('msg')}")
+
+def upload_image_to_feishu(token: str, filepath: str) -> str:
+    url = "https://open.feishu.cn/open-apis/im/v1/images"
+    headers = {"Authorization": f"Bearer {token}"}
+    with open(filepath, "rb") as f:
+        files = {
+            "image_type": (None, "message"),
+            "image": (os.path.basename(filepath), f, "image/png")
+        }
+        res = requests.post(url, headers=headers, files=files, timeout=30)
+        res_data = res.json()
+        if res_data.get("code") == 0:
+            return res_data["data"]["image_key"]
+        else:
+            raise Exception(f"上传图片失败: {res_data.get('msg')}")
+
+def send_feishu_post_message(token: str, chat_id: str, title: str, content_list: list) -> dict:
+    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8"
+    }
+    payload = {
+        "receive_id": chat_id,
+        "msg_type": "post",
+        "content": json.dumps({
+            "zh_cn": {
+                "title": title,
+                "content": content_list
+            }
+        })
+    }
+    res = requests.post(url, json=payload, headers=headers, timeout=15)
+    return res.json()
+
+def check_and_notify_feishu_failures(task_id: str, started_at_str: str):
+    settings = load_settings()
+    if not settings.get("enable_feishu", False):
+        return
+        
+    app_id = settings.get("feishu_app_id", "")
+    app_secret = settings.get("feishu_app_secret", "")
+    chat_id = settings.get("feishu_chat_id", "")
+    
+    if not app_id or not app_secret or not chat_id:
+        return
+        
+    log_path = os.path.join(ROOT_DIR, "data", "logs", f"{task_id}.log")
+    if not os.path.exists(log_path):
+        return
+        
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            logs = f.read()
+    except Exception as e:
+        print(f"[Feishu Alert] 读取日志失败: {e}")
+        return
+
+    import re
+    failed_bloggers = set()
+    
+    exception_matches = re.findall(r"博主【(.*?)】在流水线运行期间发生未捕获异常", logs)
+    for name in exception_matches:
+        failed_bloggers.add(name.strip())
+        
+    phase_matches = re.findall(r"❌ 阶段失败: \[[^\]]*?\((.*?)\)\]", logs)
+    for name in phase_matches:
+        failed_bloggers.add(name.strip())
+        
+    if not failed_bloggers:
+        start_matches = re.findall(r"=== 流水线任务 \S+ 启动 \(博主: '(.*?)'\) ===", logs)
+        if start_matches and "failed" in logs.lower():
+            for name in start_matches:
+                failed_bloggers.add(name.strip())
+
+    if not failed_bloggers:
+        if "failed" in logs.lower() or "returncode" in logs.lower():
+            failed_bloggers.add("全量对标更新任务")
+
+    try:
+        started_dt = datetime.fromisoformat(started_at_str)
+    except:
+        started_dt = datetime.min
+        
+    screenshot_dir = os.path.join(ROOT_DIR, "screenshots")
+    screenshots = []
+    if os.path.exists(screenshot_dir):
+        for fname in os.listdir(screenshot_dir):
+            if fname.endswith(".png"):
+                filepath = os.path.join(screenshot_dir, fname)
+                try:
+                    mtime = os.path.getmtime(filepath)
+                    mtime_dt = datetime.fromtimestamp(mtime)
+                    if mtime_dt >= started_dt:
+                        screenshots.append((mtime, filepath, fname))
+                except:
+                    pass
+        screenshots.sort(key=lambda x: x[0])
+
+    try:
+        token = get_feishu_tenant_token(app_id, app_secret)
+        
+        for blogger in failed_bloggers:
+            blogger_screenshot = None
+            for mtime, filepath, fname in reversed(screenshots):
+                if blogger.lower() in fname.lower() or fname == "login_qr.png":
+                    blogger_screenshot = filepath
+                    break
+            
+            if not blogger_screenshot and screenshots:
+                blogger_screenshot = screenshots[-1][1]
+                
+            reason = "抓取流水线执行异常，请查看日志"
+            if "扫码登录" in logs or "请使用手机" in logs:
+                reason = "需手机抖音 APP 扫码登录 (Cookie 已过期)"
+            elif "验证码拦截" in logs or "滑块解锁" in logs or "captcha" in logs.lower():
+                reason = "滑动验证码拦截，需要手动解锁或更新风控规约"
+            elif "导入 SQLite 库" in logs and "失败" in logs:
+                reason = "数据合并导入 SQLite 数据库阶段出错"
+            else:
+                lines = [l.strip() for l in logs.split("\n") if l.strip()]
+                for line in reversed(lines):
+                    if "错误" in line or "Exception" in line or "Error" in line or "❌" in line:
+                        reason = line
+                        break
+
+            content_list = []
+            content_list.append([{"tag": "text", "text": f"博主/任务：{blogger}\n"}])
+            content_list.append([{"tag": "text", "text": f"失败原因：{reason}\n"}])
+            
+            if blogger_screenshot and os.path.exists(blogger_screenshot):
+                try:
+                    img_key = upload_image_to_feishu(token, blogger_screenshot)
+                    content_list.append([{"tag": "img", "image_key": img_key}])
+                except Exception as img_err:
+                    content_list.append([{"tag": "text", "text": f"（异常截图上传飞书失败: {img_err}）\n"}])
+            else:
+                content_list.append([{"tag": "text", "text": "（未检测到异常截图）\n"}])
+                
+            content_list.append([{"tag": "text", "text": f"详情日志请登录看板在「任务日志」模块查看。"}])
+            
+            send_feishu_post_message(token, chat_id, f"🚨 对标抓取任务异常提醒 - {blogger}", content_list)
+            
+    except Exception as fe:
+        print(f"[Feishu Alert] 发送飞书报警失败: {fe}")
+
+# ----------------------------------------------------------
+# 自动定时对标抓取调度器逻辑
+# ----------------------------------------------------------
+def get_scheduler_state_path():
+    return os.path.join(ROOT_DIR, "data", "scheduler_state.json")
+
+def load_scheduler_state():
+    path = get_scheduler_state_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {"last_auto_crawl_time": None, "last_auto_crawl_date": None}
+
+def save_scheduler_state(state):
+    path = get_scheduler_state_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=4)
+    except:
+        pass
+
+def auto_crawl_scheduler_loop():
+    print("[自动定时更新调度器] 启动成功，延迟 5 分钟进行首次检测判别...")
+    time.sleep(5 * 60)
+    
+    try:
+        settings = load_settings()
+        if settings.get("enable_auto_crawl", True):
+            state = load_scheduler_state()
+            last_time_str = state.get("last_auto_crawl_time")
+            should_run_startup = False
+            
+            if not last_time_str:
+                should_run_startup = True
+            else:
+                try:
+                    last_time = datetime.fromisoformat(last_time_str)
+                    elapsed = datetime.now() - last_time
+                    if elapsed.total_seconds() >= 24 * 3600:
+                        should_run_startup = True
+                except:
+                    should_run_startup = True
+            
+            if should_run_startup:
+                print("[自动定时更新调度器] 检测到上次抓取超过 24 小时（或无记录），立即启动补跑任务...")
+                run_crawler_pipeline(blogger="all")
+                state["last_auto_crawl_time"] = datetime.now().isoformat()
+                state["last_auto_crawl_date"] = datetime.now().strftime("%Y-%m-%d")
+                save_scheduler_state(state)
+    except Exception as se:
+        print(f"[自动定时更新调度器] 启动判别出错: {se}")
+
+    while True:
+        try:
+            time.sleep(60)
+            settings = load_settings()
+            if not settings.get("enable_auto_crawl", True):
+                continue
+                
+            crawl_time_str = settings.get("crawl_time", "03:00")
+            try:
+                hour_str, min_str = crawl_time_str.split(":")
+                sched_hour = int(hour_str)
+                sched_min = int(min_str)
+            except Exception as pe:
+                print(f"[自动定时更新调度器] 无法解析设定时间 '{crawl_time_str}': {pe}")
+                continue
+                
+            now = datetime.now()
+            if now.hour == sched_hour and now.minute == sched_min:
+                state = load_scheduler_state()
+                today_str = now.strftime("%Y-%m-%d")
+                if state.get("last_auto_crawl_date") != today_str:
+                    print(f"[自动定时更新调度器] 当前时间 {now.strftime('%H:%M')}，到达每日设定更新点，触发自动抓取...")
+                    run_crawler_pipeline(blogger="all")
+                    state["last_auto_crawl_time"] = now.isoformat()
+                    state["last_auto_crawl_date"] = today_str
+                    save_scheduler_state(state)
+        except Exception as e:
+            print(f"[自动定时更新调度器] 轮询异常: {e}")
+
+def start_auto_crawl_scheduler():
+    t = threading.Thread(target=auto_crawl_scheduler_loop, daemon=True)
+    t.start()
 
 # 后台单线程串行 Worker
 def queue_worker():
@@ -944,15 +1202,26 @@ def queue_worker():
                     else:
                         active_crawl_tasks[task_id]["status"] = "failed"
                     active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                    started_at = active_crawl_tasks[task_id]["started_at"]
+                    
+                try:
+                    check_and_notify_feishu_failures(task_id, started_at)
+                except Exception as fe_err:
+                    print(f"[Queue Worker] 触发飞书通知失败: {fe_err}")
             except Exception as err:
                 with tasks_lock:
                     active_crawl_tasks[task_id]["status"] = "failed"
                     active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                    started_at = active_crawl_tasks[task_id].get("started_at") or datetime.now().isoformat()
                 try:
                     with open(log_path, "a", encoding="utf-8") as log_file:
                         log_file.write(f"\n[线程错误] 运行 pipeline 异常: {err}\n")
                 except:
                     pass
+                try:
+                    check_and_notify_feishu_failures(task_id, started_at)
+                except Exception as fe_err:
+                    print(f"[Queue Worker] 触发飞书通知失败: {fe_err}")
             
             task_queue.task_done()
         except Exception as e:
@@ -977,6 +1246,12 @@ class SettingsUpdate(BaseModel):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model_name: str = "gpt-4"
+    enable_auto_crawl: bool = True
+    crawl_time: str = "03:00"
+    enable_feishu: bool = False
+    feishu_chat_id: str = ""
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
 
 @app.post("/api/settings")
 def update_settings_endpoint(settings: SettingsUpdate):
@@ -989,12 +1264,41 @@ def update_settings_endpoint(settings: SettingsUpdate):
         "enable_transcribe": settings.enable_transcribe,
         "openai_api_key": settings.openai_api_key,
         "openai_base_url": settings.openai_base_url,
-        "openai_model_name": settings.openai_model_name
+        "openai_model_name": settings.openai_model_name,
+        "enable_auto_crawl": settings.enable_auto_crawl,
+        "crawl_time": settings.crawl_time,
+        "enable_feishu": settings.enable_feishu,
+        "feishu_chat_id": settings.feishu_chat_id,
+        "feishu_app_id": settings.feishu_app_id,
+        "feishu_app_secret": settings.feishu_app_secret
     }
     if save_settings(data):
         return {"status": "success"}
     else:
         raise HTTPException(status_code=500, detail="Failed to save settings")
+
+class FeishuTestRequest(BaseModel):
+    feishu_chat_id: str
+    feishu_app_id: str
+    feishu_app_secret: str
+
+@app.post("/api/settings/test_feishu")
+def test_feishu_connectivity(body: FeishuTestRequest):
+    """测试飞书报警通知连接性"""
+    try:
+        token = get_feishu_tenant_token(body.feishu_app_id, body.feishu_app_secret)
+        content_list = [
+            [{"tag": "text", "text": "恭喜您！您的信息源监控系统与飞书通知助手已成功联通！\n"}],
+            [{"tag": "text", "text": f"测试时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"}],
+            [{"tag": "text", "text": "后续如果自动对标更新调度任务发生验证码拦截、需要扫码登录或爬虫报错时，系统会自动发送异常截图与报警卡片到本会话中。"}]
+        ]
+        res_data = send_feishu_post_message(token, body.feishu_chat_id, "🔔 飞书报警通道联通性测试", content_list)
+        if res_data.get("code") == 0:
+            return {"status": "success", "message": "Test message sent successfully."}
+        else:
+            raise HTTPException(status_code=400, detail=f"发送消息失败: {res_data.get('msg')}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/crawl/run")
 def run_crawler_pipeline(blogger: str = "all", max_videos: int = None):

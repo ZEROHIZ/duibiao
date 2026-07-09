@@ -201,6 +201,11 @@ function setupEventListeners() {
         btnTranscribeNow.addEventListener("click", handleTranscribeNowClick);
     }
     
+    const btnTestFeishu = document.getElementById("btn-test-feishu");
+    if (btnTestFeishu) {
+        btnTestFeishu.addEventListener("click", handleTestFeishuClick);
+    }
+    
     // 绑定任务日志类型的分页选项卡点击切换事件
     const btnTabSync = document.getElementById("task-tab-sync");
     const btnTabTranscribe = document.getElementById("task-tab-transcribe");
@@ -1720,6 +1725,13 @@ async function loadSettingsPageData() {
         document.getElementById("setting-transcribe-interval").value = settings.transcribe_interval || 5;
         document.getElementById("setting-headless").value = settings.headless !== false ? "true" : "false";
         document.getElementById("setting-enable-transcribe").value = settings.enable_transcribe !== false ? "true" : "false";
+        
+        document.getElementById("setting-enable-auto-crawl").value = settings.enable_auto_crawl !== false ? "true" : "false";
+        document.getElementById("setting-crawl-time").value = settings.crawl_time || "03:00";
+        document.getElementById("setting-enable-feishu").value = settings.enable_feishu ? "true" : "false";
+        document.getElementById("setting-feishu-chat-id").value = settings.feishu_chat_id || "";
+        document.getElementById("setting-feishu-app-id").value = settings.feishu_app_id || "";
+        document.getElementById("setting-feishu-app-secret").value = settings.feishu_app_secret || "";
     } catch (e) {
         console.error("加载系统设置失败:", e);
         showToast("加载系统设置参数失败", "error");
@@ -1936,6 +1948,13 @@ async function handleSystemSettingsSubmit(e) {
     const headless = document.getElementById("setting-headless").value === "true";
     const enable_transcribe = document.getElementById("setting-enable-transcribe").value === "true";
     
+    const enable_auto_crawl = document.getElementById("setting-enable-auto-crawl").value === "true";
+    const crawl_time = document.getElementById("setting-crawl-time").value.trim();
+    const enable_feishu = document.getElementById("setting-enable-feishu").value === "true";
+    const feishu_chat_id = document.getElementById("setting-feishu-chat-id").value.trim();
+    const feishu_app_id = document.getElementById("setting-feishu-app-id").value.trim();
+    const feishu_app_secret = document.getElementById("setting-feishu-app-secret").value.trim();
+    
     try {
         const res = await fetch(`${API_BASE}/api/settings`, {
             method: "POST",
@@ -1946,7 +1965,13 @@ async function handleSystemSettingsSubmit(e) {
                 max_videos, 
                 transcribe_interval, 
                 headless, 
-                enable_transcribe
+                enable_transcribe,
+                enable_auto_crawl,
+                crawl_time,
+                enable_feishu,
+                feishu_chat_id,
+                feishu_app_id,
+                feishu_app_secret
             })
         });
         const json = await res.json();
@@ -1957,6 +1982,40 @@ async function handleSystemSettingsSubmit(e) {
         }
     } catch (err) {
         showToast(`请求后端出错: ${err.message}`, "error");
+    }
+}
+
+// 测试飞书报警通知联通性
+async function handleTestFeishuClick() {
+    const feishu_chat_id = document.getElementById("setting-feishu-chat-id").value.trim();
+    const feishu_app_id = document.getElementById("setting-feishu-app-id").value.trim();
+    const feishu_app_secret = document.getElementById("setting-feishu-app-secret").value.trim();
+    
+    if (!feishu_chat_id || !feishu_app_id || !feishu_app_secret) {
+        showToast("请先填写会话 ID、应用 ID 和应用密钥后再进行测试！", "error");
+        return;
+    }
+    
+    showToast("正在发起飞书联通性测试，请稍候...", "info");
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/settings/test_feishu`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                feishu_chat_id,
+                feishu_app_id,
+                feishu_app_secret
+            })
+        });
+        const json = await res.json();
+        if (json.status === "success") {
+            showToast("飞书连接成功！已向您的飞书会话发送测试卡片", "success");
+        } else {
+            showToast(`测试失败: ${json.message || "未知错误"}`, "error");
+        }
+    } catch (err) {
+        showToast(`测试请求出错: ${err.message}`, "error");
     }
 }
 

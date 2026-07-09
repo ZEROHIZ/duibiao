@@ -462,11 +462,72 @@
 
                     <!-- Right Column: Crawler Limits -->
                     <div style="display: flex; flex-direction: column; gap: 1.25rem;">
-                        <span class="section-label" style="font-size: 0.65rem; color: var(--ink-secondary); letter-spacing: 0.1em; display: block; margin-bottom: 0.25rem;">CRAWLER CONFIG</span>
+                        <span class="section-label" style="font-size: 0.65rem; color: var(--ink-secondary); letter-spacing: 0.1em; display: block; margin-bottom: 0.25rem;">CRAWLER CONFIG & NOTIFICATION</span>
                         
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
                             <label for="setting-max-videos" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">单次爬取上限数 (视频/笔记条数)</label>
                             <input type="number" id="setting-max-videos" min="1" max="50" placeholder="5" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-enable-auto-crawl" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">自动定时对标更新 (AUTO CRAWL)</label>
+                            <select id="setting-enable-auto-crawl" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="true" style="background: var(--bg-secondary);">开启自动更新 (每天固定时间全量抓取)</option>
+                                <option value="false" style="background: var(--bg-secondary);">关闭自动更新</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-crawl-time" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">每日定时抓取时间 (CRAWL TIME)</label>
+                            <select id="setting-crawl-time" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="00:00" style="background: var(--bg-secondary);">00:00</option>
+                                <option value="01:00" style="background: var(--bg-secondary);">01:00</option>
+                                <option value="02:00" style="background: var(--bg-secondary);">02:00</option>
+                                <option value="03:00" style="background: var(--bg-secondary);">03:00 (推荐时间)</option>
+                                <option value="04:00" style="background: var(--bg-secondary);">04:00</option>
+                                <option value="05:00" style="background: var(--bg-secondary);">05:00</option>
+                                <option value="06:00" style="background: var(--bg-secondary);">06:00</option>
+                                <option value="07:00" style="background: var(--bg-secondary);">07:00</option>
+                                <option value="08:00" style="background: var(--bg-secondary);">08:00</option>
+                                <option value="09:00" style="background: var(--bg-secondary);">09:00</option>
+                                <option value="10:00" style="background: var(--bg-secondary);">10:00</option>
+                                <option value="11:00" style="background: var(--bg-secondary);">11:00</option>
+                                <option value="12:00" style="background: var(--bg-secondary);">12:00</option>
+                                <option value="13:00" style="background: var(--bg-secondary);">13:00</option>
+                                <option value="14:00" style="background: var(--bg-secondary);">14:00</option>
+                                <option value="15:00" style="background: var(--bg-secondary);">15:00</option>
+                                <option value="16:00" style="background: var(--bg-secondary);">16:00</option>
+                                <option value="17:00" style="background: var(--bg-secondary);">17:00</option>
+                                <option value="18:00" style="background: var(--bg-secondary);">18:00</option>
+                                <option value="19:00" style="background: var(--bg-secondary);">19:00</option>
+                                <option value="20:00" style="background: var(--bg-secondary);">20:00</option>
+                                <option value="21:00" style="background: var(--bg-secondary);">21:00</option>
+                                <option value="22:00" style="background: var(--bg-secondary);">22:00</option>
+                                <option value="23:00" style="background: var(--bg-secondary);">23:00</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-enable-feishu" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">开启飞书异常报警 (FEISHU NOTIFICATION)</label>
+                            <select id="setting-enable-feishu" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="true" style="background: var(--bg-secondary);">开启飞书报警 (对标出错时发送报警卡片与截图)</option>
+                                <option value="false" style="background: var(--bg-secondary);">关闭飞书报警</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-feishu-chat-id" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">飞书会话 ID (CHAT ID)</label>
+                            <input type="text" id="setting-feishu-chat-id" placeholder="oc_xxxxxxxx" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-feishu-app-id" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">飞书应用 ID (APP ID)</label>
+                            <input type="text" id="setting-feishu-app-id" placeholder="cli_xxxxxxxx" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-feishu-app-secret" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">飞书应用密钥 (APP SECRET)</label>
+                            <input type="password" id="setting-feishu-app-secret" placeholder="••••••••••••••••" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
                         </div>
                     </div>
                     
@@ -475,6 +536,7 @@
                         <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.75rem; background-color: var(--ink-primary); color: var(--bg-primary); border: 1px solid var(--ink-primary); cursor: pointer; font-family: var(--font-sans); font-size: 0.82rem; font-weight: bold; letter-spacing: 0.05em;">保存系统设置</button>
                         <button type="button" id="btn-sync-all" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center;">一键更新全部博主</button>
                         <button type="button" id="btn-transcribe-now" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center; background-color: var(--bg-secondary); color: var(--accent-primary); border-color: var(--accent-primary);">立即扫描转录</button>
+                        <button type="button" id="btn-test-feishu" class="btn-text" style="border: 1px solid var(--accent-primary); padding: 0.4rem 1.25rem; font-size: 0.82rem; height: 2.2rem; display: inline-flex; align-items: center; background-color: transparent; color: var(--accent-primary);">测试飞书通知</button>
                     </div>
                 </form>
             </section>
