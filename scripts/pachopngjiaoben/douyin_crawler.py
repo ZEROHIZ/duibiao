@@ -416,19 +416,34 @@ async def ensure_login(page, context):
         print("[登录检测] 检测到页面处于未登录状态（存在登录按钮），尝试触发登录弹窗...")
         try:
             # 找到那个有“登录”文字的按钮并点击
+            clicked = False
             for i in range(count):
                 btn = login_btns.nth(i)
                 if await btn.is_visible():
                     text = await btn.text_content()
                     if "登录" in text:
-                        await btn.click()
-                        await asyncio.sleep(3.0)
+                        print("[登录检测] 正在尝试点击登录按钮...")
+                        await btn.click(force=True)
+                        clicked = True
                         break
+            # 兜底：如果用普通的 semi-button-content 没有成功点击，尝试点击包含“登录”文本的按钮
+            if not clicked:
+                backup_login_btn = page.locator('text="登录"').first
+                if await backup_login_btn.count() > 0 and await backup_login_btn.is_visible():
+                    print("[登录检测] 尝试兜底点击包含“登录”文本的元素...")
+                    await backup_login_btn.click(force=True)
         except Exception as e:
             print(f"[登录检测] 点击登录按钮出错: {e}")
             
-    # 再次检测弹窗是否成功弹出
-    is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+        # 循环等待弹窗出现，最多等待 10 秒（每 0.5 秒检测一次）
+        print("[登录检测] 等待登录弹窗加载中...")
+        for wait_idx in range(20):
+            is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+            if is_popup_visible:
+                print(f"[登录检测] 登录弹窗成功弹出（耗时约 {wait_idx * 0.5 + 0.5} 秒）")
+                break
+            await asyncio.sleep(0.5)
+
     if is_popup_visible:
         print("[验证码拦截] ⚠️ 检测到未登录状态且已弹出登录框！")
         print("  >> 等待 5 秒确保二维码加载完成...")
