@@ -654,8 +654,16 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                 data = await response.json()
                 videos = recursive_extract_videos(data)
                 if videos:
-                    post_videos_raw.extend(videos)
-                    print(f"  [拦截] 成功拦截到作品列表，检测到 {len(videos)} 个视频")
+                    # 去重添加，防止刷新或重复请求导致数据堆积
+                    existing_ids = {str(v["aweme_id"]) for v in post_videos_raw if "aweme_id" in v}
+                    new_count = 0
+                    for v in videos:
+                        vid = str(v.get("aweme_id", ""))
+                        if vid and vid not in existing_ids:
+                            post_videos_raw.append(v)
+                            existing_ids.add(vid)
+                            new_count += 1
+                    print(f"  [拦截] 成功拦截到作品列表，本页共 {len(videos)} 个视频，去重新增 {new_count} 个")
             except Exception:
                 pass
                 
@@ -808,6 +816,20 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
             if not post_videos_raw:
                 raise Exception("错误：未截获作品接口数据（aweme/v1/web/aweme/post），无法获取视频 ID 列表，抓取中断。")
 
+            # 第一重保险：如果计划抓取的数量多于当前拦截到的数量，通过下滚主页来加载更多视频
+            last_count = len(post_videos_raw)
+            no_new_video_count = 0
+            while len(post_videos_raw) < max_videos and no_new_video_count < 5:
+                print(f"当前已去重拦截到 {len(post_videos_raw)} 个视频，少于计划抓取的 {max_videos} 个，正在下滚主页加载更多...")
+                await page.evaluate("window.scrollBy(0, 1500)")
+                await asyncio.sleep(2.5)
+                current_count = len(post_videos_raw)
+                if current_count == last_count:
+                    no_new_video_count += 1
+                else:
+                    no_new_video_count = 0
+                    last_count = current_count
+
             # 限制抓取数量不超过已拦截到的视频总数
             max_videos = min(max_videos, len(post_videos_raw))
             print(f"检测到博主共有 {len(post_videos_raw)} 个视频，本次计划抓取前 {max_videos} 个。")
@@ -946,11 +968,44 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                     break
 
                 # B. 模拟向下按键切换并进行下一页评论接口拦截校验
+                has_pressed_down = False
+
+                # 第二重保险（自愈）：如果当前列表里已经没有下一个视频项了，触发按向下键让播放器自动加载下一页
+                if idx + 1 >= len(post_videos_raw):
+                    print("  [提示] 已经到达当前拦截作品列表的末尾，尝试按下 `ArrowDown` 触发视频切换与自动加载...")
+                    await page.keyboard.press("ArrowDown")
+                    has_pressed_down = True
+                    
+                    # 等待作品列表接口被拦截并更新 post_videos_raw，最多等待 8 秒
+                    post_loaded = False
+                    for _ in range(16): # 16 * 0.5s = 8s
+                        await asyncio.sleep(0.5)
+                        if idx + 1 < len(post_videos_raw):
+                            post_loaded = True
+                            break
+                            
+                    if not post_loaded:
+                        print("  [提示] 自动加载未响应，尝试下滚背景主页以强制加载更多作品...")
+                        try:
+                            await page.evaluate("window.scrollBy(0, 1500)")
+                        except Exception:
+                            pass
+                        for _ in range(8):
+                            await asyncio.sleep(0.5)
+                            if idx + 1 < len(post_videos_raw):
+                                post_loaded = True
+                                break
+                                
+                    if not post_loaded:
+                        print("  [提示] 无法加载到更多新视频，抓取安全结束。")
+                        break
+
                 next_vid = str(post_videos_raw[idx + 1]['aweme_id'])
                 next_already_crawled = next_vid in existing_vids
                 
-                print(f"  [操作] 模拟键盘按下 `ArrowDown` 切换至下一个视频 [{next_vid}]...")
-                await page.keyboard.press("ArrowDown")
+                if not has_pressed_down:
+                    print(f"  [操作] 模拟键盘按下 `ArrowDown` 切换至下一个视频 [{next_vid}]...")
+                    await page.keyboard.press("ArrowDown")
 
                 transition_success = False
                 
