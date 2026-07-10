@@ -58,3 +58,17 @@
   * 引入 **动态系统提示词固定 (Skill Instructions Pinning)** 机制：将已加载的 Skill 详细 instructions 动态绑定到不可压缩的 System Message `messages[0]` 中，确保其无论如何压缩历史也绝不丢失。
   * 引入**工具输出主动截断**：超过 15,000 字符的工具返回自动做首尾截断（保留前 4k 和后 4k 字符，中间标注截断说明）并进入 Active Context。
   * 引入**完整历史回溯**：在 `AgentSession` 中独立保存 `raw_messages` 原始日志，包含未压缩的对话与未截断的原始工具结果，并一并持久化存盘，方便智能体读取 JSON 文件进行细节回溯。
+
+---
+
+## Bug 06: Docker 部署下运行爬虫即使开启无头模式依然报错缺少浏览器可执行文件
+
+* **发生时间**：2026-07-10
+* **问题现象**：Docker 部署下以无头模式 (`--headless true`) 启动抖音爬虫脚本时，Playwright 抛出异常：`BrowserType.launch_persistent_context: Executable doesn't exist at /ms-playwright/chromium_headless_shell-1228/...` 并提示基础镜像版本与依赖库版本不匹配。
+* **主要根源**：
+  * Docker 镜像使用了旧版的基础镜像 `playwright/python:v1.40.0-jammy`，其内置的浏览器二进制文件（位于 `/ms-playwright`）只兼容 Playwright 1.40.0。
+  * `requirements.txt` 中配置为 `playwright>=1.40.0`。在 Docker 构建镜像运行 `pip install` 时，自动拉取了最新版 Playwright Python 包（如 1.61.0）。
+  * 最新版 Playwright 在启动浏览器时（不论是有头还是无头）都需要调用对应的最新版浏览器二进制文件（`chrome-headless-shell`），由于基础镜像里只有旧版浏览器且没有对应的最新二进制文件，导致启动失败。
+* **解决方案**：
+  * 将 `Dockerfile` 的基础镜像修改为与当前 Playwright 版本匹配的 `mcr.microsoft.com/playwright/python:v1.61.0-jammy`。
+  * 将 `requirements.txt` 中的 `playwright>=1.40.0` 更改为固定版本的 `playwright==1.61.0`，以防止以后库版本与基础镜像再次产生漂移不一致的问题。

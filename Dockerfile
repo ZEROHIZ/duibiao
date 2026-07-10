@@ -1,5 +1,5 @@
 # 使用官方 Playwright Python 基础镜像，该镜像基于 Ubuntu 并预装了 Python、Playwright、Chromium 以及所有系统级图形库依赖
-FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.61.0-jammy
 
 # 设置工作目录
 WORKDIR /app
