@@ -639,7 +639,7 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
 
     # 获取当前活动视频 ID (解析当前 Playwright 的 URL)
     def parse_active_video_id(current_url):
-        match = re.search(r'video/(\d+)', current_url)
+        match = re.search(r'(?:video/|modal_id=|group_id=|reflow_video_id=)(\d+)', current_url)
         if match:
             return match.group(1)
         return None
@@ -832,22 +832,36 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
 
             # 限制抓取数量不超过已拦截到的视频总数
             max_videos = min(max_videos, len(post_videos_raw))
-            print(f"检测到博主共有 {len(post_videos_raw)} 个视频，本次计划抓取前 {max_videos} 个。")
+            print(f"检测到博主共有 {len(post_videos_raw)} 个视频，本次计划抓取上限为 {max_videos} 个。")
+
+            # 查找第一个未爬取新视频的索引 (早期更新判定与定位点击)
+            start_idx = None
+            for i in range(max_videos):
+                v_id = str(post_videos_raw[i]['aweme_id'])
+                if v_id not in existing_vids:
+                    start_idx = i
+                    break
+                    
+            if start_idx is None:
+                print("\n[早期更新检测] 🎉 检测到该博主的最前部作品全部已存在于数据库中，判定无新视频发布，跳过抓取流程直接安全退出！")
+                return True
+                
+            target_vid = str(post_videos_raw[start_idx]['aweme_id'])
+            print(f"\n[早期更新检测] 发现新视频或需要更新的置顶视频，索引: {start_idx + 1}/{max_videos}，视频 ID: {target_vid}")
 
             # 给后台弹窗任务一点时间，以清理在加载完毕后可能瞬时触发的登录对话框
             await asyncio.sleep(1.5)
 
-            # 2. 点击第一个视频，进入画廊详情模态框
+            # 2. 点击指定新视频卡片，进入画廊详情模态框
             video_card_selectors = [
+                f'[data-e2e="user-post-list"] a[href*="/video/{target_vid}"]',
+                f'a[href*="/video/{target_vid}"]',
+                f'[id*="{target_vid}"]',
                 '[data-e2e="user-post-list"] a[href*="/video/"]',
-                '[data-e2e="user-post-list"] [id^="waterfall_item_"]',
-                '[class*="post-list"] a[href*="/video/"]',
-                'a[href*="/video/"]',
-                '[id^="waterfall_item_"]'
+                'a[href*="/video/"]'
             ]
             
             clicked_successfully = False
-            first_vid = str(post_videos_raw[0]['aweme_id'])
             
             # 画廊播放器常见标识元素
             player_selectors = [
@@ -861,10 +875,10 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                 try:
                     locator = page.locator(selector).first
                     if await locator.count() > 0 and await locator.is_visible():
-                        print(f"正在点击第一个视频以进入画廊播放器 (使用选择器: {selector})...")
+                        print(f"正在精准点击目标新视频以进入画廊播放器 (使用选择器: {selector})...")
                         await locator.click()
                         
-                        # 检测画廊播放器是否打开 (通过检测播放器元素渲染，或检测首个视频的评论API是否被拦截)
+                        # 检测画廊播放器是否打开 (通过检测播放器元素渲染，或检测该视频的评论API是否被拦截)
                         for _ in range(16):
                             await asyncio.sleep(0.5)
                             player_opened = False
@@ -872,7 +886,7 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                                 if await page.locator(p_sel).first.count() > 0 and await page.locator(p_sel).first.is_visible():
                                     player_opened = True
                                     break
-                            if player_opened or first_vid in captured_comments:
+                            if player_opened or target_vid in captured_comments:
                                 clicked_successfully = True
                                 break
                         if clicked_successfully:
@@ -881,34 +895,31 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                     print(f"点击 {selector} 出错: {click_err}")
             
             if not clicked_successfully:
-                raise Exception(f"错误：未能成功点击首张卡片进入画廊播放器，视频 [{first_vid}] 未能加载！")
+                raise Exception(f"错误：未能成功精准点击新卡片进入画廊播放器，视频 [{target_vid}] 未能加载！")
 
             # 3. 校验评论加载 (API URL 响应驱动)
-            if first_vid in existing_vids:
-                print(f"  [跳过] 首个视频 [{first_vid}] 已存在，跳过首次评论接口加载校验。")
-            else:
-                comments_loaded = False
-                for attempt in range(5):
-                    if first_vid in captured_comments:
-                        comments_loaded = True
-                        print(f"  [校验] 成功检测到首个视频 [{first_vid}] 的评论数据已加载！")
-                        break
-                    print(f"  [校验] 未检测到评论 API 响应 (尝试 {attempt + 1}/5)，尝试点击评论按钮...")
-                    await click_comment_button(page)
-                    await asyncio.sleep(2.0)
+            comments_loaded = False
+            for attempt in range(5):
+                if target_vid in captured_comments:
+                    comments_loaded = True
+                    print(f"  [校验] 成功检测到目标视频 [{target_vid}] 的评论数据已加载！")
+                    break
+                print(f"  [校验] 未检测到评论 API 响应 (尝试 {attempt + 1}/5)，尝试点击评论按钮...")
+                await click_comment_button(page)
+                await asyncio.sleep(2.0)
 
-                if not comments_loaded:
-                    raise Exception(f"错误：多次尝试后仍未捕获到首个视频 [{first_vid}] 的评论接口响应 (comment/list)！抓取中断。")
-                else:
-                    await scroll_comments_container(page, scroll_times=4)
+            if not comments_loaded:
+                raise Exception(f"错误：多次尝试后仍未捕获到目标视频 [{target_vid}] 的评论接口响应 (comment/list)！抓取中断。")
+            else:
+                await scroll_comments_container(page, scroll_times=4)
 
             # 4. 拟人操纵循环：Hover分享 -> 校验短链 -> 按方向下键 -> 校验下一页评论
-            print(f"\n开始循环模拟键盘切换视频，计划抓取前 {max_videos} 个视频：")
+            print(f"\n开始循环模拟键盘切换视频，计划从索引 {start_idx + 1} 循环至 {max_videos}：")
             
             should_hover_share = True
             crawled_vids_in_this_run = []
             
-            for idx in range(max_videos):
+            for idx in range(start_idx, max_videos):
                 raw_v = post_videos_raw[idx]
                 active_vid = str(raw_v['aweme_id'])
                 is_already_crawled = active_vid in existing_vids
