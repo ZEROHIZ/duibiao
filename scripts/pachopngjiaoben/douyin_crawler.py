@@ -389,130 +389,177 @@ async def hover_share_button(page):
 # 5. 核心自动化操纵逻辑
 # ------------------------------------------------------------------
 
-async def ensure_login(page, context):
-    print("[登录检测] 正在检查当前页面登录状态...")
-    
-    # 检查是否已经显示了登录弹窗
+async def check_page_login_state(page, context):
+    """
+    检查当前页面和 Cookie 状态，返回 (is_logged_in, target_login_btn, is_popup_visible)
+    - is_logged_in: True 表示确认为已登录状态
+    - target_login_btn: 如果未登录，返回可能的可点击登录按钮 Locator，若没有则为 None
+    - is_popup_visible: True 表示当前已经弹出了登录窗口
+    """
+    # 1. 检测是否有登录弹窗出现
     is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
     
-    # 检查是否有显示“登录”字样的 semi-button-content
-    login_btn_visible = False
-    login_btns = page.locator('.semi-button-content')
-    count = await login_btns.count()
-    for i in range(count):
-        btn = login_btns.nth(i)
-        if await btn.is_visible():
-            text = await btn.text_content()
-            if "登录" in text:
-                login_btn_visible = True
-                break
-                
-    if not is_popup_visible and not login_btn_visible:
-        print("[登录检测] 未检测到登录弹窗与登录按钮，判定为已登录状态，继续执行...")
-        return True
-        
-    # 如果没显示弹窗但是有登录按钮，点击触发它
-    if not is_popup_visible and login_btn_visible:
-        print("[登录检测] 检测到页面处于未登录状态（存在登录按钮），尝试触发登录弹窗...")
+    # 2. 检测是否有已登录特征
+    # 包括：[data-e2e="live-avatar"] 头像元素、其它头像或特定 Cookie (sessionid)
+    is_logged_in = False
+    
+    avatar_selectors = [
+        '[data-e2e="live-avatar"]',
+        'img[class*="avatar"]',
+        '[data-e2e="avatar"]',
+        '.user-avatar',
+        'a[href*="/user/self"]'
+    ]
+    for sel in avatar_selectors:
         try:
-            # 找到那个有“登录”文字的按钮并点击
-            clicked = False
+            loc = page.locator(sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                is_logged_in = True
+                break
+        except Exception:
+            pass
+            
+    # Cookie 检测
+    try:
+        cookies = await context.cookies()
+        if any(c['name'] == 'sessionid' for c in cookies):
+            is_logged_in = True
+    except Exception:
+        pass
+        
+    # 如果已经有弹窗，即使有其他登录标志，也应视为未登录扫码状态（或登录弹窗打断状态）
+    if is_popup_visible:
+        is_logged_in = False
+        
+    # 3. 寻找潜在的“登录”按钮元素
+    target_login_btn = None
+    login_btn_selectors = [
+        '.semi-button-content',
+        'button:has-text("登录")',
+        'div:has-text("登录")',
+        '[data-e2e="login-button"]'
+    ]
+    
+    # 在所有可能选择器中，寻找第一个可见且文字包含“登录”的按钮
+    for sel in login_btn_selectors:
+        try:
+            locs = page.locator(sel)
+            count = await locs.count()
+            found = False
             for i in range(count):
-                btn = login_btns.nth(i)
+                btn = locs.nth(i)
                 if await btn.is_visible():
                     text = await btn.text_content()
-                    if "登录" in text:
-                        print("[登录检测] 正在尝试点击登录按钮...")
-                        await btn.click(force=True)
-                        clicked = True
+                    if text and "登录" in text:
+                        target_login_btn = btn
+                        found = True
                         break
-            # 兜底：如果用普通的 semi-button-content 没有成功点击，尝试点击包含“登录”文本的按钮
-            if not clicked:
-                backup_login_btn = page.locator('text="登录"').first
-                if await backup_login_btn.count() > 0 and await backup_login_btn.is_visible():
-                    print("[登录检测] 尝试兜底点击包含“登录”文本的元素...")
-                    await backup_login_btn.click(force=True)
+            if found:
+                break
+        except Exception:
+            pass
+            
+    return is_logged_in, target_login_btn, is_popup_visible
+
+
+async def ensure_login(page, context):
+    print("[登录检测] 开始检查当前页面登录状态...")
+    
+    # 首先稍微等待 3 秒以使页面组件稳定渲染
+    await asyncio.sleep(3.0)
+    
+    # 循环轮询检查页面状态，最多轮询 5 次以防加载缓慢
+    is_logged_in = False
+    target_login_btn = None
+    is_popup_visible = False
+    
+    for attempt in range(5):
+        is_logged_in, target_login_btn, is_popup_visible = await check_page_login_state(page, context)
+        if is_logged_in or is_popup_visible or target_login_btn:
+            break
+        await asyncio.sleep(1.0)
+        
+    if is_logged_in:
+        print("[登录检测] 检测到页面头像或 sessionid Cookie，判定为已登录状态，继续执行...")
+        return True
+        
+    # 如果未登录且没有展示弹窗，但有登录按钮，尝试点击按钮调起弹窗
+    if not is_popup_visible and target_login_btn:
+        print("[登录检测] 检测到页面处于未登录状态（存在登录按钮），尝试点击按钮触发登录弹窗...")
+        try:
+            await target_login_btn.click()
+            # 循环等待弹窗渲染，最多等待 8 秒 (16 * 0.5s)
+            for _ in range(16):
+                await asyncio.sleep(0.5)
+                is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+                if is_popup_visible:
+                    break
         except Exception as e:
             print(f"[登录检测] 点击登录按钮出错: {e}")
             
-        # 循环等待弹窗出现，最多等待 10 秒（每 0.5 秒检测一次）
-        print("[登录检测] 等待登录弹窗加载中...")
-        for wait_idx in range(20):
-            is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
-            if is_popup_visible:
-                print(f"[登录检测] 登录弹窗成功弹出（耗时约 {wait_idx * 0.5 + 0.5} 秒）")
-                break
-            await asyncio.sleep(0.5)
-
-    if is_popup_visible:
-        print("[验证码拦截] ⚠️ 检测到未登录状态且已弹出登录框！")
-        print("  >> 等待 5 秒确保二维码加载完成...")
-        await asyncio.sleep(5.0)
-        
-        max_wait = 180  # 最多等待 180 秒
-        qr_path = os.path.join(ROOT_DIR, "screenshots", "login_qr.png")
-        os.makedirs(os.path.dirname(qr_path), exist_ok=True)
-        
-        for sec in range(0, max_wait, 3):
-            # 截图整页供用户扫码
-            try:
-                await page.screenshot(path=qr_path)
-            except Exception as se:
-                print(f"[登录检测] 截图失败: {se}")
-                
-            print(f"[验证码拦截] ⚠️ 请使用手机扫码登录！登录二维码截图已更新，已等待 {sec} 秒...")
-            
-            # 检测登录弹窗是否关闭
-            is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
-            if not is_popup_visible:
-                print("[登录检测] 检测到登录弹窗已关闭，正在刷新页面验证登录状态...")
-                await page.reload()
-                await asyncio.sleep(5.0) # 等待页面刷新加载完毕
-                
-                # 重新检查是否有登录按钮
-                login_btn_visible = False
-                login_btns = page.locator('.semi-button-content')
-                count = await login_btns.count()
-                for i in range(count):
-                    btn = login_btns.nth(i)
-                    if await btn.is_visible():
-                        text = await btn.text_content()
-                        if "登录" in text:
-                            login_btn_visible = True
-                            break
-                            
-                if not login_btn_visible:
-                    print("[登录检测] 🎉 页面刷新后未检测到登录按钮，登录成功！")
-                    if os.path.exists(qr_path):
-                        try:
-                            os.remove(qr_path)
-                        except:
-                            pass
-                    return True
-                else:
-                    print("[登录检测] ⚠️ 页面刷新后依然检测到登录按钮，登录未成功，重新调起登录弹窗并继续等待...")
-                    # 重新点击登录按钮触发弹窗
-                    for i in range(count):
-                        btn = login_btns.nth(i)
-                        if await btn.is_visible():
-                            text = await btn.text_content()
-                            if "登录" in text:
-                                await btn.click()
-                                await asyncio.sleep(3.0)
-                                break
-                                
-            await asyncio.sleep(3.0)
-            
-        print("[登录检测] ❌ 等待扫码登录超时 (3 分钟)，脚本终止。")
+    # 如果此时依然没有登录弹窗，进行 Cookie 的兜底检测
+    if not is_popup_visible:
+        try:
+            cookies = await context.cookies()
+            if any(c['name'] == 'sessionid' for c in cookies):
+                print("[登录检测] 虽然未检测到登录弹窗，但 Cookie 中存在 sessionid，判定为已登录。")
+                return True
+        except Exception:
+            pass
+        print("[登录检测] ❌ 无法调起登录弹窗，且未检测到有效登录 Session！在无头环境下无法继续任务。")
         return False
-    else:
-        # 如果无法成功拉起弹窗，尝试检查一下 cookies
-        cookies = await context.cookies()
-        if any(c['name'] == 'sessionid' for c in cookies):
-            print("[登录检测] 登录成功（Cookie 自动同步生效）。")
-            return True
-        print("[登录检测] 无法成功调起登录弹窗，将直接尝试继续执行任务...")
-        return True
+        
+    # 如果弹窗成功显示，进入扫码登录等待流程
+    print("[验证码拦截] ⚠️ 检测到未登录状态且已弹出登录框！")
+    print("  >> 等待 5 秒确保二维码加载完成...")
+    await asyncio.sleep(5.0)
+    
+    max_wait = 180  # 最多等待 180 秒
+    qr_path = os.path.join(ROOT_DIR, "screenshots", "login_qr.png")
+    os.makedirs(os.path.dirname(qr_path), exist_ok=True)
+    
+    for sec in range(0, max_wait, 3):
+        # 截图整页供用户扫码
+        try:
+            await page.screenshot(path=qr_path)
+        except Exception as se:
+            print(f"[登录检测] 截图失败: {se}")
+            
+        print(f"[验证码拦截] ⚠️ 请使用手机扫码登录！登录二维码截图已更新，已等待 {sec} 秒...")
+        
+        # 检测登录弹窗是否关闭（用户成功扫码后，弹窗会自动消失）
+        is_popup_visible = await page.locator('#douyin-login-new-id, .douyin-login-new-id').first.is_visible()
+        if not is_popup_visible:
+            print("[登录检测] 检测到登录弹窗已关闭，正在刷新页面验证登录状态...")
+            await page.reload()
+            # 刷新后等待页面渲染稳定
+            await asyncio.sleep(5.0)
+            
+            # 重新检测页面登录状态
+            new_is_logged, _, _ = await check_page_login_state(page, context)
+            if new_is_logged:
+                print("[登录检测] 🎉 页面刷新后判定为已登录，登录成功！")
+                if os.path.exists(qr_path):
+                    try:
+                        os.remove(qr_path)
+                    except Exception:
+                        pass
+                return True
+            else:
+                print("[登录检测] ⚠️ 页面刷新后未检测到已登录特征，重新尝试调起登录弹窗并继续等待...")
+                # 再次获取页面上的登录按钮并点击
+                _, target_login_btn, is_popup_visible = await check_page_login_state(page, context)
+                if not is_popup_visible and target_login_btn:
+                    try:
+                        await target_login_btn.click()
+                        await asyncio.sleep(3.0)
+                    except Exception as e:
+                        print(f"[登录检测] 重新点击登录按钮出错: {e}")
+                        
+        await asyncio.sleep(3.0)
+        
+    print("[登录检测] ❌ 等待扫码登录超时 (3 分钟)，脚本终止。")
+    return False
 
 
 async def scroll_comments_container(page, scroll_times=4):
