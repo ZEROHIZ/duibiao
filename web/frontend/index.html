@@ -52,8 +52,10 @@
                 <button class="nav-tab" data-tab="news">时效快讯</button>
                 <button class="nav-tab" data-tab="trending">全网热点</button>
                 <button class="nav-tab" data-tab="logs">任务日志</button>
+                <button class="nav-tab" data-tab="oauth">智能体授权</button>
                 <button class="nav-tab" data-tab="settings">系统设置</button>
             </nav>
+
             
             <!-- Theme & Status -->
             <div class="header-actions">
@@ -124,6 +126,69 @@
                             </form>
                         </div>
                     </div>
+
+                    <!-- AI 跨界视野扩展与垂直找号探索 -->
+                    <div style="grid-column: span 2; margin-top: 3.5rem; border-top: 1px dashed var(--border-primary); padding-top: 2rem;">
+                        <span class="section-label">AI HORIZON</span>
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+                            <div>
+                                <h2 class="page-header-title" style="margin-bottom: 0.5rem; font-size: 1.8rem;">AI 跨界视野扩展与垂直找号</h2>
+                                <p class="lead-text" style="font-size: 0.9rem; margin-bottom: 0;">对比分析您当前已覆盖的领域，智能推荐空白的细分赛道并提供硬核专业词，帮您破除信息茧房。</p>
+                            </div>
+                            <button type="button" id="btn-refresh-niches" class="btn-text" style="border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.35rem 0.85rem; font-weight: 600;">↻ AI 智能探索发散</button>
+                        </div>
+
+                        <div class="niches-exploration-grid" style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 3rem; margin-top: 1.5rem;">
+                            <!-- 左侧：已覆盖大盘 vs 空白细分推荐 -->
+                            <div class="niches-left">
+                                <h4 class="aside-title" style="margin-bottom: 0.5rem; font-size: 0.95rem; font-weight: 600; color: var(--ink-secondary);">已覆盖领域大盘</h4>
+                                <div id="covered-niches-tags" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem;">
+                                    <span style="font-size: 0.8rem; color: var(--ink-tertiary); font-style: italic;">暂无博主分类数据，请先录入博主。</span>
+                                </div>
+                                
+                                <h4 class="aside-title" style="margin-bottom: 0.5rem; font-size: 0.95rem; font-weight: 600; color: var(--ink-secondary);">AI 推荐拓展的细分赛道</h4>
+                                <div class="table-container" style="border: 1px solid var(--border-primary); max-height: 280px; overflow-y: auto;">
+                                    <table class="magazine-table" id="table-recommended-niches" style="margin: 0; font-size: 0.88rem;">
+                                        <thead>
+                                            <tr>
+                                                <th>细分领域</th>
+                                                <th>类型</th>
+                                                <th>发散策略</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="3" style="text-align: center; color: var(--ink-secondary); font-style: italic; padding: 1.5rem 0;">
+                                                    暂无发散建议，点击右上方“AI 智能探索发散”开始生成
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- 右侧：精准搜词看板 -->
+                            <div class="niches-right">
+                                <div class="aside-box" style="margin: 0; min-height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 1.25rem;">
+                                    <div>
+                                        <h4 class="aside-title" id="selected-niche-title" style="color: var(--accent-primary); margin-bottom: 0.5rem; font-size: 1.1rem; border-bottom: 1px dashed var(--border-primary); padding-bottom: 0.5rem;">找号探索看板</h4>
+                                        <div id="niche-detail-body">
+                                            <p style="font-size: 0.88rem; color: var(--ink-secondary); line-height: 1.6; margin-bottom: 0;">
+                                                请点击左侧列表中的推荐细分赛道，在此获取针对性的商业变现简介以及可在平台直接用来精准找号的硬核项目/产品词。
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div id="keywords-copy-container" style="display: none; margin-top: 1.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem;">
+                                        <h4 class="aside-title" style="margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--ink-secondary);">精准找号专业搜索词：</h4>
+                                        <div id="selected-niche-keywords" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.25rem;">
+                                            <!-- 动态关键词标签 -->
+                                        </div>
+                                        <button type="button" id="btn-copy-niche-keywords" class="btn-primary" style="width: auto; padding: 0.4rem 1.25rem; font-size: 0.8rem;">一键复制搜索词</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -192,6 +257,7 @@
                             <thead>
                                 <tr>
                                     <th>博主名称</th>
+                                    <th>主营定位</th>
                                     <th>主页监控链接 (双击编辑)</th>
                                     <th>均赞</th>
                                     <th>均收藏/评论</th>
@@ -423,9 +489,26 @@
                         <span class="section-label" style="font-size: 0.65rem; color: var(--ink-secondary); letter-spacing: 0.1em; display: block; margin-bottom: 0.25rem;">SYSTEM & TRANSCRIBER CONFIG</span>
                         
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-proxy-url" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">全局 HTTP/HTTPS 代理地址 (PROXY_URL)</label>
+                            <input type="text" id="setting-proxy-url" placeholder="http://127.0.0.1:7890 (不使用则留空)" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-google-login-cmd" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">GOOGLE CLI 登录指令</label>
+                            <input type="text" id="setting-google-login-cmd" placeholder="antigravity login --no-browser" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-openai-login-cmd" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">OPENAI CLI 登录指令</label>
+                            <input type="text" id="setting-openai-login-cmd" placeholder="codex login --no-browser" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                        </div>
+
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
                             <label for="setting-whisper-url" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER API 接口地址</label>
                             <input type="url" id="setting-whisper-url" placeholder="http://192.168.110.30:7211/transcribe" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
                         </div>
+
                         
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
                             <label for="setting-whisper-model" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">WHISPER 转录模型级别</label>
@@ -457,6 +540,26 @@
                                 <option value="true" style="background: var(--bg-secondary);">开启无头模式 (在后台静默运行，Docker/无 GUI 推荐)</option>
                                 <option value="false" style="background: var(--bg-secondary);">关闭无头模式 (显示浏览器操作界面以进行调试)</option>
                             </select>
+                        </div>
+                        
+                        <!-- OpenAI LLM Credentials -->
+                        <div style="border-top: 1px dashed var(--border-primary); margin-top: 1.25rem; padding-top: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem;">
+                            <span class="section-label" style="font-size: 0.65rem; color: var(--ink-secondary); letter-spacing: 0.1em; display: block; margin-bottom: -0.5rem;">OPENAI LLM CREDENTIALS (用于AI探索与报告)</span>
+                            
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                                <label for="setting-openai-key" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">OPENAI API KEY</label>
+                                <input type="password" id="setting-openai-key" placeholder="sk-••••••••••••••••" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                            </div>
+
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                                <label for="setting-openai-base" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">OPENAI BASE URL (接口代理地址)</label>
+                                <input type="url" id="setting-openai-base" placeholder="https://api.openai.com/v1" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                            </div>
+
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                                <label for="setting-openai-model" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">OPENAI MODEL NAME (分析使用模型)</label>
+                                <input type="text" id="setting-openai-model" placeholder="gpt-4" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
+                            </div>
                         </div>
                     </div>
 
@@ -552,13 +655,16 @@
                                 <h2 class="page-header-title" style="font-size: 2rem; margin-bottom: 0.5rem;">任务队列监控</h2>
                                 <p class="lead-text" style="font-size: 0.9rem; margin-bottom: 1rem;">查看历史与当前的排队任务状态。</p>
                             </div>
-                            <button id="btn-clear-history" class="btn-text" style="border: 1px solid var(--ink-secondary); padding: 0.2rem 0.5rem; font-size: 0.72rem;">清除已完成历史</button>
+                            <div style="display: flex; gap: 0.5rem; align-items: center; align-self: flex-start; margin-top: 0.5rem;">
+                                <button id="btn-cancel-all-queued" class="btn-text" style="border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.2rem 0.5rem; font-size: 0.72rem; cursor: pointer;">取消全部排队</button>
+                                <button id="btn-clear-history" class="btn-text" style="border: 1px solid var(--ink-secondary); padding: 0.2rem 0.5rem; font-size: 0.72rem; cursor: pointer;">清除已完成历史</button>
+                            </div>
                         </div>
                         
-                        <!-- 任务类型分页标签切换 -->
                         <div class="task-tabs-container" style="display: flex; gap: 1.25rem; border-bottom: 1px solid var(--ink-secondary); margin-bottom: 1.25rem; padding-bottom: 0.35rem;">
                             <span id="task-tab-sync" style="cursor: pointer; font-weight: bold; font-size: 0.88rem; color: var(--accent-primary); border-bottom: 2px solid var(--accent-primary); padding-bottom: 0.25rem;">🔄 同步数据任务</span>
                             <span id="task-tab-transcribe" style="cursor: pointer; font-weight: bold; font-size: 0.88rem; color: var(--ink-secondary); padding-bottom: 0.25rem;">🎙️ 后台语音转录</span>
+                            <span id="task-tab-agent" style="cursor: pointer; font-weight: bold; font-size: 0.88rem; color: var(--ink-secondary); padding-bottom: 0.25rem;">🤖 智能体运行日志</span>
                         </div>
                         
                         <!-- Task Queue Table List -->
@@ -601,11 +707,191 @@
                             <p id="console-screenshots-desc" class="lead-text" style="font-size: 0.82rem; margin-bottom: 0.75rem;">如果在网页爬取时遇到滑动验证码或操作报错，下方将显示对应的浏览器截图。请在服务器/浏览器窗口中配合操作，或根据截图更新规则。</p>
                             <div id="console-screenshots-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                                 <!-- Dynamic screenshots img elements -->
-                            </div>
                         </div>
                     </div>
                 </div>
             </section>
+
+            <!-- PAGE 8: AGENT OAUTH AUTHORIZATION -->
+            <section id="page-oauth" class="page-section">
+                <span class="section-label">OAUTH AUTHENTICATION</span>
+                <h2 class="page-header-title">智能体授权管理</h2>
+                <p class="lead-text">在此完成 Google Antigravity 和 OpenAI Codex 智能体的身份绑定，以支持自动化报告生成及创意脚本复刻。</p>
+                
+                <!-- CLI Diagnostics & One-Click Installer Block -->
+                <div style="background-color: var(--bg-secondary); border: 1px solid var(--ink-primary); padding: 1.5rem; margin-top: 1.5rem; max-width: 1200px; font-family: var(--font-sans);">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--ink-secondary); padding-bottom: 0.5rem; margin-bottom: 1rem;">
+                        <span class="section-label" style="margin: 0; color: var(--accent-primary);">ENVIRONMENT DIAGNOSTICS</span>
+                        <button type="button" id="btn-cli-refresh-diag" class="btn-text" style="font-size: 0.75rem; border: 1px solid var(--ink-secondary); padding: 0.15rem 0.6rem; cursor: pointer; height: 1.8rem; line-height: 1.4rem;">🔍 重新诊断环境</button>
+                    </div>
+                    <h3 style="font-family: var(--font-serif); font-size: 1.2rem; margin-top: 0; margin-bottom: 0.75rem; font-weight: bold;">智能体 CLI 运行环境诊断</h3>
+                    <p style="font-size: 0.82rem; color: var(--ink-secondary); margin-bottom: 1.25rem; line-height: 1.5;">
+                        在后台拉起自动化蒸馏或运行 teardown 时，系统需要在宿主机（或 Docker 容器内）的全局 PATH 中找到命令行工具。下方展示当前的诊断状态：
+                    </p>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 0.25rem;">
+                        <!-- Google CLI Diag -->
+                        <div id="google-diag-box" style="border: 1px dashed var(--border-primary); padding: 1rem; background-color: var(--bg-primary); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px;">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                    <strong style="font-size: 0.88rem;">🌐 Google Antigravity CLI</strong>
+                                    <span id="google-diag-status" class="status-badge" style="font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 0;">检测中...</span>
+                                </div>
+                                <div style="font-size: 0.75rem; line-height: 1.4; color: var(--ink-secondary); font-family: var(--font-mono); word-break: break-all;">
+                                    <div>执行路径：<span id="google-diag-path">-</span></div>
+                                    <div>版本号：<span id="google-diag-version">-</span></div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                                <button type="button" id="btn-google-cli-install" class="btn-text" style="font-size: 0.75rem; font-weight: bold; border-color: var(--accent-primary); color: var(--accent-primary); display: none; cursor: pointer; padding: 0.2rem 0.6rem; height: 1.8rem; line-height: 1.4rem;">一键安装 CLI</button>
+                            </div>
+                        </div>
+                        
+                        <!-- OpenAI CLI Diag -->
+                        <div id="openai-diag-box" style="border: 1px dashed var(--border-primary); padding: 1rem; background-color: var(--bg-primary); display: flex; flex-direction: column; justify-content: space-between; min-height: 120px;">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                    <strong style="font-size: 0.88rem;">🔑 OpenAI Codex CLI</strong>
+                                    <span id="openai-diag-status" class="status-badge" style="font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 0;">检测中...</span>
+                                </div>
+                                <div style="font-size: 0.75rem; line-height: 1.4; color: var(--ink-secondary); font-family: var(--font-mono); word-break: break-all;">
+                                    <div>执行路径：<span id="openai-diag-path">-</span></div>
+                                    <div>版本号：<span id="openai-diag-version">-</span></div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
+                                <button type="button" id="btn-openai-cli-install" class="btn-text" style="font-size: 0.75rem; font-weight: bold; border-color: var(--accent-primary); color: var(--accent-primary); display: none; cursor: pointer; padding: 0.2rem 0.6rem; height: 1.8rem; line-height: 1.4rem;">一键安装 CLI</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Installer Console Log -->
+                    <div id="cli-installer-console" style="display: none; border: 1px solid var(--ink-primary); margin-top: 1rem;">
+                        <div style="background-color: var(--ink-primary); color: var(--bg-primary); padding: 0.35rem 0.75rem; font-size: 0.75rem; font-weight: bold; display: flex; justify-content: space-between; align-items: center;">
+                            <span>📦 智能体 CLI 安装部署终端</span>
+                            <span id="cli-installer-spinner" style="font-size: 0.7rem; color: var(--accent-primary);">● 安装运行中...</span>
+                        </div>
+                        <pre id="cli-installer-logs-view" class="log-console" style="height: 120px; font-size: 0.72rem; margin: 0; background-color: var(--bg-primary); padding: 0.5rem; overflow-y: auto; white-space: pre-wrap; word-break: break-all; color: var(--ink-primary);">等待拉起安装命令...</pre>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 2rem; max-width: 1200px;">
+
+                    <!-- Google Card -->
+                    <div style="border: 1px solid var(--ink-primary); padding: 2rem; background-color: var(--bg-secondary); display: flex; flex-direction: column; justify-content: space-between; min-height: 520px;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ink-primary); padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+                                <h3 style="font-family: var(--font-serif); font-size: 1.35rem; margin: 0;">🌐 Google Antigravity</h3>
+                                <span id="google-status-badge" class="status-badge queued" style="font-size: 0.75rem; padding: 0.2rem 0.6rem;">未绑定</span>
+                            </div>
+                            <p style="font-size: 0.88rem; line-height: 1.6; color: var(--ink-secondary); margin-bottom: 1.5rem;">
+                                授权您的 Google 账号后，智能体将能够直接使用 Google Cloud Vertex AI & Gemini 大模型开展深度内容蒸馏和文笔 DNA 分析。
+                            </p>
+                            
+                            <div id="google-token-box" style="display: none; background: var(--bg-primary); border: 1px dashed var(--border-primary); padding: 0.75rem 1rem; font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; margin-bottom: 1.5rem; line-height: 1.4; color: var(--ink-secondary);">
+                                绑定 Token: <span id="google-masked-token">••••••••</span>
+                            </div>
+
+                            <!-- Model Selector -->
+                            <div style="display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1.25rem;">
+                                <label for="select-google-model" style="font-size: 0.75rem; font-weight: bold; color: var(--ink-secondary);">🌐 Google CLI 运行模型</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <select id="select-google-model" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); background: var(--bg-primary); color: var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem; cursor: pointer; border-radius: 0;">
+                                        <option value="gemini-2.5-pro">gemini-2.5-pro (推荐)</option>
+                                        <option value="custom">-- 自定义模型名称 --</option>
+                                    </select>
+                                    <input type="text" id="input-google-model-custom" placeholder="自定义模型名" style="display: none; width: 120px; height: 2.2rem; border: 1px solid var(--ink-primary); background: transparent; color: var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem;">
+                                    <button type="button" id="btn-fetch-google-models" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.75rem; font-weight: bold; border-color: var(--accent-primary); color: var(--accent-primary); cursor: pointer;">获取模型</button>
+                                    <button type="button" id="btn-save-google-model" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.75rem; font-weight: bold; cursor: pointer;">保存模型</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <!-- Option A: Web Console Terminal -->
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem;">
+                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-primary);">渠道一：网页控制台交互登录 (支持 win/docker Pro 额度)</span>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button type="button" id="btn-google-terminal-start" class="btn-primary" style="flex: 1; height: 2.2rem; font-size: 0.8rem; cursor: pointer; border: 1px solid var(--ink-primary); background: var(--ink-primary); color: var(--bg-primary);">开启终端登录</button>
+                                    <button type="button" id="btn-google-terminal-kill" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.8rem; border-color: var(--accent-primary); color: var(--accent-primary); cursor: pointer; display: none;">中止</button>
+                                </div>
+                                <pre id="google-terminal-log" class="log-console" style="height: 100px; font-size: 0.7rem; margin: 0.25rem 0; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-primary); padding: 0.5rem; white-space: pre-wrap; word-break: break-all; display: none;">等待开启终端...</pre>
+                                <div id="google-terminal-input-row" style="display: none; gap: 0.5rem;">
+                                    <input type="text" id="input-google-terminal-code" placeholder="回填授权码/输入" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem; background: transparent; color: var(--ink-primary);">
+                                    <button type="button" id="btn-google-terminal-submit" class="btn-text" style="height: 2.2rem; padding: 0 0.75rem; font-size: 0.8rem; font-weight: bold; cursor: pointer; border-color: var(--ink-primary);">发送</button>
+                                </div>
+                            </div>
+                            <!-- Option B: Direct Token paste -->
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem; margin-bottom: 1rem;">
+                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--ink-secondary);">渠道二：直接粘贴 Token 绑定 (备用)</span>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <input type="password" id="input-google-token" placeholder="直接粘贴 Access Token" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); padding: 0 0.75rem; font-size: 0.8rem; background: transparent; color: var(--ink-primary);">
+                                    <button type="button" id="btn-google-bind-token" class="btn-text" style="height: 2.2rem; padding: 0 0.75rem; font-size: 0.8rem; font-weight: bold; cursor: pointer;">绑定</button>
+                                </div>
+                            </div>
+                            <button type="button" id="btn-google-disconnect" class="btn-text" style="width: 100%; border-color: var(--accent-primary); color: var(--accent-primary); display: none; height: 2.2rem; font-size: 0.82rem; font-weight: bold; cursor: pointer;">断开 Google 账号连接</button>
+                        </div>
+                    </div>
+                    
+                    <!-- OpenAI Card -->
+                    <div style="border: 1px solid var(--ink-primary); padding: 2rem; background-color: var(--bg-secondary); display: flex; flex-direction: column; justify-content: space-between; min-height: 520px;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--ink-primary); padding-bottom: 0.75rem; margin-bottom: 1.25rem;">
+                                <h3 style="font-family: var(--font-serif); font-size: 1.35rem; margin: 0;">🔑 OpenAI Codex</h3>
+                                <span id="openai-status-badge" class="status-badge queued" style="font-size: 0.75rem; padding: 0.2rem 0.6rem;">未绑定</span>
+                            </div>
+                            <p style="font-size: 0.88rem; line-height: 1.6; color: var(--ink-secondary); margin-bottom: 1.5rem;">
+                                授权您的 OpenAI 账号后，智能体将能够直接使用 GPT-4 或 Codex 模型进行脚本段落精析和创意模版改写。
+                            </p>
+                            
+                            <div id="openai-token-box" style="display: none; background: var(--bg-primary); border: 1px dashed var(--border-primary); padding: 0.75rem 1rem; font-family: var(--font-mono); font-size: 0.8rem; word-break: break-all; margin-bottom: 1.5rem; line-height: 1.4; color: var(--ink-secondary);">
+                                绑定 Token: <span id="openai-masked-token">••••••••</span>
+                            </div>
+
+                            <!-- Model Selector -->
+                            <div style="display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1.25rem;">
+                                <label for="select-openai-model" style="font-size: 0.75rem; font-weight: bold; color: var(--ink-secondary);">🔑 OpenAI CLI 运行模型</label>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <select id="select-openai-model" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); background: var(--bg-primary); color: var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem; cursor: pointer; border-radius: 0;">
+                                        <option value="gpt-4o">gpt-4o (推荐)</option>
+                                        <option value="custom">-- 自定义模型名称 --</option>
+                                    </select>
+                                    <input type="text" id="input-openai-model-custom" placeholder="自定义模型名" style="display: none; width: 120px; height: 2.2rem; border: 1px solid var(--ink-primary); background: transparent; color: var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem;">
+                                    <button type="button" id="btn-fetch-openai-models" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.75rem; font-weight: bold; border-color: var(--accent-primary); color: var(--accent-primary); cursor: pointer;">获取模型</button>
+                                    <button type="button" id="btn-save-openai-model" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.75rem; font-weight: bold; cursor: pointer;">保存模型</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <!-- Option A: Web Console Terminal -->
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem;">
+                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-primary);">渠道一：网页控制台交互登录 (支持 win/docker Pro 额度)</span>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button type="button" id="btn-openai-terminal-start" class="btn-primary" style="flex: 1; height: 2.2rem; font-size: 0.8rem; cursor: pointer; border: 1px solid var(--ink-primary); background: var(--ink-primary); color: var(--bg-primary);">开启终端登录</button>
+                                    <button type="button" id="btn-openai-terminal-kill" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.8rem; border-color: var(--accent-primary); color: var(--accent-primary); cursor: pointer; display: none;">中止</button>
+                                </div>
+                                <pre id="openai-terminal-log" class="log-console" style="height: 100px; font-size: 0.7rem; margin: 0.25rem 0; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-primary); padding: 0.5rem; white-space: pre-wrap; word-break: break-all; display: none;">等待开启终端...</pre>
+                                <div id="openai-terminal-input-row" style="display: none; gap: 0.5rem;">
+                                    <input type="text" id="input-openai-terminal-code" placeholder="回填授权码/输入" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem; background: transparent; color: var(--ink-primary);">
+                                    <button type="button" id="btn-openai-terminal-submit" class="btn-text" style="height: 2.2rem; padding: 0 0.75rem; font-size: 0.8rem; font-weight: bold; cursor: pointer; border-color: var(--ink-primary);">发送</button>
+                                </div>
+                            </div>
+                            <!-- Option B: Direct Token paste -->
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem; margin-bottom: 1rem;">
+                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--ink-secondary);">渠道二：直接粘贴 Token 绑定 (备用)</span>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <input type="password" id="input-openai-token" placeholder="直接粘贴 API Key / Token" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); padding: 0 0.75rem; font-size: 0.8rem; background: transparent; color: var(--ink-primary);">
+                                    <button type="button" id="btn-openai-bind-token" class="btn-text" style="height: 2.2rem; padding: 0 0.75rem; font-size: 0.8rem; font-weight: bold; cursor: pointer;">绑定</button>
+                                </div>
+                            </div>
+                            <button type="button" id="btn-openai-disconnect" class="btn-text" style="width: 100%; border-color: var(--accent-primary); color: var(--accent-primary); display: none; height: 2.2rem; font-size: 0.82rem; font-weight: bold; cursor: pointer;">断开 OpenAI 账号连接</button>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
 
         </main>
 

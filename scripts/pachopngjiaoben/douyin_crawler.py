@@ -302,11 +302,40 @@ async def close_tutorial_popup_monitor(page):
         await asyncio.sleep(1.0)
 
 
-async def click_comment_button(page):
+async def click_comment_button(page, vid=None):
     """
     寻找并点击视频画廊中的评论展开图标
     """
+    container = None
+    if vid:
+        container_sel = f'[data-e2e="feed-active-video"][data-e2e-vid="{vid}"]'
+        try:
+            loc = page.locator(container_sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                container = loc
+                print(f"  [定位] 成功通过视频 ID [{vid}] 定位到评论活动容器")
+        except Exception:
+            pass
+            
+    if not container:
+        active_container_selectors = [
+            '[data-e2e="feed-active-video"]',
+            '.slider-video',
+            '.xgplayer-playing',
+            'div[class*="active"]'
+        ]
+        for sel in active_container_selectors:
+            try:
+                loc = page.locator(sel).first
+                if await loc.count() > 0 and await loc.is_visible():
+                    container = loc
+                    print(f"  [定位] 定位评论活动容器: {sel}")
+                    break
+            except Exception:
+                pass
+
     comment_btn_selectors = [
+        '[data-e2e="feed-comment-icon"]',
         '[data-e2e*="comment" i]',
         '[data-e2e*="Comment"]',
         '[data-e2e="comment-icon"]',
@@ -316,12 +345,25 @@ async def click_comment_button(page):
         'svg[class*="comment" i]',
         'div[class*="comment" i]'
     ]
+    
+    if container:
+        for btn_sel in comment_btn_selectors:
+            try:
+                btn = container.locator(btn_sel).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.click()
+                    print(f"  [交互] 已在容器内点击评论按钮: {btn_sel}")
+                    return True
+            except Exception:
+                pass
+                
+    # 全局兜底
     for btn_sel in comment_btn_selectors:
         try:
             btn = page.locator(btn_sel).first
             if await btn.count() > 0 and await btn.is_visible():
                 await btn.click()
-                print(f"  [交互] 已点击评论按钮: {btn_sel}")
+                print(f"  [交互] 已全局点击评论按钮: {btn_sel}")
                 return True
         except Exception:
             pass
@@ -337,17 +379,39 @@ async def click_comment_button(page):
     return False
 
 
-async def hover_share_button(page):
+async def hover_share_button(page, vid=None):
     """
     寻找当前激活视频的分享按钮并进行鼠标悬停 (Hover)
     """
-    active_container_selectors = [
-        '[data-e2e="feed-active-video"]',
-        '.slider-video',
-        '.xgplayer-playing',
-        'div[class*="active"]'
-    ]
+    container = None
+    if vid:
+        container_sel = f'[data-e2e="feed-active-video"][data-e2e-vid="{vid}"]'
+        try:
+            loc = page.locator(container_sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                container = loc
+                print(f"  [定位] 成功通过视频 ID [{vid}] 定位到分享活动容器")
+        except Exception:
+            pass
+
+    if not container:
+        active_container_selectors = [
+            '[data-e2e="feed-active-video"]',
+            '.slider-video',
+            '.xgplayer-playing',
+            'div[class*="active"]'
+        ]
+        for container_sel in active_container_selectors:
+            try:
+                loc = page.locator(container_sel).first
+                if await loc.count() > 0 and await loc.is_visible():
+                    container = loc
+                    break
+            except Exception:
+                pass
+                
     share_btn_selectors = [
+        '[data-e2e="video-player-share"]',
         '[data-e2e*="share" i]',
         '[data-e2e*="Share"]',
         '[data-e2e="share-icon"]',
@@ -357,19 +421,16 @@ async def hover_share_button(page):
         '[class*="share" i]'
     ]
     
-    # 优先在当前激活的视频容器中定位分享
-    for container_sel in active_container_selectors:
-        try:
-            container = page.locator(container_sel).first
-            if await container.count() > 0 and await container.is_visible():
-                for share_sel in share_btn_selectors:
-                    btn = container.locator(share_sel).first
-                    if await btn.count() > 0 and await btn.is_visible():
-                        await btn.hover()
-                        print(f"  [交互] 已悬停当前视频容器内的分享按钮: {share_sel}")
-                        return True
-        except Exception:
-            pass
+    if container:
+        for share_sel in share_btn_selectors:
+            try:
+                btn = container.locator(share_sel).first
+                if await btn.count() > 0 and await btn.is_visible():
+                    await btn.hover()
+                    print(f"  [交互] 已在容器内悬停当前视频分享按钮: {share_sel}")
+                    return True
+            except Exception:
+                pass
             
     # 全局兜底
     for share_sel in share_btn_selectors:
@@ -377,7 +438,7 @@ async def hover_share_button(page):
             btn = page.locator(share_sel).first
             if await btn.count() > 0 and await btn.is_visible():
                 await btn.hover()
-                print(f"  [交互] 已悬停全局可见的分享按钮: {share_sel}")
+                print(f"  [交互] 已全局悬停分享按钮: {share_sel}")
                 return True
         except Exception:
             pass
@@ -602,6 +663,68 @@ async def scroll_comments_container(page, scroll_times=4):
             print(f"  [交互] 按键下滚失败: {se}")
 
 
+async def extract_blogger_name(page):
+    """从页面底部的 Schema.org BreadcrumbList 提取博主昵称"""
+    try:
+        # 查找包含 ld+json 且 data-rh="true" 的 script 标签
+        scripts = await page.locator('script[type="application/ld+json"][data-rh="true"]').all()
+        for script in scripts:
+            try:
+                content = await script.text_content()
+                if not content:
+                    continue
+                import json
+                data = json.loads(content)
+                if data.get("@type") == "BreadcrumbList":
+                    elements = data.get("itemListElement", [])
+                    if len(elements) >= 2:
+                        name = elements[1].get("name", "").strip()
+                        if name:
+                            return name
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[提取昵称] 获取网页 ld+json 失败: {e}")
+    return None
+
+
+def update_db_blogger_name(old_name, new_name):
+    """更新数据库中博主的名称，支持重名冲突处理（添加数字后缀）"""
+    if not old_name or not new_name or old_name == new_name:
+        return None
+    import sqlite3
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if not os.path.exists(db_path):
+        print(f"[DB更新] 数据库文件不存在，跳过更名: {db_path}")
+        return None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # 1. 自动寻找不冲突的名字（如重名加后缀：_1, _2 等）
+        candidate_name = new_name
+        suffix = 1
+        while True:
+            cursor.execute("SELECT id FROM bloggers WHERE name = ? AND name != ?", (candidate_name, old_name))
+            if not cursor.fetchone():
+                break
+            candidate_name = f"{new_name}_{suffix}"
+            suffix += 1
+            
+        if candidate_name != new_name:
+            print(f"[DB更新] 博主昵称 '{new_name}' 已在数据库中存在，自动更新候选名为 '{candidate_name}'。")
+            
+        # 2. 执行更新
+        cursor.execute("UPDATE bloggers SET name = ? WHERE name = ?", (candidate_name, old_name))
+        conn.commit()
+        conn.close()
+        print(f"[DB更新] 成功将博主名称从 '{old_name}' 更新为 '{candidate_name}'。")
+        return candidate_name
+    except Exception as e:
+        print(f"[DB更新] 更新博主名称出错: {e}")
+    return None
+
+
 async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.json", headless=True):
     print(f"\n正在启动浏览器，目标博主 [{name}]，链接: {url}")
     print(f"本次抓取上限为 {max_videos} 个视频，正在初始化中...")
@@ -756,6 +879,17 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
             # 登录成功，启用自动清理弹窗协程
             ENABLE_POPUP_MONITOR = True
             
+            # 如果是临时名字，尝试从网页中提取真实昵称并更新数据库
+            if name.startswith("未命名_"):
+                real_name = await extract_blogger_name(page)
+                if real_name:
+                    print(f"[提取昵称] 成功从网页中解析出博主真实昵称: {real_name}")
+                    applied_name = update_db_blogger_name(name, real_name)
+                    if applied_name:
+                        name = applied_name
+                        filename = os.path.join(ROOT_DIR, "data", "raw", name, "douyin_data.json")
+                        print(f"[提取昵称] 切换输出文件名至: {filename}")
+            
             # 激活后台登录弹窗与教程关闭实时检测任务
             popup_monitor_task = asyncio.create_task(close_login_popup_monitor(page))
             tutorial_monitor_task = asyncio.create_task(close_tutorial_popup_monitor(page))
@@ -905,7 +1039,7 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                     print(f"  [校验] 成功检测到目标视频 [{target_vid}] 的评论数据已加载！")
                     break
                 print(f"  [校验] 未检测到评论 API 响应 (尝试 {attempt + 1}/5)，尝试点击评论按钮...")
-                await click_comment_button(page)
+                await click_comment_button(page, vid=target_vid)
                 await asyncio.sleep(2.0)
 
             if not comments_loaded:
@@ -952,7 +1086,7 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
                                 print(f"  [校验] 成功截获分享短链: {captured_short_links[active_vid]}")
                                 break
                             print(f"  [校验] 未获取到分享短链 (尝试 {attempt + 1}/3)，触发分享按钮 Hover...")
-                            await hover_share_button(page)
+                            await hover_share_button(page, vid=active_vid)
                             await asyncio.sleep(2.0)
                             
                         if not short_link_loaded:

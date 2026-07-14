@@ -47,3 +47,4 @@ screenshots/
 skills
 # 显式保留的博主配置模板
 !saved_links.json
+--main

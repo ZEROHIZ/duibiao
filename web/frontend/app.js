@@ -191,6 +191,11 @@ function setupEventListeners() {
         btnSyncAll.addEventListener("click", handleSyncAllClick);
     }
     
+    const btnCancelAllQueued = document.getElementById("btn-cancel-all-queued");
+    if (btnCancelAllQueued) {
+        btnCancelAllQueued.addEventListener("click", handleCancelAllQueuedClick);
+    }
+    
     const btnClearHistory = document.getElementById("btn-clear-history");
     if (btnClearHistory) {
         btnClearHistory.addEventListener("click", handleClearHistoryClick);
@@ -209,26 +214,275 @@ function setupEventListeners() {
     // 绑定任务日志类型的分页选项卡点击切换事件
     const btnTabSync = document.getElementById("task-tab-sync");
     const btnTabTranscribe = document.getElementById("task-tab-transcribe");
-    if (btnTabSync && btnTabTranscribe) {
+    const btnTabAgent = document.getElementById("task-tab-agent");
+    
+    const switchTaskTabStyle = (activeTab) => {
+        const tabs = [
+            { el: btnTabSync, key: "sync" },
+            { el: btnTabTranscribe, key: "transcribe" },
+            { el: btnTabAgent, key: "agent" }
+        ];
+        tabs.forEach(t => {
+            if (!t.el) return;
+            if (t.key === activeTab) {
+                t.el.style.color = "var(--accent-primary)";
+                t.el.style.borderBottom = "2px solid var(--accent-primary)";
+            } else {
+                t.el.style.color = "var(--ink-secondary)";
+                t.el.style.borderBottom = "none";
+            }
+        });
+    };
+
+    if (btnTabSync) {
         btnTabSync.addEventListener("click", () => {
             currentTaskTab = "sync";
-            btnTabSync.style.color = "var(--accent-primary)";
-            btnTabSync.style.borderBottom = "2px solid var(--accent-primary)";
-            btnTabTranscribe.style.color = "var(--ink-secondary)";
-            btnTabTranscribe.style.borderBottom = "none";
+            switchTaskTabStyle("sync");
             loadSettingsPageTasks();
         });
+    }
+    if (btnTabTranscribe) {
         btnTabTranscribe.addEventListener("click", () => {
             currentTaskTab = "transcribe";
-            btnTabTranscribe.style.color = "var(--accent-primary)";
-            btnTabTranscribe.style.borderBottom = "2px solid var(--accent-primary)";
-            btnTabSync.style.color = "var(--ink-secondary)";
-            btnTabSync.style.borderBottom = "none";
+            switchTaskTabStyle("transcribe");
+            loadSettingsPageTasks();
+        });
+    }
+    if (btnTabAgent) {
+        btnTabAgent.addEventListener("click", () => {
+            currentTaskTab = "agent";
+            switchTaskTabStyle("agent");
             loadSettingsPageTasks();
         });
     }
 
+    // 智能体环境诊断与安装事件绑定
+    const btnCliRefreshDiag = document.getElementById("btn-cli-refresh-diag");
+    if (btnCliRefreshDiag) {
+        btnCliRefreshDiag.addEventListener("click", runCLIDiagnostics);
+    }
+    const btnGoogleCliInstall = document.getElementById("btn-google-cli-install");
+    if (btnGoogleCliInstall) {
+        btnGoogleCliInstall.addEventListener("click", () => triggerCLIInstall("google"));
+    }
+    const btnOpenaiCliInstall = document.getElementById("btn-openai-cli-install");
+    if (btnOpenaiCliInstall) {
+        btnOpenaiCliInstall.addEventListener("click", () => triggerCLIInstall("openai"));
+    }
 
+    // 智能体授权 终端登录与 Token 页面事件绑定
+    const btnGoogleTerminalStart = document.getElementById("btn-google-terminal-start");
+
+    if (btnGoogleTerminalStart) {
+        btnGoogleTerminalStart.addEventListener("click", () => startTerminalAuth("google"));
+    }
+    const btnGoogleTerminalKill = document.getElementById("btn-google-terminal-kill");
+    if (btnGoogleTerminalKill) {
+        btnGoogleTerminalKill.addEventListener("click", () => killTerminalAuth("google"));
+    }
+    const btnGoogleTerminalSubmit = document.getElementById("btn-google-terminal-submit");
+    if (btnGoogleTerminalSubmit) {
+        btnGoogleTerminalSubmit.addEventListener("click", () => submitTerminalCode("google"));
+    }
+    const btnGoogleBindToken = document.getElementById("btn-google-bind-token");
+    if (btnGoogleBindToken) {
+        btnGoogleBindToken.addEventListener("click", () => bindOAuthToken("google"));
+    }
+    const btnGoogleDisconnect = document.getElementById("btn-google-disconnect");
+    if (btnGoogleDisconnect) {
+        btnGoogleDisconnect.addEventListener("click", () => disconnectOAuth("google"));
+    }
+
+    const btnOpenaiTerminalStart = document.getElementById("btn-openai-terminal-start");
+    if (btnOpenaiTerminalStart) {
+        btnOpenaiTerminalStart.addEventListener("click", () => startTerminalAuth("openai"));
+    }
+    const btnOpenaiTerminalKill = document.getElementById("btn-openai-terminal-kill");
+    if (btnOpenaiTerminalKill) {
+        btnOpenaiTerminalKill.addEventListener("click", () => killTerminalAuth("openai"));
+    }
+    const btnOpenaiTerminalSubmit = document.getElementById("btn-openai-terminal-submit");
+    if (btnOpenaiTerminalSubmit) {
+        btnOpenaiTerminalSubmit.addEventListener("click", () => submitTerminalCode("openai"));
+    }
+    const btnOpenaiBindToken = document.getElementById("btn-openai-bind-token");
+    if (btnOpenaiBindToken) {
+        btnOpenaiBindToken.addEventListener("click", () => bindOAuthToken("openai"));
+    }
+    const btnOpenaiDisconnect = document.getElementById("btn-openai-disconnect");
+    if (btnOpenaiDisconnect) {
+        btnOpenaiDisconnect.addEventListener("click", () => disconnectOAuth("openai"));
+    }
+    // === 智能体运行模型下拉框与自定义输入框绑定联动 ===
+    const selectGoogleModel = document.getElementById("select-google-model");
+    const inputGoogleModelCustom = document.getElementById("input-google-model-custom");
+    const btnSaveGoogleModel = document.getElementById("btn-save-google-model");
+    
+    if (selectGoogleModel && inputGoogleModelCustom) {
+        selectGoogleModel.addEventListener("change", (e) => {
+            if (e.target.value === "custom") {
+                inputGoogleModelCustom.style.display = "inline-block";
+                inputGoogleModelCustom.focus();
+            } else {
+                inputGoogleModelCustom.style.display = "none";
+            }
+        });
+    }
+    if (btnSaveGoogleModel) {
+        btnSaveGoogleModel.addEventListener("click", async () => {
+            let modelVal = selectGoogleModel.value;
+            if (modelVal === "custom") {
+                modelVal = inputGoogleModelCustom.value.trim();
+            }
+            if (!modelVal) {
+                showToast("模型名称不能为空！", "error");
+                return;
+            }
+            try {
+                // 读取全部设置
+                const resGet = await fetch(`${API_BASE}/api/settings`);
+                const settings = await resGet.json();
+                settings.google_model = modelVal;
+                
+                // 保存
+                const resPut = await fetch(`${API_BASE}/api/settings`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(settings)
+                });
+                if (resPut.ok) {
+                    showToast(`Google 运行模型已成功设置为: ${modelVal}`, "success");
+                } else {
+                    showToast("模型设置保存失败", "error");
+                }
+            } catch (err) {
+                showToast("保存模型配置网络错误", "error");
+            }
+        });
+    }
+
+    const btnFetchGoogleModels = document.getElementById("btn-fetch-google-models");
+    if (btnFetchGoogleModels) {
+        btnFetchGoogleModels.addEventListener("click", async () => {
+            btnFetchGoogleModels.disabled = true;
+            btnFetchGoogleModels.textContent = "拉取中...";
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/cli/models?provider=google`);
+                const data = await res.json();
+                if (data.status === "success" && data.models) {
+                    selectGoogleModel.innerHTML = "";
+                    data.models.forEach(model => {
+                        const opt = document.createElement("option");
+                        opt.value = model;
+                        opt.textContent = model;
+                        selectGoogleModel.appendChild(opt);
+                    });
+                    const optCustom = document.createElement("option");
+                    optCustom.value = "custom";
+                    optCustom.textContent = "-- 自定义模型名称 --";
+                    selectGoogleModel.appendChild(optCustom);
+                    
+                    if (inputGoogleModelCustom) {
+                        inputGoogleModelCustom.value = "";
+                        inputGoogleModelCustom.style.display = "none";
+                    }
+                    
+                    showToast("Google 可用模型列表拉取成功！", "success");
+                } else {
+                    showToast("获取模型列表失败，请检查登录态或网络代理", "error");
+                }
+            } catch (err) {
+                showToast("网络请求出错", "error");
+            } finally {
+                btnFetchGoogleModels.disabled = false;
+                btnFetchGoogleModels.textContent = "获取模型";
+            }
+        });
+    }
+
+    const selectOpenaiModel = document.getElementById("select-openai-model");
+    const inputOpenaiModelCustom = document.getElementById("input-openai-model-custom");
+    const btnSaveOpenaiModel = document.getElementById("btn-save-openai-model");
+    const btnFetchOpenaiModels = document.getElementById("btn-fetch-openai-models");
+    
+    if (btnFetchOpenaiModels) {
+        btnFetchOpenaiModels.addEventListener("click", async () => {
+            btnFetchOpenaiModels.disabled = true;
+            btnFetchOpenaiModels.textContent = "拉取中...";
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/cli/models?provider=openai`);
+                const data = await res.json();
+                if (data.status === "success" && data.models) {
+                    selectOpenaiModel.innerHTML = "";
+                    data.models.forEach(model => {
+                        const opt = document.createElement("option");
+                        opt.value = model;
+                        opt.textContent = model;
+                        selectOpenaiModel.appendChild(opt);
+                    });
+                    const optCustom = document.createElement("option");
+                    optCustom.value = "custom";
+                    optCustom.textContent = "-- 自定义模型名称 --";
+                    selectOpenaiModel.appendChild(optCustom);
+                    
+                    if (inputOpenaiModelCustom) {
+                        inputOpenaiModelCustom.value = "";
+                        inputOpenaiModelCustom.style.display = "none";
+                    }
+                    
+                    showToast("OpenAI 可用模型列表拉取成功！", "success");
+                } else {
+                    showToast("获取模型列表失败，请检查 API Key 与 Base URL 配置", "error");
+                }
+            } catch (err) {
+                showToast("网络请求出错", "error");
+            } finally {
+                btnFetchOpenaiModels.disabled = false;
+                btnFetchOpenaiModels.textContent = "获取模型";
+            }
+        });
+    }
+    
+    if (selectOpenaiModel && inputOpenaiModelCustom) {
+        selectOpenaiModel.addEventListener("change", (e) => {
+            if (e.target.value === "custom") {
+                inputOpenaiModelCustom.style.display = "inline-block";
+                inputOpenaiModelCustom.focus();
+            } else {
+                inputOpenaiModelCustom.style.display = "none";
+            }
+        });
+    }
+    if (btnSaveOpenaiModel) {
+        btnSaveOpenaiModel.addEventListener("click", async () => {
+            let modelVal = selectOpenaiModel.value;
+            if (modelVal === "custom") {
+                modelVal = inputOpenaiModelCustom.value.trim();
+            }
+            if (!modelVal) {
+                showToast("模型名称不能为空！", "error");
+                return;
+            }
+            try {
+                const resGet = await fetch(`${API_BASE}/api/settings`);
+                const settings = await resGet.json();
+                settings.openai_model = modelVal;
+                
+                const resPut = await fetch(`${API_BASE}/api/settings`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(settings)
+                });
+                if (resPut.ok) {
+                    showToast(`OpenAI 运行模型已成功设置为: ${modelVal}`, "success");
+                } else {
+                    showToast("模型设置保存失败", "error");
+                }
+            } catch (err) {
+                showToast("保存模型配置网络错误", "error");
+            }
+        });
+    }
 
 
     // 博主详情内页 Tab 点击事件
@@ -298,6 +552,31 @@ function setupEventListeners() {
     }
     bindCopyBtn("btn-copy-skill", "ai-skill-content");
     bindCopyBtn("btn-copy-soul",  "ai-soul-content");
+
+    // AI 探索探索发散领域按钮
+    const btnRefreshNiches = document.getElementById("btn-refresh-niches");
+    if (btnRefreshNiches) {
+        btnRefreshNiches.addEventListener("click", handleRefreshNichesClick);
+    }
+
+    // 一键复制发散赛道专业搜索词
+    const btnCopyNicheKeywords = document.getElementById("btn-copy-niche-keywords");
+    if (btnCopyNicheKeywords) {
+        btnCopyNicheKeywords.addEventListener("click", () => {
+            const container = document.getElementById("selected-niche-keywords");
+            if (!container) return;
+            const keywords = Array.from(container.querySelectorAll(".filter-tag")).map(el => el.innerText.trim());
+            if (keywords.length === 0) return;
+            
+            // 拼接为空格分隔
+            const textToCopy = keywords.join(" ");
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                showToast("✓ 找号搜索词已复制到剪贴板！可直接粘贴搜索。", "success");
+            }).catch(() => {
+                showToast("复制失败，请手动选择复制", "error");
+            });
+        });
+    }
 }
 
 // Toast 弹窗通知辅助函数 (全局作用域)
@@ -405,6 +684,7 @@ function loadTabData(tabId) {
 
     switch (tabId) {
         case "dashboard":
+            loadNichesExploration();
             break;
         case "knowledge":
             loadKnowledgeBaseData();
@@ -426,8 +706,12 @@ function loadTabData(tabId) {
         case "logs":
             loadLogsPageData();
             break;
+        case "oauth":
+            loadOAuthPageData();
+            break;
     }
 }
+
 
 // 7. 仪表盘数据接口与表单提交
 async function fetchDashboardStats() {
@@ -684,7 +968,7 @@ async function loadBloggersList() {
     const tableBody = document.querySelector("#table-bloggers-management tbody");
     const gridContainer = document.getElementById("blogger-grid-container");
     
-    tableBody.innerHTML = `<tr><td colspan="7" class="lead-text">加载对标账号中...</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="8" class="lead-text">加载对标账号中...</td></tr>`;
     gridContainer.innerHTML = `<div class="lead-text">加载对标账号中...</div>`;
 
     try {
@@ -693,7 +977,7 @@ async function loadBloggersList() {
         const data = await res.json();
 
         if (data.length === 0) {
-            const emptyHtml = `<tr><td colspan="7" style="font-style: italic;" class="lead-text">暂无对标账号，点击上方“录入监控博主”进行添加。</td></tr>`;
+            const emptyHtml = `<tr><td colspan="8" style="font-style: italic;" class="lead-text">暂无对标账号，点击上方“录入监控博主”进行添加。</td></tr>`;
             tableBody.innerHTML = emptyHtml;
             gridContainer.innerHTML = `<div class="lead-text" style="font-style: italic;">暂无对标账号。</div>`;
             return;
@@ -710,6 +994,10 @@ async function loadBloggersList() {
             const latestTitle = b.latest_note_title ? b.latest_note_title.substring(0, 20) + "..." : "待更新/无数据";
             const latestTime = b.latest_note_time ? b.latest_note_time.substring(5, 16) : "—";
             
+            // 主营定位标签
+            const catVal = b.category || "待诊断";
+            const categoryBadge = `<span class="editable-field" data-id="${b.id}" data-field="category" title="双击可直接修改主营定位领域" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-size: 0.95rem; font-family: var(--font-sans); display: inline-block; padding-bottom: 2px;">${catVal}</span>`;
+            
             // 是否有深度蒸馏报告判断
             const hasDistilled = b.total_notes > 0;
             // 允许所有博主都可以点击进入详情页，对于未同步博主也提供详情按钮以方便同步
@@ -722,6 +1010,9 @@ async function loadBloggersList() {
             tr.innerHTML = `
                 <td>
                     <span class="editable-field" data-id="${b.id}" data-field="name" title="双击可直接修改博主名称" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-size: 1.05rem; font-family: var(--font-serif); font-weight: 600; display: inline-block; padding-bottom: 2px;">${b.name}</span>
+                </td>
+                <td>
+                    ${categoryBadge}
                 </td>
                 <td>
                     <span class="editable-field" data-id="${b.id}" data-field="home_url" title="双击可直接修改监控主页链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-family: var(--font-mono); font-size: 0.85rem; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; padding-bottom: 2px; vertical-align: middle;">${urlVal || "双击配置个人主页链接..."}</span>
@@ -854,13 +1145,18 @@ function startInlineEdit(el) {
         if (save && newValue !== originalValue) {
             el.innerText = "保存中...";
             try {
-                const url = field === "home_url" 
-                    ? `${API_BASE}/api/bloggers/${bloggerId}/home_url`
-                    : `${API_BASE}/api/bloggers/${bloggerId}/name`;
-                
-                const payload = field === "home_url" 
-                    ? { home_url: newValue }
-                    : { name: newValue };
+                let url;
+                let payload;
+                if (field === "home_url") {
+                    url = `${API_BASE}/api/bloggers/${bloggerId}/home_url`;
+                    payload = { home_url: newValue };
+                } else if (field === "category") {
+                    url = `${API_BASE}/api/bloggers/${bloggerId}/category`;
+                    payload = { category: newValue };
+                } else {
+                    url = `${API_BASE}/api/bloggers/${bloggerId}/name`;
+                    payload = { name: newValue };
+                }
                     
                 const res = await fetch(url, {
                     method: "PUT",
@@ -874,10 +1170,13 @@ function startInlineEdit(el) {
                     if (field === "name") {
                         fetchDashboardStats();
                     }
+                    if (field === "category") {
+                        loadNichesExploration();
+                    }
                 } else {
                     const err = await res.json();
                     showToast(`修改失败: ${err.detail || "冲突或错误"}`, "error");
-                    el.innerText = originalValue || (field === "home_url" ? "双击配置个人主页链接..." : "");
+                    el.innerText = originalValue || "";
                     el.classList.remove("editing");
                 }
             } catch (err) {
@@ -959,11 +1258,24 @@ async function loadAllWorksTimeline() {
             let commentsHtml = "";
             const commentsList = note.comments_list || [];
             if (commentsList.length > 0) {
+                // 统一排序：按点赞数降序
+                commentsList.sort((a, b) => {
+                    const likesA = a.likeCount !== undefined ? Number(a.likeCount) : (a.likes !== undefined ? Number(a.likes) : 0);
+                    const likesB = b.likeCount !== undefined ? Number(b.likeCount) : (b.likes !== undefined ? Number(b.likes) : 0);
+                    return likesB - likesA;
+                });
+
                 commentsList.forEach(c => {
                     const isAuthorBadge = c.is_author ? ` <span class="k-card-niche" style="font-size:0.65rem; padding: 0.05rem 0.25rem;">作者回复</span>` : "";
+                    const username = c.speaker || c.user || "匿名";
+                    const likes = c.likeCount !== undefined ? c.likeCount : (c.likes !== undefined ? c.likes : 0);
+                    
                     commentsHtml += `
                         <div class="drawer-comment-item">
-                            <span class="drawer-comment-user">${c.user}${isAuthorBadge}：</span>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span class="drawer-comment-user">${username}${isAuthorBadge}：</span>
+                                <span style="font-size: 0.75rem; color: var(--ink-tertiary);">👍 ${likes}</span>
+                            </div>
                             <div class="drawer-comment-content">${c.content}</div>
                         </div>
                     `;
@@ -1468,6 +1780,10 @@ async function loadBloggerNotesList(bloggerName) {
             const tr = document.createElement("tr");
             tr.setAttribute("id", `note-row-${note.id}`);
             
+            const teardownBtnHtml = note.type === 'video' 
+                ? `<button class="btn-text" style="color: var(--accent-primary); font-weight: 600; margin-left: 0.5rem;" onclick="triggerVideoTeardown('${note.id}')">AI 拆解</button>`
+                : "";
+
             tr.innerHTML = `
                 <td><strong>${index + 1}</strong></td>
                 <td><div style="font-weight: 500; font-family: var(--font-serif);">${note.title}</div></td>
@@ -1477,10 +1793,12 @@ async function loadBloggerNotesList(bloggerName) {
                 <td>${note.comments.toLocaleString()}</td>
                 <td><span class="k-card-niche" style="font-size: 0.7rem; border-color: var(--ink-tertiary); color: var(--ink-secondary);">${note.category}</span></td>
                 <td>
-                    <button class="btn-text" style="color: var(--accent-primary); font-weight: 600;" onclick="toggleCommentsDrawer('${note.id}')">查看热评</button>
+                    <button class="btn-text" style="color: var(--ink-secondary); font-weight: 600;" onclick="toggleCommentsDrawer('${note.id}')">查看热评</button>
+                    ${teardownBtnHtml}
                 </td>
             `;
             tbody.appendChild(tr);
+
 
             // 脱敏热评内嵌折叠行 (Inline comments drawer row)
             const commentTr = document.createElement("tr");
@@ -1503,11 +1821,24 @@ async function loadBloggerNotesList(bloggerName) {
             let commentsHtml = "";
             const commentsList = note.comments_list || [];
             if (commentsList.length > 0) {
+                // 统一排序：按点赞数降序
+                commentsList.sort((a, b) => {
+                    const likesA = a.likeCount !== undefined ? Number(a.likeCount) : (a.likes !== undefined ? Number(a.likes) : 0);
+                    const likesB = b.likeCount !== undefined ? Number(b.likeCount) : (b.likes !== undefined ? Number(b.likes) : 0);
+                    return likesB - likesA;
+                });
+
                 commentsList.forEach(c => {
                     const isAuthorBadge = c.is_author ? ` <span class="k-card-niche" style="font-size:0.65rem; padding: 0.05rem 0.25rem;">作者回复</span>` : "";
+                    const username = c.speaker || c.user || "匿名";
+                    const likes = c.likeCount !== undefined ? c.likeCount : (c.likes !== undefined ? c.likes : 0);
+                    
                     commentsHtml += `
                         <div class="drawer-comment-item">
-                            <span class="drawer-comment-user">${c.user}${isAuthorBadge}：</span>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span class="drawer-comment-user">${username}${isAuthorBadge}：</span>
+                                <span style="font-size: 0.75rem; color: var(--ink-tertiary);">👍 ${likes}</span>
+                            </div>
                             <div class="drawer-comment-content">${c.content}</div>
                         </div>
                     `;
@@ -1732,6 +2063,16 @@ async function loadSettingsPageData() {
         document.getElementById("setting-feishu-chat-id").value = settings.feishu_chat_id || "";
         document.getElementById("setting-feishu-app-id").value = settings.feishu_app_id || "";
         document.getElementById("setting-feishu-app-secret").value = settings.feishu_app_secret || "";
+        
+        document.getElementById("setting-openai-key").value = settings.openai_api_key || "";
+        document.getElementById("setting-openai-base").value = settings.openai_base_url || "https://api.openai.com/v1";
+        document.getElementById("setting-openai-model").value = settings.openai_model_name || "gpt-4";
+        
+        document.getElementById("setting-proxy-url").value = settings.proxy_url || "";
+        document.getElementById("setting-google-login-cmd").value = settings.google_login_cmd || "antigravity login --no-browser";
+        document.getElementById("setting-openai-login-cmd").value = settings.openai_login_cmd || "codex login --no-browser";
+
+
     } catch (e) {
         console.error("加载系统设置失败:", e);
         showToast("加载系统设置参数失败", "error");
@@ -1747,7 +2088,12 @@ let currentTaskTab = "sync";
 
 async function loadSettingsPageTasks() {
     try {
-        const url = currentTaskTab === "sync" ? `${API_BASE}/api/crawl/tasks` : `${API_BASE}/api/transcribe/tasks`;
+        let url = `${API_BASE}/api/crawl/tasks`;
+        if (currentTaskTab === "transcribe") {
+            url = `${API_BASE}/api/transcribe/tasks`;
+        } else if (currentTaskTab === "agent") {
+            url = `${API_BASE}/api/agent/tasks`;
+        }
         const res = await fetch(url);
         const tasks = await res.json();
         
@@ -1756,7 +2102,13 @@ async function loadSettingsPageTasks() {
         
         const headerEl = document.getElementById("queue-task-header-target");
         if (headerEl) {
-            headerEl.textContent = currentTaskTab === "sync" ? "目标博主" : "转录目标/视频";
+            if (currentTaskTab === "sync") {
+                headerEl.textContent = "目标博主";
+            } else if (currentTaskTab === "transcribe") {
+                headerEl.textContent = "转录目标/视频";
+            } else {
+                headerEl.textContent = "智能体任务类型与目标";
+            }
         }
         
         if (tasks.length === 0) {
@@ -1779,31 +2131,49 @@ async function loadSettingsPageTasks() {
             let displayBlogger = "";
             if (currentTaskTab === "sync") {
                 displayBlogger = `<strong>${t.blogger === "all" ? "全部博主" : t.blogger}</strong>`;
-            } else {
+            } else if (currentTaskTab === "transcribe") {
                 const cleanTitle = t.title ? (t.title.length > 25 ? t.title.substring(0, 25) + "..." : t.title) : "无标题";
                 displayBlogger = `<div style="font-size:0.75rem; color:var(--ink-secondary); font-weight:normal; line-height:1.2;">${t.blogger}</div><strong style="line-height:1.3; display:block; margin-top:0.15rem;">${cleanTitle}</strong>`;
+            } else {
+                displayBlogger = `<strong>${t.blogger}</strong>`;
             }
             
             const isSelected = activeConsoleTaskId === t.id;
             const btnStyle = isSelected ? "border-color: var(--accent-primary); color: var(--accent-primary);" : "";
+            
+            let cancelBtnHtml = "";
+            if (t.status === "queued" || t.status === "running") {
+                cancelBtnHtml = `<button class="btn-text btn-cancel-task" data-id="${t.id}" style="padding: 0.15rem 0.45rem; font-size: 0.72rem; color: var(--accent-primary); border-color: var(--accent-primary); margin-right: 0.5rem;">取消</button>`;
+            }
             
             return `
                 <tr>
                     <td>${displayBlogger}</td>
                     <td><span class="status-badge ${badgeClass}">${statusText}</span></td>
                     <td style="font-family: var(--font-mono); font-size: 0.72rem;">${dateStr}</td>
-                    <td style="text-align: right;">
+                    <td style="text-align: right; white-space: nowrap;">
+                        ${cancelBtnHtml}
                         <button class="btn-text btn-view-log" data-id="${t.id}" style="padding: 0.15rem 0.45rem; font-size: 0.72rem; ${btnStyle}">查看日志</button>
                     </td>
                 </tr>
             `;
         }).join("");
         
+        // 绑定“取消”按钮事件
+        tbody.querySelectorAll(".btn-cancel-task").forEach(btn => {
+            btn.addEventListener("click", (e) => {
+                const taskId = e.currentTarget.getAttribute("data-id");
+                if (confirm("确定要取消/中止该任务吗？")) {
+                    handleCancelTaskClick(taskId);
+                }
+            });
+        });
+        
         // 绑定“查看日志”按钮事件
         tbody.querySelectorAll(".btn-view-log").forEach(btn => {
             btn.addEventListener("click", (e) => {
                 const taskId = e.currentTarget.getAttribute("data-id");
-                // 移除所有按钮的激活高亮
+                // 移除所有按钮 of 激活高亮
                 tbody.querySelectorAll(".btn-view-log").forEach(b => {
                     b.style.borderColor = "";
                     b.style.color = "";
@@ -1955,6 +2325,13 @@ async function handleSystemSettingsSubmit(e) {
     const feishu_app_id = document.getElementById("setting-feishu-app-id").value.trim();
     const feishu_app_secret = document.getElementById("setting-feishu-app-secret").value.trim();
     
+    const openai_api_key = document.getElementById("setting-openai-key").value.trim();
+    const openai_base_url = document.getElementById("setting-openai-base").value.trim();
+    const openai_model_name = document.getElementById("setting-openai-model").value.trim();
+    const proxy_url = document.getElementById("setting-proxy-url").value.trim();
+    const google_login_cmd = document.getElementById("setting-google-login-cmd").value.trim();
+    const openai_login_cmd = document.getElementById("setting-openai-login-cmd").value.trim();
+    
     try {
         const res = await fetch(`${API_BASE}/api/settings`, {
             method: "POST",
@@ -1971,9 +2348,17 @@ async function handleSystemSettingsSubmit(e) {
                 enable_feishu,
                 feishu_chat_id,
                 feishu_app_id,
-                feishu_app_secret
+                feishu_app_secret,
+                openai_api_key,
+                openai_base_url,
+                openai_model_name,
+                proxy_url,
+                google_login_cmd,
+                openai_login_cmd
             })
         });
+
+
         const json = await res.json();
         if (json.status === "success") {
             showToast("系统设置已成功保存！", "success");
@@ -2093,3 +2478,669 @@ async function handleTranscribeNowClick() {
         showToast(`请求后端出错: ${e.message}`, "error");
     }
 }
+
+
+// =========================================================================
+// AI 跨界视野扩展与垂直找号探索数据获取与渲染逻辑 (V2.0 新增)
+// =========================================================================
+
+// 1. 获取发散探索数据
+async function loadNichesExploration() {
+    try {
+        const res = await fetch(`${API_BASE}/api/niches-exploration`);
+        const data = await res.json();
+        
+        // 渲染已覆盖的大盘 Tag
+        const coveredContainer = document.getElementById("covered-niches-tags");
+        if (coveredContainer) {
+            if (data.covered && data.covered.length > 0) {
+                coveredContainer.innerHTML = data.covered.map(niche => 
+                    `<span class="k-card-niche" style="font-size: 0.8rem; border-color: var(--ink-secondary); color: var(--ink-secondary); padding: 0.2rem 0.6rem; cursor: default;">${niche}</span>`
+                ).join("");
+            } else {
+                coveredContainer.innerHTML = `<span style="font-size: 0.8rem; color: var(--ink-tertiary); font-style: italic;">暂无博主分类数据，请先录入对标账号。</span>`;
+            }
+        }
+        
+        // 渲染推荐探索表格
+        renderNichesExploration(data.niches || []);
+        
+    } catch (e) {
+        console.error("Failed to load niches exploration data", e);
+        showToast("读取跨界视野探索数据失败", "error");
+    }
+}
+
+// 2. 渲染发散赛道表格
+function renderNichesExploration(niches) {
+    const tbody = document.querySelector("#table-recommended-niches tbody");
+    if (!tbody) return;
+    
+    // 清空右侧详情
+    document.getElementById("selected-niche-title").innerText = "找号探索看板";
+    document.getElementById("niche-detail-body").innerHTML = `
+        <p style="font-size: 0.88rem; color: var(--ink-secondary); line-height: 1.6; margin-bottom: 0;">
+            请点击左侧列表中的推荐细分赛道，在此获取针对性的商业变现简介以及可在平台直接用来精准找号的硬核项目/产品词。
+        </p>
+    `;
+    document.getElementById("keywords-copy-container").style.display = "none";
+    
+    if (niches.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" style="text-align: center; color: var(--ink-secondary); font-style: italic; padding: 2rem 0;">
+                    暂无发散建议。若已在“系统设置”配置 OpenAI 密钥，请点击上方“AI 智能探索发散”开始生成。
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    tbody.innerHTML = "";
+    niches.forEach((niche, index) => {
+        const tr = document.createElement("tr");
+        tr.style.cursor = "pointer";
+        // 增加高亮过渡效果
+        tr.style.transition = "background-color 0.2s";
+        
+        // 策略类型的样式标签
+        const isBreakout = niche.strategy_type === "破茧跨界灵感";
+        const strategyBadge = isBreakout 
+            ? `<span class="status-badge running" style="font-size: 0.65rem; border-radius: 2px; padding: 0.05rem 0.35rem; color: var(--accent-primary); border-color: var(--accent-primary); animation: none; font-weight: 500;">破茧灵感</span>`
+            : `<span class="status-badge queued" style="font-size: 0.65rem; border-radius: 2px; padding: 0.05rem 0.35rem; color: var(--ink-secondary); border-color: var(--ink-secondary); font-weight: 500;">能力延展</span>`;
+            
+        tr.innerHTML = `
+            <td><strong>${niche.name}</strong></td>
+            <td><span style="font-size: 0.8rem; background-color: var(--bg-secondary); padding: 0.15rem 0.4rem;">${niche.type}</span></td>
+            <td>${strategyBadge}</td>
+        `;
+        
+        // 绑定行点击高亮及右侧详情联动事件
+        tr.addEventListener("click", () => {
+            // 清理其他行的高亮
+            tbody.querySelectorAll("tr").forEach(r => r.style.backgroundColor = "transparent");
+            // 高亮当前行
+            tr.style.backgroundColor = "var(--bg-secondary)";
+            // 加载详情
+            selectNicheExploration(niche);
+        });
+        
+        tbody.appendChild(tr);
+    });
+}
+
+// 3. 选择某一发散领域，联动右侧看板
+function selectNicheExploration(niche) {
+    const titleEl = document.getElementById("selected-niche-title");
+    const bodyEl = document.getElementById("niche-detail-body");
+    const copyContainer = document.getElementById("keywords-copy-container");
+    const keywordsEl = document.getElementById("selected-niche-keywords");
+    
+    if (!titleEl || !bodyEl || !copyContainer || !keywordsEl) return;
+    
+    // 渲染标题和商业模式大白话
+    titleEl.innerHTML = `<span style="font-size: 0.72rem; display: block; color: var(--ink-tertiary); font-family: var(--font-mono); font-weight: bold; letter-spacing: 0.05em; margin-bottom: 0.15rem;">${niche.strategy_type} • ${niche.type}</span>${niche.name}`;
+    bodyEl.innerHTML = `
+        <div style="font-size: 0.9rem; line-height: 1.6; color: var(--ink-primary); margin-bottom: 1rem;">
+            <strong style="color: var(--accent-primary);">商业变现逻辑：</strong>${niche.business}
+        </div>
+        <p style="font-size: 0.82rem; color: var(--ink-secondary); margin-bottom: 0;">
+            💡 <strong>找号思路</strong>：该赛道具有独特的变现闭环。请使用下方 AI 提炼的【精准业务名词/产品型号词】去各平台进行搜索，围绕这些词做内容的均为本赛道的精准垂直博主。
+        </p>
+    `;
+    
+    // 渲染精准搜索词标签
+    if (niche.keywords && niche.keywords.length > 0) {
+        keywordsEl.innerHTML = niche.keywords.map(kw => 
+            `<span class="filter-tag" style="border: 1px solid var(--border-primary); padding: 0.25rem 0.6rem; cursor: pointer; transition: all 0.15s; font-size: 0.8rem;" onclick="navigator.clipboard.writeText('${kw.trim()}').then(() => showToast('✓ 已复制词: ${kw.trim()}', 'success'))" title="点击复制单个词">${kw}</span>`
+        ).join("");
+        copyContainer.style.display = "block";
+        
+        // 绑定微动效
+        gsap.fromTo("#keywords-copy-container", 
+            { opacity: 0, y: 5 },
+            { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" }
+        );
+    } else {
+        copyContainer.style.display = "none";
+    }
+}
+
+// 4. 重新触发 AI 发散探索事件
+async function handleRefreshNichesClick() {
+    const btn = document.getElementById("btn-refresh-niches");
+    if (!btn) return;
+    
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `⏳ AI 智能分析发散中...`;
+    btn.style.opacity = "0.6";
+    btn.style.cursor = "not-allowed";
+    
+    showToast("已向 AI 助手提交发散探索任务，分析已有分类版图并搜索垂直空白词中，请稍候...", "info");
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/niches-exploration/refresh`, { method: "POST" });
+        const json = await res.json();
+        
+        if (res.status === 200) {
+            showToast("🎉 AI 探索发散大盘重算成功！已更新全局视野扩展推荐。", "success");
+            // 重新拉取渲染
+            await loadNichesExploration();
+        } else {
+            showToast(`重新探索失败: ${json.detail || "接口返回异常"}`, "error");
+        }
+    } catch (e) {
+        console.error("Refresh niches exploration failed", e);
+        showToast("请求后端异常，请确认网络连接或 OpenAI 配置是否正确", "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        btn.style.opacity = "1";
+        btn.style.cursor = "pointer";
+    }
+}
+
+// 5. 点击“取消”中止任务事件
+async function handleCancelTaskClick(taskId) {
+    showToast("正在请求取消任务...", "info");
+    try {
+        const res = await fetch(`${API_BASE}/api/task/cancel/${taskId}`, { method: "POST" });
+        const json = await res.json();
+        if (json.status === "success") {
+            showToast("✓ 任务已成功取消/中止！", "success");
+            // 重新拉取列表刷新状态
+            loadSettingsPageTasks();
+        } else {
+            showToast(`取消失败: ${json.message || "未知原因"}`, "error");
+        }
+    } catch (err) {
+        showToast(`网络请求异常: ${err.message}`, "error");
+    }
+}
+
+// 6. 点击“取消全部排队”中止全部排队任务事件
+async function handleCancelAllQueuedClick() {
+    if (confirm("确定要取消全部排队中的同步任务和视频转录任务吗？(进行中的任务不受影响)")) {
+        showToast("正在批量取消排队任务...", "info");
+        try {
+            const res = await fetch(`${API_BASE}/api/task/cancel-all-queued`, { method: "POST" });
+            const json = await res.json();
+            if (res.ok) {
+                showToast(`✓ 取消成功: ${json.message}`, "success");
+                loadSettingsPageTasks();
+            } else {
+                showToast(`取消失败: ${json.detail || "未知异常"}`, "error");
+            }
+        } catch (err) {
+            showToast(`网络请求异常: ${err.message}`, "error");
+        }
+    }
+}
+
+// =========================================================================
+// 智能体授权 OAuth 与单视频 AI 拆解前端逻辑 (V2.0 新增)
+// =========================================================================
+
+// 1. 触发单视频智能体拆解
+async function triggerVideoTeardown(noteId) {
+    showToast("正在拉起智能体对该爆款视频进行深度拆解，请稍候...", "info");
+    try {
+        const res = await fetch(`${API_BASE}/api/hothook/teardown`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ note_id: noteId })
+        });
+        const json = await res.json();
+        if (res.ok && json.status === "success") {
+            showToast(json.message, "success");
+            // 跳转至任务日志页以监控智能体输出
+            setTimeout(() => {
+                switchTab("logs");
+                loadSettingsPageTasks();
+            }, 1000);
+        } else {
+            showToast(`拆解失败: ${json.detail || json.message || "未知错误"}`, "error");
+        }
+    } catch (err) {
+        showToast(`请求智能体接口出错: ${err.message}`, "error");
+    }
+}
+
+// 2. 加载智能体 OAuth 绑定状态与运行模型设置
+async function loadOAuthPageData() {
+    try {
+        runCLIDiagnostics();
+        
+        // 1) 读取绑定状态
+        const resStatus = await fetch(`${API_BASE}/api/auth/status`);
+        const data = await resStatus.json();
+        
+        // 2) 读取系统设置中配置的模型信息
+        const resSettings = await fetch(`${API_BASE}/api/settings`);
+        const settings = await resSettings.json();
+        
+        const selectGoogleModel = document.getElementById("select-google-model");
+        const inputGoogleModelCustom = document.getElementById("input-google-model-custom");
+        const googleModelVal = settings.google_model || "gemini-2.5-pro";
+
+        // 如果本地持久化保存了 Google 模型列表，则用其初始化下拉框
+        if (settings.google_models_list && Array.isArray(settings.google_models_list) && settings.google_models_list.length > 0) {
+            selectGoogleModel.innerHTML = "";
+            settings.google_models_list.forEach(model => {
+                const opt = document.createElement("option");
+                opt.value = model;
+                opt.textContent = model;
+                selectGoogleModel.appendChild(opt);
+            });
+            const optCustom = document.createElement("option");
+            optCustom.value = "custom";
+            optCustom.textContent = "-- 自定义模型名称 --";
+            selectGoogleModel.appendChild(optCustom);
+        }
+
+        // 判断是否是预设选项
+        let googleHasOption = false;
+        for (let opt of selectGoogleModel.options) {
+            if (opt.value === googleModelVal) {
+                googleHasOption = true;
+                break;
+            }
+        }
+        if (googleHasOption) {
+            selectGoogleModel.value = googleModelVal;
+            inputGoogleModelCustom.style.display = "none";
+        } else {
+            selectGoogleModel.value = "custom";
+            inputGoogleModelCustom.value = googleModelVal;
+            inputGoogleModelCustom.style.display = "inline-block";
+        }
+        
+        const selectOpenaiModel = document.getElementById("select-openai-model");
+        const inputOpenaiModelCustom = document.getElementById("input-openai-model-custom");
+        const openaiModelVal = settings.openai_model || "gpt-4o";
+
+        // 如果本地持久化保存了 OpenAI 模型列表，则用其初始化下拉框
+        if (settings.openai_models_list && Array.isArray(settings.openai_models_list) && settings.openai_models_list.length > 0) {
+            selectOpenaiModel.innerHTML = "";
+            settings.openai_models_list.forEach(model => {
+                const opt = document.createElement("option");
+                opt.value = model;
+                opt.textContent = model;
+                selectOpenaiModel.appendChild(opt);
+            });
+            const optCustom = document.createElement("option");
+            optCustom.value = "custom";
+            optCustom.textContent = "-- 自定义模型名称 --";
+            selectOpenaiModel.appendChild(optCustom);
+        }
+
+        let openaiHasOption = false;
+        for (let opt of selectOpenaiModel.options) {
+            if (opt.value === openaiModelVal) {
+                openaiHasOption = true;
+                break;
+            }
+        }
+        if (openaiHasOption) {
+            selectOpenaiModel.value = openaiModelVal;
+            inputOpenaiModelCustom.style.display = "none";
+        } else {
+            selectOpenaiModel.value = "custom";
+            inputOpenaiModelCustom.value = openaiModelVal;
+            inputOpenaiModelCustom.style.display = "inline-block";
+        }
+
+        // 更新 Google Card 状态
+        const googleBadge = document.getElementById("google-status-badge");
+        const googleTokenBox = document.getElementById("google-token-box");
+        const googleMasked = document.getElementById("google-masked-token");
+        const googleDisconnect = document.getElementById("btn-google-disconnect");
+        
+        if (data.google_connected) {
+            googleBadge.textContent = "已绑定";
+            googleBadge.className = "status-badge success";
+            googleTokenBox.style.display = "block";
+            googleMasked.textContent = data.google_token_masked;
+            googleDisconnect.style.display = "block";
+        } else {
+            googleBadge.textContent = "未绑定";
+            googleBadge.className = "status-badge failed";
+            googleTokenBox.style.display = "none";
+            googleDisconnect.style.display = "none";
+        }
+        
+        // 更新 OpenAI Card 状态
+        const openaiBadge = document.getElementById("openai-status-badge");
+        const openaiTokenBox = document.getElementById("openai-token-box");
+        const openaiMasked = document.getElementById("openai-masked-token");
+        const openaiDisconnect = document.getElementById("btn-openai-disconnect");
+        
+        if (data.openai_connected) {
+            openaiBadge.textContent = "已绑定";
+            openaiBadge.className = "status-badge success";
+            openaiTokenBox.style.display = "block";
+            openaiMasked.textContent = data.openai_token_masked;
+            openaiDisconnect.style.display = "block";
+        } else {
+            openaiBadge.textContent = "未绑定";
+            openaiBadge.className = "status-badge failed";
+            openaiTokenBox.style.display = "none";
+            openaiDisconnect.style.display = "none";
+        }
+    } catch (e) {
+        showToast("读取智能体绑定状态失败", "error");
+    }
+}
+
+// 全局终端日志轮询定时器
+let googleTerminalPollTimer = null;
+let openaiTerminalPollTimer = null;
+
+// 3. 启动后台交互式终端登录
+async function startTerminalAuth(provider) {
+    const logBox = document.getElementById(`${provider}-terminal-log`);
+    const inputRow = document.getElementById(`${provider}-terminal-input-row`);
+    const killBtn = document.getElementById(`btn-${provider}-terminal-kill`);
+    
+    logBox.style.display = "block";
+    logBox.textContent = "[System] 正在拉起登录终端，请稍候...\n";
+    inputRow.style.display = "none";
+    killBtn.style.display = "inline-block";
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/terminal/start`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider })
+        });
+        const json = await res.json();
+        if (res.ok && json.status === "success") {
+            showToast("终端登录进程已成功启动！", "info");
+            
+            // 启动定时轮询
+            if (provider === "google") {
+                if (googleTerminalPollTimer) clearInterval(googleTerminalPollTimer);
+                googleTerminalPollTimer = setInterval(() => pollTerminalLogs("google"), 1000);
+            } else {
+                if (openaiTerminalPollTimer) clearInterval(openaiTerminalPollTimer);
+                openaiTerminalPollTimer = setInterval(() => pollTerminalLogs("openai"), 1000);
+            }
+        } else {
+            logBox.textContent += `[System Error] 启动失败: ${json.detail || "未知异常"}\n`;
+            killBtn.style.display = "none";
+        }
+    } catch (err) {
+        logBox.textContent += `[System Error] 网络请求异常: ${err.message}\n`;
+        killBtn.style.display = "none";
+    }
+}
+
+// 3.5. 轮询获取终端日志
+async function pollTerminalLogs(provider) {
+    const logBox = document.getElementById(`${provider}-terminal-log`);
+    const inputRow = document.getElementById(`${provider}-terminal-input-row`);
+    const killBtn = document.getElementById(`btn-${provider}-terminal-kill`);
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/terminal/poll`);
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+            // 对日志内容进行正则匹配提取，将 http/https 链接替换为可点击的 <a> 标签
+            let formattedLogs = data.logs;
+            
+            // 超链接转换正则表达式
+            const urlRegex = /(https?:\/\/[^\s\r\n\t]+)/gi;
+            
+            // 由于 logs 输出在 pre 标签中，我们可以用 innerHTML，但需要防止 XSS，先做转义
+            const escapedLogs = formattedLogs
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+                
+            const linkedLogs = escapedLogs.replace(urlRegex, (url) => {
+                return `<a href="${url}" target="_blank" style="color: var(--accent-primary); text-decoration: underline; font-weight: bold;">${url}</a>`;
+            });
+            
+            logBox.innerHTML = linkedLogs;
+            
+            // 滚动到最底部
+            logBox.scrollTop = logBox.scrollHeight;
+            
+            if (data.is_running) {
+                // 如果运行中，且日志中包含需要输入的词，如 "code", "token", "验证码", "enter", "key"，则显示输入框
+                const logLower = formattedLogs.toLowerCase();
+                if (logLower.includes("enter") || logLower.includes("code") || logLower.includes("token") || logLower.includes("验证码") || logLower.includes("key") || logLower.includes("输入")) {
+                    inputRow.style.display = "flex";
+                }
+            } else {
+                // 已退出，清除定时器
+                if (provider === "google") {
+                    clearInterval(googleTerminalPollTimer);
+                    googleTerminalPollTimer = null;
+                } else {
+                    clearInterval(openaiTerminalPollTimer);
+                    openaiTerminalPollTimer = null;
+                }
+                killBtn.style.display = "none";
+                inputRow.style.display = "none";
+                // 刷新页面状态，因为进程成功运行完可能写入了全局 config
+                setTimeout(loadOAuthPageData, 2000);
+            }
+        }
+    } catch (e) {
+        console.error("轮询终端日志失败:", e);
+    }
+}
+
+// 3.8. 提交验证码到终端
+async function submitTerminalCode(provider) {
+    const codeInput = document.getElementById(`input-${provider}-terminal-code`);
+    const code = codeInput.value.trim();
+    if (!code) {
+        showToast("请输入需要发送给终端的内容", "error");
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/terminal/input`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code })
+        });
+        const json = await res.json();
+        if (res.ok && json.status === "success") {
+            showToast("已成功发送输入", "success");
+            codeInput.value = "";
+        } else {
+            showToast(`发送失败: ${json.detail}`, "error");
+        }
+    } catch (e) {
+        showToast("发送异常", "error");
+    }
+}
+
+// 3.9. 强杀终端进程
+async function killTerminalAuth(provider) {
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/terminal/kill`, { method: "POST" });
+        if (res.ok) {
+            showToast("终端进程已强制中止", "info");
+            if (provider === "google") {
+                clearInterval(googleTerminalPollTimer);
+                googleTerminalPollTimer = null;
+            } else {
+                clearInterval(openaiTerminalPollTimer);
+                openaiTerminalPollTimer = null;
+            }
+            document.getElementById(`btn-${provider}-terminal-kill`).style.display = "none";
+            document.getElementById(`${provider}-terminal-input-row`).style.display = "none";
+        }
+    } catch (e) {
+        showToast("中止失败", "error");
+    }
+}
+
+
+// 5. 通过直接输入 Token 绑定 (方案 B 备用)
+async function bindOAuthToken(provider) {
+    const tokenInput = document.getElementById(`input-${provider}-token`);
+    const token = tokenInput.value.trim();
+    if (!token) {
+        showToast("请输入 Token 内容！", "error");
+        return;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/exchange`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider, token })
+        });
+        const json = await res.json();
+        if (res.ok && json.status === "success") {
+            showToast(json.message, "success");
+            tokenInput.value = "";
+            loadOAuthPageData();
+        } else {
+            showToast(`保存 Token 失败: ${json.detail || "接口报错"}`, "error");
+        }
+    } catch (e) {
+        showToast("保存接口连接失败", "error");
+    }
+}
+
+// 6. 断开智能体账号绑定
+async function disconnectOAuth(provider) {
+    if (!confirm(`确定要断开与 ${provider === 'google' ? 'Google' : 'OpenAI'} 智能体的授权绑定吗？`)) {
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/disconnect`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider })
+        });
+        if (res.ok) {
+            showToast(`已断开与 ${provider} 智能体的授权绑定`, "success");
+            loadOAuthPageData();
+        } else {
+            showToast("解绑失败", "error");
+        }
+    } catch (e) {
+        showToast("请求解绑接口失败", "error");
+    }
+}
+
+// =========================================================================
+// 7. 智能体 CLI 诊断与一键安装前端控制逻辑 (V2.1 新增)
+// =========================================================================
+let cliInstallPollTimer = null;
+
+// 运行环境诊断自检
+async function runCLIDiagnostics() {
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/cli/status`);
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+            // 渲染 Google CLI 状态
+            const googleStatus = document.getElementById("google-diag-status");
+            const googlePath = document.getElementById("google-diag-path");
+            const googleVersion = document.getElementById("google-diag-version");
+            const googleInstallBtn = document.getElementById("btn-google-cli-install");
+            
+            googlePath.textContent = data.google.path;
+            googleVersion.textContent = data.google.version;
+            if (data.google.installed) {
+                googleStatus.textContent = "已就绪";
+                googleStatus.className = "status-badge success";
+                googleInstallBtn.style.display = "none";
+            } else {
+                googleStatus.textContent = "未安装";
+                googleStatus.className = "status-badge failed";
+                googleInstallBtn.style.display = "inline-block";
+            }
+            
+            // 渲染 OpenAI CLI 状态
+            const openaiStatus = document.getElementById("openai-diag-status");
+            const openaiPath = document.getElementById("openai-diag-path");
+            const openaiVersion = document.getElementById("openai-diag-version");
+            const openaiInstallBtn = document.getElementById("btn-openai-cli-install");
+            
+            openaiPath.textContent = data.openai.path;
+            openaiVersion.textContent = data.openai.version;
+            if (data.openai.installed) {
+                openaiStatus.textContent = "已就绪";
+                openaiStatus.className = "status-badge success";
+                openaiInstallBtn.style.display = "none";
+            } else {
+                openaiStatus.textContent = "未安装";
+                openaiStatus.className = "status-badge failed";
+                openaiInstallBtn.style.display = "inline-block";
+            }
+        }
+    } catch (e) {
+        console.error("执行 CLI 环境诊断失败:", e);
+    }
+}
+
+// 触发一键安装
+async function triggerCLIInstall(provider) {
+    if (!confirm(`确定要启动 ${provider === 'google' ? 'Google Antigravity' : 'OpenAI Codex'} CLI 客户端的自动化部署安装吗？\n\n如果在容器/Linux 环境中，这会自动下载并补全 Node.js、NPM 等运行基建，需要一定的时间。`)) {
+        return;
+    }
+    
+    const consoleBox = document.getElementById("cli-installer-console");
+    const logBox = document.getElementById("cli-installer-logs-view");
+    
+    consoleBox.style.display = "block";
+    logBox.textContent = "[System] 正在拉起后台安装线程，请稍候...\n";
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/cli/install`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider })
+        });
+        const json = await res.json();
+        if (res.ok && json.status === "success") {
+            showToast("后台安装任务已拉起，正在实时监视部署进度！", "info");
+            if (cliInstallPollTimer) clearInterval(cliInstallPollTimer);
+            cliInstallPollTimer = setInterval(pollCLIInstallLogs, 1000);
+        } else {
+            showToast(`拉起安装任务失败: ${json.detail || "未知异常"}`, "error");
+        }
+    } catch (err) {
+        showToast(`网络请求异常: ${err.message}`, "error");
+    }
+}
+
+// 轮询安装日志
+async function pollCLIInstallLogs() {
+    const logBox = document.getElementById("cli-installer-logs-view");
+    const spinner = document.getElementById("cli-installer-spinner");
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/cli/install-logs`);
+        const data = await res.json();
+        if (res.ok && data.status === "success") {
+            logBox.textContent = data.logs;
+            logBox.scrollTop = logBox.scrollHeight;
+            
+            if (data.is_running) {
+                spinner.style.display = "inline";
+            } else {
+                spinner.style.display = "none";
+                clearInterval(cliInstallPollTimer);
+                cliInstallPollTimer = null;
+                showToast("智能体 CLI 安装部署阶段结束", "success");
+                // 自动刷新诊断环境
+                runCLIDiagnostics();
+            }
+        }
+    } catch (e) {
+        console.error("获取安装进度日志失败:", e);
+    }
+}
+
+

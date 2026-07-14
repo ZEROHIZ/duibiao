@@ -8,6 +8,16 @@ scripts/pipeline.py
 
 import os
 import sys
+
+# 强制标准输出与错误流为 UTF-8 编码，防止 Windows 控制台/管道环境下的 GBK 编码报错
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except AttributeError:
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 import argparse
 import subprocess
 import json
@@ -116,8 +126,115 @@ def get_blogger_url_from_db(blogger_name):
         print(f"查询博主 [{blogger_name}] 主页链接失败: {e}")
     return None
 
+def trigger_agent_cli(blogger):
+    """根据 settings 中的授权状态，通过 subprocess 唤醒相应的智能体 CLI 进行自动蒸馏"""
+    config_path = os.path.join(ROOT_DIR, "data", "config.json")
+    if not os.path.exists(config_path):
+        return True # 无配置，跳过
+        
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            settings = json.load(f)
+    except Exception as e:
+        print(f"[Agent CLI] 读取配置失败: {e}")
+        return True
+        
+    google_token = settings.get("google_access_token", "")
+    openai_token = settings.get("openai_access_token", "")
+    proxy_url = settings.get("proxy_url", "")
+    
+    # 判定使用哪个智能体 CLI
+    agent_cmd = None
+    env_vars = {}
+    
+    if google_token:
+        agent_cmd = "agy"
+        env_vars["GOOGLE_OAUTH_ACCESS_TOKEN"] = google_token
+    elif openai_token:
+        agent_cmd = "codex"
+        env_vars["OPENAI_API_KEY"] = openai_token
+    else:
+        print("[Agent CLI] 尚未配置任何智能体授权 Token，跳过自动蒸馏步骤。")
+        return True
+        
+    task_file = os.path.join(ROOT_DIR, "output", f"{blogger}_AI蒸馏任务.md")
+    if not os.path.exists(task_file):
+        # 兼容路径
+        task_file = os.path.join(ROOT_DIR, "output", "_过程文件", "原始素材", f"{blogger}_AI蒸馏任务.md")
+        
+    if not os.path.exists(task_file):
+        print(f"[Agent CLI] 未找到蒸馏任务底稿文件: {task_file}，跳过。")
+        return True
+
+    google_model = settings.get("google_model", "gemini-2.5-pro")
+    openai_model = settings.get("openai_model", "gpt-4o")
+
+    if agent_cmd == "agy":
+        cmd = [
+            agent_cmd,
+            "--dangerously-skip-permissions",
+            "--model", google_model,
+            "-p",
+            f"请加载项目并执行该蒸馏任务中的全部指令，严格按照里面规定的格式和质量红线生成最终报告与文件夹：{task_file}"
+        ]
+    else:
+        cmd = [
+            agent_cmd,
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--model", openai_model,
+            "-p",
+            f"请加载项目并执行该蒸馏任务中的全部指令，严格按照里面规定的格式和质量红线生成最终报告与文件夹：{task_file}"
+        ]
+    
+    print(f"\n==================================================")
+    print(f">>> 唤醒智能体 CLI 自动生成报告与 Skill 目录: {agent_cmd} ({blogger})")
+    print(f">>> 命令行: {' '.join(cmd)}")
+    if proxy_url:
+        print(f">>> 注入代理服务器: {proxy_url}")
+    print(f"==================================================")
+    
+    env = os.environ.copy()
+    env.update(env_vars)
+    if proxy_url:
+        env["HTTP_PROXY"] = proxy_url
+        env["HTTPS_PROXY"] = proxy_url
+        
+    try:
+        # 同步运行并实时打印智能体输出，方便在后台队列日志中显示
+        is_windows = os.name == "nt"
+        process = subprocess.Popen(
+            cmd,
+            shell=is_windows,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            cwd=ROOT_DIR
+        )
+        
+        while True:
+            line = process.stdout.readline()
+            if not line:
+                break
+            print(f"[{agent_cmd}] {line}", end="")
+            sys.stdout.flush()
+            
+        process.wait()
+        if process.returncode != 0:
+            print(f"\n❌ 智能体 {agent_cmd} 运行失败，退出码: {process.returncode}")
+            return False
+            
+        print(f"✅ 智能体 {agent_cmd} 自动蒸馏成功结束。")
+        return True
+    except Exception as e:
+        print(f"❌ 运行智能体 CLI 时发生异常错误: {e}")
+        return False
+
 def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless="true"):
     """串联执行单个博主的全部处理流程"""
+
     print(f"\n##################################################")
     print(f" 正在启动博主【{blogger}】的流水线任务 ")
     if url:
@@ -139,6 +256,31 @@ def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless=
         
     if not run_step(crawler_cmd, f"1. 抖音网页数据爬取 ({blogger})"):
         return False
+
+    # 检查数据库中该博主的名称是否在爬取过程中被自动更新了
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if os.path.exists(db_path) and url:
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            r = conn.execute("SELECT name FROM bloggers WHERE home_url = ?", (url,)).fetchone()
+            conn.close()
+            if r and r[0] != blogger:
+                new_blogger_name = r[0]
+                print(f"[Pipeline] 检测到博主名称在爬虫运行中被更新: {blogger} -> {new_blogger_name}")
+                # 如果被更新了，我们需要将刚才 crawler 保存的原始文件夹重命名为新名字，以便后续步骤正确读取！
+                old_raw_dir = os.path.join(ROOT_DIR, "data", "raw", blogger)
+                new_raw_dir = os.path.join(ROOT_DIR, "data", "raw", new_blogger_name)
+                # 只有当旧文件夹存在，且新文件夹不存在时才重命名（若新文件夹已存在，可能是历史残留，我们做个兼容）
+                if os.path.exists(old_raw_dir) and not os.path.exists(new_raw_dir):
+                    os.rename(old_raw_dir, new_raw_dir)
+                    print(f"[Pipeline] 重命名原始数据目录: {old_raw_dir} -> {new_raw_dir}")
+                
+                blogger = new_blogger_name
+                # 更新 raw_data_path 变量指向重命名后的新 JSON 文件路径
+                raw_data_path = os.path.join(ROOT_DIR, "data", "raw", blogger, "douyin_data.json")
+        except Exception as e:
+            print(f"[Pipeline] 检查博主名称更新失败: {e}")
 
     # 2. 转换及视频数据整理（跳过 Whisper 语音转录，以便快速入库）
     processed_data_path = os.path.join(ROOT_DIR, "data", "processed", f"{blogger}_notes_details.json")
@@ -185,8 +327,13 @@ def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless=
     if not run_step(importer_cmd, f"3. 数据导入 SQLite 库 ({blogger})"):
         return False
 
+    # 3.5 自动唤醒智能体 CLI 生成物理报告与创作指南
+    if not trigger_agent_cli(blogger):
+        print(f"⚠️ [Pipeline] 智能体自动拆解失败，但原始数据已入库，您可以手动拉起 Agent。")
+
     print(f"\n🎉 博主【{blogger}】的流水线数据同步完全成功！")
     return True
+
 
 def main():
     # 优先加载 config.json 的设置作为 CLI 默认值

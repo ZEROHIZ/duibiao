@@ -118,5 +118,83 @@
   - **精准定位点击**：有更新时，根据 `target_vid` 构造定位选择器 `a[href*="/video/{target_vid}"]`，跳过已爬取的置顶视频直接点击，并对齐循环起始索引。
   - **扩展 URL 校验兼容性**：修改 `parse_active_video_id` 正则为 `r'(?:video/|modal_id=|group_id=|reflow_video_id=)(\d+)'`，同时支持标准页面和模态框页面 ID 的解析。
 
+---
 
+## Bug 10: 选题列表与时间流热评用户名显示为 undefined 且缺少点赞数展示与排序
+
+* **发生时间**：2026-07-11
+* **问题现象**：在选题列表和作品时间流的“脱敏热门评论与作者互动监控”折叠面板下，评论的用户名显示为 `undefined`，且未显示每条评论的点赞数，评论列表也未按点赞数进行任何排序。
+* **主要根源**：
+  * **用户名显示 undefined**：数据字段中存储的用户名字段有 `speaker` (原始详情数据) 和 `user` (重算后的数据)。而前端 `app.js` 只读取了 `c.user`，在加载原始详情数据时导致其显示为 `undefined`。
+  * **缺少点赞展示与排序**：前端渲染时未包含点赞数 (对应字段 `likeCount` 或 `likes`) 的 DOM 拼接，也没有对 `commentsList` 数组在遍历前按点赞数进行 `sort` 降序重排。
+* **解决方案**：
+  * 对用户名进行兼容性处理：`c.speaker || c.user || "匿名"`。
+  * 对点赞数字段进行兼容性提取：`c.likeCount !== undefined ? c.likeCount : (c.likes !== undefined ? c.likes : 0)`。
+  * 在渲染前端 HTML 模板前，对评论数组根据提取的点赞数进行 `sort` 降序重排。
+  * 采用 Flex 布局结构在用户名右侧优雅地添加 `👍 ${likes}` 展示点赞数，使杂志化排版风格更加饱满。
+
+---
+
+## Bug 11: 自动提取报告定位时未显式调用 commit 导致事务回滚，造成博主定位丢失且仪表盘提示“暂无对标”
+
+* **发生时间**：2026-07-11
+* **问题现象**：在服务启动或上传最新诊断报告时，控制台虽然成功打印了 `[Category Sync] Updated blogger '小A' category to '理财思维与成长心智诊断者'`，但已覆盖分类大盘依然显示为“暂无博主分类数据，请先录入对标账号”，刷新页面后 category 字段被重置丢失。
+* **主要根源**：
+  * **未提交事务 (No Commit)**：`sync_blogger_category_from_html` 接口中在执行 `UPDATE bloggers SET category = ? ...` 时，判定了如果传入的 `conn_or_cursor` 具有 `execute` 属性就直接调用。但在该分支中**缺少了 `conn_or_cursor.commit()`**。因为未提交事务，在连接被 `close()` 时 SQLite 进行了自动回滚（Rollback），导致数据未能成功写入磁盘。
+  * **双击编辑交互冲突**：原先的主营定位修改需要弹出 prompt 对话框，不够素雅顺滑，且与同列表的名称、主页链接“原地双击编辑”的风格未能统一。
+* **解决方案**：
+  * **强制事务提交**：重构 `sync_blogger_category_from_html`，在修改 bloggers 表时优先从 connection 获取 cursor 并显式执行 `conn.commit()` 以保证物理持久化。同时，加入了对 cursor 的降级兼容性兜底，保障其在任何调用上下文都能稳健发挥作用。
+  * **内联原地编辑升级**：在 `index.html` 的定位列渲染 `class="editable-field" data-field="category"`，在 `app.js` 的内联保存处理 `finishEdit` 中加入 category 字段分支逻辑，双击直接原地变为 input 框，失去焦点或按回车键立即完成网络提交保存。
+
+---
+
+## Bug 12: Google / OpenAI 智能体模型列表拉取及 CLI 版本与登录状态检测超时
+
+* **发生时间**：2026-07-14
+* **问题现象**：在前端点击“获取模型”按钮或进行 CLI 诊断时，后台日志打印拉取超时（“❌ 运行超时！进程未在 3 秒内响应”），且无法获取真实的可用模型列表，被迫启用本地硬编码的保底模型列表；另外，点击单个“获取模型”按钮或进页面时，系统会错误地同时并发拉取两边的模型逻辑。
+* **主要根源**：
+  * **网络与代理延迟**：在 Windows 系统上或者网络代理环境下，拉起 CLI 进程 (`agy` / `codex`) 本身有额外的进程创建开销，且拉取模型列表通常需要对 Google 或 OpenAI 网关发起 HTTP/HTTPS 请求，容易受到代理、DNS 解析、握手建立等延迟影响，3 秒的 `timeout` 极易被击穿。
+  * **登录状态/版本检测偏短**：原先 CLI 诊断中，读取版本信息和登录状态的 `timeout` 分别为 2 秒，也存在因系统高负载或命令行启动慢导致的误判风险。
+  * **页面初始化过度获取**：在前端 `app.js` 页面初始化 `loadOAuthPageData` 时，无论用户是否需要，都会自动并发向后端请求 Google 和 OpenAI 两方的可用模型列表并生成拉取任务，导致两个日志文件在相同时间段被写入，使得用户在“任务日志”中误以为它们被点击一个按钮同时触发了。
+* **解决方案**：
+  * 将 `web/backend/app.py` 中 `agy models` 与 OpenAI `/models` 网络拉取的 `timeout` 从 3 秒提升至 **15 秒**。
+  * 将 `web/backend/app.py` 中检测 CLI 可执行文件版本 and 登录状态的 `timeout` 从 2 秒提升至 **5 秒**。
+  * 完全移除了 `web/frontend/app.js` 中进入“智能体授权”页面时自动拉取两边模型的逻辑，仅在用户点击对应服务方的“获取模型”按钮时才按需触发单侧的拉取，提升页面切换速度，避免冗余的后台子进程耗用资源。
+
+---
+
+## Bug 13: Google 智能体模型列表拉取成功后前端下拉框模型名称显示不全 (被空格截断)
+
+* **发生时间**：2026-07-14
+* **问题现象**：点击“获取模型”成功后，前端“Google CLI 运行模型”下拉框中原本类似 `Gemini 3.5 Flash (Medium)`、`Claude Sonnet 4.6 (Thinking)` 的完整模型名被截断，只显示首个单词，即 `Gemini`、`Claude`、`GPT-OSS`。
+* **主要根源**：
+  * **按空格错误分割 (Splitting Bug)**：在 `web/backend/app.py` 内部解析 CLI 输出行的模型列表时，代码中包含 `model_id = line.split()[0]`。此逻辑会将模型名称按照空格进行切片，并仅提取第一个单词作为模型 ID 返回给前端，导致了后续全部词组（如版本号、级别说明等）丢失。
+* **解决方案**：
+  * 将 `web/backend/app.py` 中的解析逻辑重构，直接提取去除两端空白的整行内容 `parsed_models.append(line)` 作为完整的模型标识符，完美保留了包括空格和括号在内的所有模型细节。
+
+---
+
+## Bug 14: 智能体可用模型列表未进行本地持久化，导致每次页面刷新或重载后列表丢失
+
+* **发生时间**：2026-07-14
+* **问题现象**：虽然能通过点击“获取模型”成功从 CLI 和网络拉取最新的模型列表并临时填充到下拉框中，但这些获取的模型列表并未持久化到本地配置文件中，用户一旦刷新页面或重新进入“智能体授权”选项卡，下拉框就会重置回原始极简的硬编码保底模型列表，必须再次手动拉取。
+* **主要根源**：
+  * **缺少配置存盘支持**：后端配置项 schema (`DEFAULT_SETTINGS` 与 `SettingsUpdate`) 缺少存放拉取到的可用模型列表的字段，且在 `/api/auth/cli/models` 接口返回成功数据时，没有将拉取到的最新 `models` 写入系统配置 `config.json` 中。
+* **解决方案**：
+  * 在 `web/backend/app.py` 的全局 `DEFAULT_SETTINGS` 默认属性字典与 `SettingsUpdate` 接收表单模型中增加了 `google_models_list` 与 `openai_models_list` 两个字段。
+  * 重构了模型获取接口 `/api/auth/cli/models`：当列表获取成功后，会自动加载现有设置、更新对应的 `models_list`、执行 `save_settings` 完成磁盘持久化。
+  * 在前端 `web/frontend/app.js` 的 `loadOAuthPageData` 页面初始化方法中增加判断：若本地已持久化了对应的模型列表，则自动解析列表并动态渲染模型下拉选择框的所有项，从而在免去频繁冗余拉取的同时，保证了最新模型列表在页面重载后依旧存在。---
+
+## Bug 15: 抖音画廊切换到第二个视频后无法定位并点击评论按钮，以及 Windows GBK 控制台下的编码崩溃问题
+
+* **发生时间**：2026-07-14
+* **问题现象**：
+  1. 爬虫在爬取博主多条视频时，第一个视频顺利进入画廊并打开评论区。但按下向下键切换到第二个视频后，程序提示 `[校验] 未检测到评论 API 响应，尝试点击评论按钮...` 随后以未定位到评论按钮报错退出。
+  2. 在 Windows 中文 locale 环境（系统默认 GBK 编码）下，流水线主脚本 `pipeline.py` 运行完毕或抛错输出时，由于控制台打印包含 emoji（如 `✅`, `❌`, `🎉`），导致解释器抛出 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2705'` 编码错误崩溃。
+* **主要根源**：
+  1. **全局定位漂移**：`click_comment_button` 以前采用 `page.locator().first` 在全局范围内查找第一个可见的评论按钮。在画廊模式中，除了当前活动视频滑块外，网页列表中其他的视频卡片 DOM 节点依然存在。切换到第二个视频后，全局的 `first` 匹配到的依然是已被滑走的第一个视频的评论按钮。因为其已被隐藏，导致 `btn.is_visible()` 校验失败，无法对眼前正在播放的第二个视频进行正确的评论区展开。
+  2. **默认管道 GBK 约束**：FastAPI 后端使用 subprocess 读取 pipeline stdout 时开启了 UTF-8 管道读取，但 Windows 下 Python 进程若没有配置输出流编码，在重定向输出时会继承系统 GBK 控制台环境，导致打印非 GBK 字符（emoji）时产生编码冲突崩溃。
+* **解决方案**：
+  * **精准容器隔离**：重构 `click_comment_button(page, vid)` 与 `hover_share_button(page, vid)`，支持传入当前处理的视频 ID (`vid`)。函数在定位时，优先匹配 `[data-e2e="feed-active-video"][data-e2e-vid="{vid}"]` 确定唯一的激活视频卡片容器，然后在该容器内部通过 `container.locator()` 检索评论和分享，完全隔离了背景 DOM 的干扰。如果未传入 vid，则依次降级到通用激活容器和全局兜底。
+  * **输出编码重载**：在 `pipeline.py` 头部的 import 区，加入 `sys.stdout.reconfigure(encoding='utf-8', errors='replace')` 重配置流编码，使其无论控制台如何设置都始终以 UTF-8 输出，与后端对接管口对齐。
 

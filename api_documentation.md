@@ -108,13 +108,47 @@
 ]
 ```
 
+### 6. 快捷指令/分享文本录入博主 (Shortcut Add Blogger)
+专门供苹果快捷指令或剪贴板录入工具使用的轻量化博主监控录入接口。接口会自动从传入的原始文本中通过正则表达式提取出 `http` 或 `https` 链接，并在未指定 `name` 时使用 URL 短 ID 自动生成唯一临时名字（以 `未命名_` 开头）。爬虫在首次爬取此博主主页时，会自动检测并解析网页的 ld+json 数据，将博主的真实姓名回填并解决重名冲突。
+* **HTTP 方法**：`POST`
+* **接口路径**：`/api/bloggers/shortcut`
+* **请求头**：`Content-Type: application/json`
+* **请求体 (Body)**：
+  - `name` (string, 选填, 默认 `""`): 博主昵称。如果省略或为空字符串，系统将在爬虫运行时自动获取真实姓名进行更新。
+  - `text` (string, 必填): 用户直接复制的文案（可包含额外文案和 URL 链接）。
+* **请求体示例**：
+```json
+{
+  "name": "",
+  "text": "8- 长按复制此条消息，打开抖音搜索，查看TA的更多作品。 https://v.douyin.com/eumOKrzcYh8/ 0@3.com :0pm"
+}
+```
+* **响应示例 (成功录入)**：
+```json
+{
+  "status": "success",
+  "message": "博主录入成功",
+  "data": {
+    "id": 179,
+    "name": "未命名_eumOKrzcYh8",
+    "home_url": "https://v.douyin.com/eumOKrzcYh8/"
+  }
+}
+```
+* **响应示例 (重复录入)**：
+```json
+{
+  "detail": "该主页链接已录入，博主名称为: 未命名_eumOKrzcYh8"
+}
+```
+
 ---
 
 ## 模块三：思维模型、灵感库与热点 (Knowledge & Trends)
 
 用于调取项目中沉淀的业务模型框架和外部流式的行业新闻、热点资讯，便于大模型分析时充当强化提示词或背景知识。
 
-### 6. 获取思维模型列表 (Knowledge Base)
+### 7. 获取思维模型列表 (Knowledge Base)
 获取沉淀下来的认知和方法论卡片集合，支持组合搜索。
 * **HTTP 方法**：`GET`
 * **接口路径**：`/api/knowledge`
@@ -136,7 +170,7 @@
 ]
 ```
 
-### 7. 新增一条思维模型
+### 8. 新增一条思维模型
 外部 AI 在总结出绝妙的方法论后，可将其结构化回写至系统。
 * **HTTP 方法**：`POST`
 * **接口路径**：`/api/knowledge`
@@ -151,13 +185,13 @@
 }
 ```
 
-### 8. 获取全网行业快讯 (Industry News)
+### 9. 获取全网行业快讯 (Industry News)
 拉取外部快讯缓存，支持外部应用感知宏观行业动向。
 * **HTTP 方法**：`GET`
 * **接口路径**：`/api/news`
 * **响应**：返回 `industry_news_cache` 表中的最新数据。
 
-### 9. 获取全网热点趋势 (Trending Topics)
+### 10. 获取全网热点趋势 (Trending Topics)
 获取热搜与流量话题（可用于热点结合或流量借势分析）。
 * **HTTP 方法**：`GET`
 * **接口路径**：`/api/trending`
