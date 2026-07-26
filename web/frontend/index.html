@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Serif+SC:wght@400;500;700&display=swap" rel="stylesheet">
     
     <!-- Custom Style Sheet -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260727_4">
     
     <!-- GSAP for Smooth Stagger Animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
@@ -23,6 +23,11 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Marked.js for Markdown Rendering -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- xterm.js for interactive terminal emulator -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 </head>
 <body>
 
@@ -238,6 +243,14 @@
                                     <label for="add-form-url">主页链接</label>
                                     <input type="text" id="add-form-url" placeholder="配置主页链接（用于后续爬取）...">
                                 </div>
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label for="add-form-platform">账号平台</label>
+                                    <select id="add-form-platform" style="width: 100%; padding: 0.45rem; border: 1px solid var(--ink-secondary); background: var(--bg-secondary); color: var(--ink-primary); outline: none; font-size: 0.9rem; font-family: var(--font-sans);">
+                                        <option value="douyin">抖音</option>
+                                        <option value="bilibili">哔哩哔哩 (B站)</option>
+                                        <option value="xiaohongshu">小红书</option>
+                                    </select>
+                                </div>
                                 <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.5rem;">保存并录入</button>
                             </form>
                         </div>
@@ -257,8 +270,10 @@
                             <thead>
                                 <tr>
                                     <th>博主名称</th>
+                                    <th>账号平台</th>
                                     <th>主营定位</th>
                                     <th>主页监控链接 (双击编辑)</th>
+                                    <th>语音转录</th>
                                     <th>均赞</th>
                                     <th>均收藏/评论</th>
                                     <th>最新更新动态</th>
@@ -492,7 +507,6 @@
                             <label for="setting-proxy-url" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">全局 HTTP/HTTPS 代理地址 (PROXY_URL)</label>
                             <input type="text" id="setting-proxy-url" placeholder="http://127.0.0.1:7890 (不使用则留空)" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
                         </div>
-
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
                             <label for="setting-google-login-cmd" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">GOOGLE CLI 登录指令</label>
                             <input type="text" id="setting-google-login-cmd" placeholder="antigravity login --no-browser" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
@@ -502,6 +516,7 @@
                             <label for="setting-openai-login-cmd" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">OPENAI CLI 登录指令</label>
                             <input type="text" id="setting-openai-login-cmd" placeholder="codex login --no-browser" style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-family: var(--font-sans); color: var(--ink-primary);">
                         </div>
+
 
 
                         <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
@@ -531,6 +546,14 @@
                             <select id="setting-enable-transcribe" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
                                 <option value="true" style="background: var(--bg-secondary);">开启自动转录 (自动扫描数据库并调用 WHISPER 转录视频)</option>
                                 <option value="false" style="background: var(--bg-secondary);">关闭自动转录 (停止扫描转录服务)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="display: flex; flex-direction: column; gap: 0.35rem;">
+                            <label for="setting-enable-auto-agent" style="font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em; color: var(--ink-secondary);">抓取后自动唤醒智能体 (AUTO AGENT)</label>
+                            <select id="setting-enable-auto-agent" required style="width: 100%; height: 2.5rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.5rem; font-family: var(--font-sans); color: var(--ink-primary); cursor: pointer;">
+                                <option value="true" style="background: var(--bg-secondary);">开启自动唤醒 (数据抓取入库后自动调用 agy/codex 生成报告)</option>
+                                <option value="false" style="background: var(--bg-secondary);">关闭自动唤醒 (数据抓取入库后停止，手动按需触发蒸馏)</option>
                             </select>
                         </div>
 
@@ -810,16 +833,12 @@
                         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
                             <!-- Option A: Web Console Terminal -->
                             <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem;">
-                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-primary);">渠道一：网页控制台交互登录 (支持 win/docker Pro 额度)</span>
+                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-primary);">渠道一：网页控制台交互登录 (推荐)</span>
                                 <div style="display: flex; gap: 0.5rem;">
                                     <button type="button" id="btn-google-terminal-start" class="btn-primary" style="flex: 1; height: 2.2rem; font-size: 0.8rem; cursor: pointer; border: 1px solid var(--ink-primary); background: var(--ink-primary); color: var(--bg-primary);">开启终端登录</button>
                                     <button type="button" id="btn-google-terminal-kill" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.8rem; border-color: var(--accent-primary); color: var(--accent-primary); cursor: pointer; display: none;">中止</button>
                                 </div>
-                                <pre id="google-terminal-log" class="log-console" style="height: 100px; font-size: 0.7rem; margin: 0.25rem 0; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-primary); padding: 0.5rem; white-space: pre-wrap; word-break: break-all; display: none;">等待开启终端...</pre>
-                                <div id="google-terminal-input-row" style="display: none; gap: 0.5rem;">
-                                    <input type="text" id="input-google-terminal-code" placeholder="回填授权码/输入" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem; background: transparent; color: var(--ink-primary);">
-                                    <button type="button" id="btn-google-terminal-submit" class="btn-text" style="height: 2.2rem; padding: 0 0.75rem; font-size: 0.8rem; font-weight: bold; cursor: pointer; border-color: var(--ink-primary);">发送</button>
-                                </div>
+                                <div id="google-terminal-container" style="height: 320px; display: none; margin: 1rem 0; border: 1px solid var(--ink-primary); padding: 8px; background: #1a1a1a; box-sizing: border-box;"></div>
                             </div>
                             <!-- Option B: Direct Token paste -->
                             <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem; margin-bottom: 1rem;">
@@ -863,19 +882,14 @@
                             </div>
                         </div>
                         
-                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
                             <!-- Option A: Web Console Terminal -->
                             <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem;">
-                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-primary);">渠道一：网页控制台交互登录 (支持 win/docker Pro 额度)</span>
+                                <span style="font-size: 0.75rem; font-weight: bold; color: var(--accent-primary);">渠道一：网页控制台交互登录 (推荐)</span>
                                 <div style="display: flex; gap: 0.5rem;">
                                     <button type="button" id="btn-openai-terminal-start" class="btn-primary" style="flex: 1; height: 2.2rem; font-size: 0.8rem; cursor: pointer; border: 1px solid var(--ink-primary); background: var(--ink-primary); color: var(--bg-primary);">开启终端登录</button>
                                     <button type="button" id="btn-openai-terminal-kill" class="btn-text" style="height: 2.2rem; padding: 0 0.5rem; font-size: 0.8rem; border-color: var(--accent-primary); color: var(--accent-primary); cursor: pointer; display: none;">中止</button>
                                 </div>
-                                <pre id="openai-terminal-log" class="log-console" style="height: 100px; font-size: 0.7rem; margin: 0.25rem 0; overflow-y: auto; background: var(--bg-primary); border: 1px solid var(--border-primary); padding: 0.5rem; white-space: pre-wrap; word-break: break-all; display: none;">等待开启终端...</pre>
-                                <div id="openai-terminal-input-row" style="display: none; gap: 0.5rem;">
-                                    <input type="text" id="input-openai-terminal-code" placeholder="回填授权码/输入" style="flex: 1; height: 2.2rem; border: 1px solid var(--ink-primary); padding: 0 0.5rem; font-size: 0.8rem; background: transparent; color: var(--ink-primary);">
-                                    <button type="button" id="btn-openai-terminal-submit" class="btn-text" style="height: 2.2rem; padding: 0 0.75rem; font-size: 0.8rem; font-weight: bold; cursor: pointer; border-color: var(--ink-primary);">发送</button>
-                                </div>
+                                <div id="openai-terminal-container" style="height: 320px; display: none; margin: 1rem 0; border: 1px solid var(--ink-primary); padding: 8px; background: #1a1a1a; box-sizing: border-box;"></div>
                             </div>
                             <!-- Option B: Direct Token paste -->
                             <div style="display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px dashed var(--border-primary); padding-top: 1rem; margin-bottom: 1rem;">
@@ -920,6 +934,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- UI Logic Script -->
-    <script src="app.js"></script>
+    <script src="app.js?v=20260727_4"></script>
 </body>
 </html>

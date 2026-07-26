@@ -69,6 +69,8 @@ def init_db():
         total_likes INTEGER,
         total_collects INTEGER,
         total_comments INTEGER,
+        is_transcribe INTEGER DEFAULT 1,
+        platform TEXT DEFAULT 'douyin',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     """)

@@ -89,7 +89,7 @@ def run_step(cmd, description):
     return True
 
 def load_bloggers_from_db():
-    """从 SQLite 数据库获取所有配置的博主和主页链接"""
+    """从 SQLite 数据库获取所有配置的博主、主页链接与平台"""
     import sqlite3
     db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
     if not os.path.exists(db_path):
@@ -97,46 +97,59 @@ def load_bloggers_from_db():
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT name, home_url FROM bloggers").fetchall()
+        rows = conn.execute("SELECT name, home_url, platform FROM bloggers").fetchall()
         conn.close()
         bloggers = []
         for r in rows:
             name = r["name"]
             url = r["home_url"]
+            platform = r["platform"] if "platform" in r.keys() else "douyin"
             if name and "示例" not in name:
-                bloggers.append({"name": name, "url": url})
+                bloggers.append({"name": name, "url": url, "platform": platform or "douyin"})
         return bloggers
     except Exception as e:
         print(f"读取 SQLite 数据库博主列表失败: {e}")
         return []
 
-def get_blogger_url_from_db(blogger_name):
-    """根据博主名称从数据库中查询其个人主页链接"""
+def get_blogger_info_from_db(blogger_name):
+    """根据博主名称从数据库中查询其个人主页链接和平台"""
     import sqlite3
     db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
     if not os.path.exists(db_path):
-        return None
+        return None, None
     try:
         conn = sqlite3.connect(db_path)
-        r = conn.execute("SELECT home_url FROM bloggers WHERE name = ?", (blogger_name,)).fetchone()
+        conn.row_factory = sqlite3.Row
+        r = conn.execute("SELECT home_url, platform FROM bloggers WHERE name = ?", (blogger_name,)).fetchone()
         conn.close()
         if r:
-            return r[0]
+            return r["home_url"], r["platform"] or "douyin"
     except Exception as e:
-        print(f"查询博主 [{blogger_name}] 主页链接失败: {e}")
-    return None
+        print(f"查询博主 [{blogger_name}] 链接和平台失败: {e}")
+    return None, None
 
-def trigger_agent_cli(blogger):
+def get_blogger_url_from_db(blogger_name):
+    url, _ = get_blogger_info_from_db(blogger_name)
+    return url
+
+def trigger_agent_cli(blogger, auto_agent=None):
     """根据 settings 中的授权状态，通过 subprocess 唤醒相应的智能体 CLI 进行自动蒸馏"""
     config_path = os.path.join(ROOT_DIR, "data", "config.json")
-    if not os.path.exists(config_path):
-        return True # 无配置，跳过
+    settings = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                settings = json.load(f)
+        except Exception as e:
+            print(f"[Agent CLI] 读取配置失败: {e}")
+
+    # 开关控制：若显式指定了 auto_agent 或配置中 enable_auto_agent 为 False，则跳过
+    is_auto_enabled = settings.get("enable_auto_agent", True)
+    if auto_agent is not None:
+        is_auto_enabled = str(auto_agent).lower() == "true"
         
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            settings = json.load(f)
-    except Exception as e:
-        print(f"[Agent CLI] 读取配置失败: {e}")
+    if not is_auto_enabled:
+        print("[Agent CLI] 自动唤醒智能体 CLI 设置已关闭 (enable_auto_agent=False)，跳过自动蒸馏步骤。")
         return True
         
     google_token = settings.get("google_access_token", "")
@@ -232,20 +245,23 @@ def trigger_agent_cli(blogger):
         print(f"❌ 运行智能体 CLI 时发生异常错误: {e}")
         return False
 
-def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless="true"):
+def process_single_blogger(blogger, max_videos, whisper_url, url=None, platform="douyin", headless="true"):
     """串联执行单个博主的全部处理流程"""
 
+    platform = platform or "douyin"
     print(f"\n##################################################")
-    print(f" 正在启动博主【{blogger}】的流水线任务 ")
+    print(f" 正在启动博主【{blogger}】的流水线任务 ({platform})")
     if url:
         print(f" 监控链接: {url}")
     print(f"##################################################")
 
     # 1. 爬虫抓取原始数据
-    raw_data_path = os.path.join(ROOT_DIR, "data", "raw", blogger, "douyin_data.json")
+    raw_data_path = os.path.join(ROOT_DIR, "data", "raw", blogger, f"{platform}_data.json")
+    crawler_script = os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben", f"{platform}_crawler.py")
+    
     crawler_cmd = [
         PYTHON_EXE,
-        os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben", "douyin_crawler.py"),
+        crawler_script,
         "--blogger", blogger,
         "--max-videos", str(max_videos)
     ]
@@ -254,7 +270,7 @@ def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless=
     if headless:
         crawler_cmd.extend(["--headless", headless])
         
-    if not run_step(crawler_cmd, f"1. 抖音网页数据爬取 ({blogger})"):
+    if not run_step(crawler_cmd, f"1. {platform} 网页数据爬取 ({blogger})"):
         return False
 
     # 检查数据库中该博主的名称是否在爬取过程中被自动更新了
@@ -278,15 +294,17 @@ def process_single_blogger(blogger, max_videos, whisper_url, url=None, headless=
                 
                 blogger = new_blogger_name
                 # 更新 raw_data_path 变量指向重命名后的新 JSON 文件路径
-                raw_data_path = os.path.join(ROOT_DIR, "data", "raw", blogger, "douyin_data.json")
+                raw_data_path = os.path.join(ROOT_DIR, "data", "raw", blogger, f"{platform}_data.json")
         except Exception as e:
             print(f"[Pipeline] 检查博主名称更新失败: {e}")
 
     # 2. 转换及视频数据整理（跳过 Whisper 语音转录，以便快速入库）
     processed_data_path = os.path.join(ROOT_DIR, "data", "processed", f"{blogger}_notes_details.json")
+    converter_script = os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben", f"convert_{platform}_notes.py")
+    
     converter_cmd = [
         PYTHON_EXE,
-        os.path.join(ROOT_DIR, "scripts", "pachopngjiaoben", "convert_douyin_notes.py"),
+        converter_script,
         "-i", raw_data_path,
         "-o", processed_data_path,
         "-b", blogger,
@@ -366,7 +384,8 @@ def main():
     
     if args.blogger:
         # 如果是单博主模式
-        url = args.url or get_blogger_url_from_db(args.blogger)
+        url, platform = get_blogger_info_from_db(args.blogger)
+        url = args.url or url
         if not url:
             # 兼容回退读取 saved_links.json
             links = load_all_bloggers()
@@ -384,7 +403,18 @@ def main():
                                     break
                 except:
                     pass
-        bloggers_to_run.append({"name": args.blogger, "url": url})
+        if not platform and url:
+            # 域名匹配检测平台
+            url_lower = url.lower()
+            if "bilibili.com" in url_lower or "b23.tv" in url_lower:
+                platform = "bilibili"
+            elif "xiaohongshu.com" in url_lower or "xhslink.com" in url_lower:
+                platform = "xiaohongshu"
+            elif "channels.weixin" in url_lower:
+                platform = "wechat_channels"
+            else:
+                platform = "douyin"
+        bloggers_to_run.append({"name": args.blogger, "url": url, "platform": platform or "douyin"})
     else:
         # 如果是全博主模式，优先从 SQLite 加载
         bloggers_to_run = load_bloggers_from_db()
@@ -400,7 +430,17 @@ def main():
                                 name = item.get("name")
                                 url = item.get("url")
                                 if name and "示例" not in name:
-                                    bloggers_to_run.append({"name": name, "url": url})
+                                    # 域名匹配检测平台
+                                    url_lower = (url or "").lower()
+                                    if "bilibili.com" in url_lower or "b23.tv" in url_lower:
+                                        p = "bilibili"
+                                    elif "xiaohongshu.com" in url_lower or "xhslink.com" in url_lower:
+                                        p = "xiaohongshu"
+                                    elif "channels.weixin" in url_lower:
+                                        p = "wechat_channels"
+                                    else:
+                                        p = "douyin"
+                                    bloggers_to_run.append({"name": name, "url": url, "platform": p})
                 except:
                     pass
                     
@@ -415,8 +455,9 @@ def main():
     for b in bloggers_to_run:
         blogger_name = b["name"]
         blogger_url = b["url"]
+        blogger_platform = b.get("platform") or "douyin"
         try:
-            if process_single_blogger(blogger_name, args.max_videos, args.whisper_url, url=blogger_url, headless=args.headless):
+            if process_single_blogger(blogger_name, args.max_videos, args.whisper_url, url=blogger_url, platform=blogger_platform, headless=args.headless):
                 success_count += 1
         except Exception as e:
             print(f"博主【{blogger_name}】在流水线运行期间发生未捕获异常: {e}")

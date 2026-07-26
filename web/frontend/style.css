@@ -947,6 +947,109 @@ body {
     width: 100%;
     overflow-x: auto;
     margin-top: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink-tertiary) transparent;
+}
+
+/* ==================================================================
+   极简杂志主题滚动条 (Custom Theme-Matching Scrollbar - Transparent BG)
+================================================================== */
+.table-container::-webkit-scrollbar,
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent;
+}
+
+.table-container::-webkit-scrollbar-track,
+::-webkit-scrollbar-track {
+    background: transparent !important; /* 彻底去除底轨白色背景 */
+}
+
+.table-container::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb {
+    background-color: var(--ink-tertiary) !important; /* 匹配纸面复古墨色线条 */
+    border-radius: 3px;
+    transition: background-color var(--transition-speed) var(--transition-curve);
+}
+
+.table-container::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--accent-primary) !important; /* 悬停时切换为复古陶红/暗夜金 */
+}
+
+.table-container::-webkit-scrollbar-button,
+::-webkit-scrollbar-button {
+    display: none !important; /* 彻底去除原生箭角按钮 */
+    width: 0;
+    height: 0;
+}
+
+.table-container::-webkit-scrollbar-corner,
+::-webkit-scrollbar-corner {
+    background: transparent !important;
+}
+
+/* #table-bloggers-management 对标博主管理表格排版与防变形约束 */
+#table-bloggers-management {
+    min-width: 1050px;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#table-bloggers-management th,
+#table-bloggers-management td {
+    vertical-align: middle !important;
+    white-space: nowrap !important;
+}
+
+#table-bloggers-management td:nth-child(1) { /* 博主名称 */
+    font-weight: 600;
+    min-width: 80px;
+}
+
+#table-bloggers-management td:nth-child(2) { /* 账号平台 */
+    min-width: 60px;
+    text-align: center;
+}
+
+#table-bloggers-management td:nth-child(3) { /* 主营定位 */
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#table-bloggers-management td:nth-child(4) { /* 主页监控链接 */
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#table-bloggers-management td:nth-child(5) { /* 语音转录 */
+    min-width: 70px;
+    text-align: center;
+}
+
+#table-bloggers-management td:nth-child(6) { /* 均赞 */
+    min-width: 70px;
+}
+
+#table-bloggers-management td:nth-child(7) { /* 均收藏/评论 */
+    min-width: 100px;
+}
+
+#table-bloggers-management td:nth-child(8) { /* 最新更新动态 */
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#table-bloggers-management td:nth-child(9) { /* 最新发布时间 */
+    min-width: 90px;
+}
+
+#table-bloggers-management td:nth-child(10) { /* 管理操作 */
+    min-width: 120px;
 }
 
 /* 杂志扁平输入框 */

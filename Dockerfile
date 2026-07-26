@@ -14,6 +14,24 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# === 安装智能体 CLI 工具 ===
+# 1. 安装 Node.js 18（用于 opencode CLI 和 codex CLI 的 npm 依赖）
+RUN apt-get update && apt-get install -y curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 2. 安装 opencode CLI（管理 Google Antigravity 渠道 OAuth 登录，即 opencode auth login）
+RUN npm install -g opencode-ai
+
+# 3. 安装 OpenAI Codex CLI（codex login --device-auth）
+RUN npm install -g @openai/codex
+
+# 4. 安装 Antigravity agy CLI（Google Antigravity AI 智能体，用于调用 AI 模型）
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash \
+    && echo 'export PATH="$HOME/.local/bin:$PATH"' >> /etc/environment
+ENV PATH="/root/.local/bin:${PATH}"
+
 # 复制整个项目到容器中
 COPY . .
 

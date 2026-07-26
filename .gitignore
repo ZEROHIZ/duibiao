@@ -44,7 +44,8 @@ README.docx
 references1
 # 验证码/异常截图目录
 screenshots/
-skills
+
 # 显式保留的博主配置模板
 !saved_links.json
 --main
+scratch

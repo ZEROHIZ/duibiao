@@ -49,6 +49,7 @@
   - `report_html` (string, 必填): HTML 报告源代码
   - `skill_md` (string, 必填): 包含排版规约的 SKILL 技能文本
   - `soul_md` (string, 选填): 沉淀的灵魂属性或人设文本
+  - `is_transcribe` (int, 选填): 是否开启语音转录，`1` 为开启，`0` 为关闭
 
 ---
 

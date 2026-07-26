@@ -2,6 +2,7 @@
 .venv/Scripts/python.exe web/backend/app.py
 FastAPI 后端应用入口 (app.py)
 核心职责：启动 Web 服务，连接 SQLite，提供各项监控 API 接口，并挂载静态前端网页与物理蒸馏输出目录（/output）。
+更新说明：支持在前端直观展示已绑定的 CLI 账号名而不进行隐藏，且在断开连接时自动清理本地 CLI 证书文件。
 """
 
 import os
@@ -47,12 +48,25 @@ def upgrade_db_schema():
         try:
             conn = sqlite3.connect(db_path, timeout=10.0)
             cursor = conn.cursor()
-            # 检查 bloggers 表是否有 category 字段
+            # 检查 bloggers 表是否有 category 与 is_transcribe 字段
             cursor.execute("PRAGMA table_info(bloggers);")
             columns = [col[1] for col in cursor.fetchall()]
+            
+            modified = False
             if "category" not in columns:
                 print("[Database Upgrade] Adding 'category' column to 'bloggers' table...")
                 cursor.execute("ALTER TABLE bloggers ADD COLUMN category TEXT DEFAULT '待诊断';")
+                modified = True
+            if "is_transcribe" not in columns:
+                print("[Database Upgrade] Adding 'is_transcribe' column to 'bloggers' table...")
+                cursor.execute("ALTER TABLE bloggers ADD COLUMN is_transcribe INTEGER DEFAULT 1;")
+                modified = True
+            if "platform" not in columns:
+                print("[Database Upgrade] Adding 'platform' column to 'bloggers' table...")
+                cursor.execute("ALTER TABLE bloggers ADD COLUMN platform TEXT DEFAULT 'douyin';")
+                modified = True
+                
+            if modified:
                 conn.commit()
                 print("[Database Upgrade] Success.")
             conn.close()
@@ -186,7 +200,7 @@ def transcription_worker_loop():
                 SELECT n.id, n.title, n.desc, n.blogger_id, b.name as blogger_name 
                 FROM blogger_notes n
                 JOIN bloggers b ON n.blogger_id = b.id
-                WHERE n.type = 'video' AND (
+                WHERE b.is_transcribe = 1 AND n.type = 'video' AND (
                     n.desc LIKE 'http://%' OR 
                     n.desc LIKE 'https://%' OR 
                     n.desc LIKE '[转录失败_第%'
@@ -374,6 +388,8 @@ class BloggerNameUpdate(BaseModel):
 class BloggerCreate(BaseModel):
     name: str
     home_url: str = ""
+    is_transcribe: Optional[int] = 1
+    platform: Optional[str] = "douyin"
 
 
 class BloggerShortcutCreate(BaseModel):
@@ -512,7 +528,7 @@ def get_bloggers_list():
         cursor.execute("""
         SELECT b.id, b.name, b.home_url, b.total_notes, b.video_count, b.normal_count, 
                b.avg_likes, b.avg_collects, b.avg_comments, 
-               b.total_likes, b.total_collects, b.total_comments, b.category,
+               b.total_likes, b.total_collects, b.total_comments, b.category, b.is_transcribe, b.platform,
                n.title as latest_note_title, n.published_at as latest_note_time
         FROM bloggers b
         LEFT JOIN blogger_notes n ON n.blogger_id = b.id AND n.id = (
@@ -590,6 +606,55 @@ def update_blogger_category(blogger_id: int, body: BloggerCategoryUpdate):
         conn.close()
 
 
+class BloggerTranscribeUpdate(BaseModel):
+    is_transcribe: int
+
+
+@app.put("/api/bloggers/{blogger_id}/is_transcribe")
+def update_blogger_is_transcribe(blogger_id: int, body: BloggerTranscribeUpdate):
+    """更新指定博主是否开启转录"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+            
+        cursor.execute("UPDATE bloggers SET is_transcribe = ? WHERE id = ?;", (body.is_transcribe, blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "Blogger transcribe status updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+class BloggerPlatformUpdate(BaseModel):
+    platform: str
+
+
+@app.put("/api/bloggers/{blogger_id}/platform")
+def update_blogger_platform(blogger_id: int, body: BloggerPlatformUpdate):
+    """更新指定博主的平台属性（如 douyin, bilibili, xiaohongshu）"""
+    platform_str = body.platform.strip().lower()
+    if not platform_str:
+        raise HTTPException(status_code=400, detail="平台名称不能为空")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+            
+        cursor.execute("UPDATE bloggers SET platform = ? WHERE id = ?;", (platform_str, blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "Blogger platform updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @app.post("/api/bloggers")
 def create_blogger(body: BloggerCreate):
     """录入新对标博主"""
@@ -601,19 +666,29 @@ def create_blogger(body: BloggerCreate):
         INSERT INTO bloggers (
             name, home_url, total_notes, video_count, normal_count, 
             avg_likes, avg_collects, avg_comments, 
-            total_likes, total_collects, total_comments
-        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-        """, (body.name, body.home_url))
+            total_likes, total_collects, total_comments, is_transcribe, platform
+        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?);
+        """, (
+            body.name, 
+            body.home_url, 
+            body.is_transcribe if body.is_transcribe is not None else 1,
+            body.platform if body.platform else "douyin"
+        ))
         conn.commit()
         
-        cursor.execute("SELECT id FROM bloggers WHERE name = ?;", (body.name,))
-        new_id = cursor.fetchone()["id"]
+        cursor.execute("SELECT id, is_transcribe, platform FROM bloggers WHERE name = ?;", (body.name,))
+        row = cursor.fetchone()
+        new_id = row["id"]
+        is_transcribe_val = row["is_transcribe"]
+        platform_val = row["platform"]
         return {
             "status": "success",
             "data": {
                 "id": new_id,
                 "name": body.name,
-                "home_url": body.home_url
+                "home_url": body.home_url,
+                "is_transcribe": is_transcribe_val,
+                "platform": platform_val
             }
         }
     except sqlite3.IntegrityError:
@@ -691,24 +766,38 @@ def create_blogger_shortcut(body: BloggerShortcutCreate):
                 detail=f"该主页链接已录入，博主名称为: {existing_url['name']}"
             )
             
+        # 自动识别平台类型
+        url_lower = extracted_url.lower()
+        if "bilibili.com" in url_lower or "b23.tv" in url_lower:
+            detected_platform = "bilibili"
+        elif "xiaohongshu.com" in url_lower or "xhslink.com" in url_lower:
+            detected_platform = "xiaohongshu"
+        elif "channels.weixin" in url_lower:
+            detected_platform = "wechat_channels"
+        else:
+            detected_platform = "douyin"
+
         cursor.execute("""
         INSERT INTO bloggers (
             name, home_url, total_notes, video_count, normal_count, 
             avg_likes, avg_collects, avg_comments, 
-            total_likes, total_collects, total_comments
-        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-        """, (extracted_name, extracted_url))
+            total_likes, total_collects, total_comments, platform
+        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?);
+        """, (extracted_name, extracted_url, detected_platform))
         conn.commit()
         
-        cursor.execute("SELECT id FROM bloggers WHERE name = ?;", (extracted_name,))
-        new_id = cursor.fetchone()["id"]
+        cursor.execute("SELECT id, platform FROM bloggers WHERE name = ?;", (extracted_name,))
+        row = cursor.fetchone()
+        new_id = row["id"]
+        platform_val = row["platform"]
         return {
             "status": "success",
             "message": "博主录入成功",
             "data": {
                 "id": new_id,
                 "name": extracted_name,
-                "home_url": extracted_url
+                "home_url": extracted_url,
+                "platform": platform_val
             }
         }
     except sqlite3.IntegrityError:
@@ -786,7 +875,7 @@ def get_all_notes_timeline(limit: int = Query(50)):
     cursor = conn.cursor()
     try:
         cursor.execute("""
-        SELECT n.id, n.title, n.desc, n.type, n.likes, n.collects, n.comments, n.shares, n.category, n.comments_json, n.published_at, b.name as blogger_name
+        SELECT n.id, n.title, n.desc, n.type, n.likes, n.collects, n.comments, n.shares, n.category, n.comments_json, n.published_at, b.name as blogger_name, b.is_transcribe
         FROM blogger_notes n
         JOIN bloggers b ON n.blogger_id = b.id
         ORDER BY n.published_at DESC, n.likes DESC
@@ -876,10 +965,11 @@ def get_blogger_notes(name: str, limit: int = Query(50)):
         blogger_id = blogger_row["id"]
 
         cursor.execute("""
-        SELECT id, title, desc, type, likes, collects, comments, shares, category, tags_json, comments_json, published_at
-        FROM blogger_notes
-        WHERE blogger_id = ?
-        ORDER BY likes DESC
+        SELECT n.id, n.title, n.desc, n.type, n.likes, n.collects, n.comments, n.shares, n.category, n.tags_json, n.comments_json, n.published_at, b.is_transcribe
+        FROM blogger_notes n
+        JOIN bloggers b ON n.blogger_id = b.id
+        WHERE n.blogger_id = ?
+        ORDER BY n.likes DESC
         LIMIT ?;
         """, (blogger_id, limit))
         
@@ -1147,6 +1237,8 @@ class DistillUpload(BaseModel):
     report_html: str
     skill_md: str
     soul_md: Optional[str] = None
+    is_transcribe: Optional[int] = None
+    platform: Optional[str] = None
 
 
 @app.get("/api/distill/pending_tasks")
@@ -1205,13 +1297,23 @@ def upload_distill_results(data: DistillUpload):
         with open(os.path.join(skill_dir, "SKILL.md"), "w", encoding="utf-8") as f:
             f.write(data.skill_md)
             
-        # 4. 同步抽取并写回主表 category
+        # 4. 同步更新/设置 is_transcribe/platform 并抽取写回主表 category
         try:
             conn = get_db_connection()
+            cursor = conn.cursor()
+            modified = False
+            if data.is_transcribe is not None:
+                cursor.execute("UPDATE bloggers SET is_transcribe = ? WHERE name = ?;", (data.is_transcribe, name))
+                modified = True
+            if data.platform is not None:
+                cursor.execute("UPDATE bloggers SET platform = ? WHERE name = ?;", (data.platform.strip().lower(), name))
+                modified = True
+            if modified:
+                conn.commit()
             sync_blogger_category_from_html(name, conn)
             conn.close()
         except Exception as se:
-            print(f"[Upload Callback] Sync category failed: {se}")
+            print(f"[Upload Callback] Sync category, platform or is_transcribe failed: {se}")
             
         return {"status": "success", "message": f"Successfully written distillation outputs for blogger '{name}'"}
     except Exception as e:
@@ -1246,6 +1348,7 @@ DEFAULT_SETTINGS = {
     "max_videos": 5,
     "headless": True,
     "enable_transcribe": True,
+    "enable_auto_agent": True,
     "transcribe_interval": 5,
     "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
@@ -1259,7 +1362,7 @@ DEFAULT_SETTINGS = {
     "proxy_url": "",
     "google_access_token": "",
     "openai_access_token": "",
-    "google_login_cmd": "agy login",
+    "google_login_cmd": "opencode auth login",
     "openai_login_cmd": "codex login --device-auth",
     "google_model": "gemini-3.5-flash-medium",
     "openai_model": "gpt-4o",
@@ -1279,7 +1382,7 @@ def load_settings():
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 # 升级老命令选项
-                if data.get("google_login_cmd") in ["antigravity login --no-browser", "echo \"Already logged in via Antigravity IDE. You can close this terminal.\""]:
+                if data.get("google_login_cmd") in ["antigravity login --no-browser", "echo \"Already logged in via Antigravity IDE. You can close this terminal.\"", "agy login", "agy"]:
                     data["google_login_cmd"] = DEFAULT_SETTINGS["google_login_cmd"]
                 if data.get("openai_login_cmd") == "codex login --no-browser":
                     data["openai_login_cmd"] = DEFAULT_SETTINGS["openai_login_cmd"]
@@ -1668,6 +1771,7 @@ class SettingsUpdate(BaseModel):
     transcribe_interval: int = 5
     headless: bool = True
     enable_transcribe: bool = True
+    enable_auto_agent: bool = True
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model_name: str = "gpt-4"
@@ -1678,8 +1782,8 @@ class SettingsUpdate(BaseModel):
     feishu_app_id: str = ""
     feishu_app_secret: str = ""
     proxy_url: str = ""
-    google_login_cmd: str = "antigravity login --no-browser"
-    openai_login_cmd: str = "codex login --no-browser"
+    google_login_cmd: str = "opencode auth login"
+    openai_login_cmd: str = "codex login --device-auth"
     google_model: str = "gemini-3.5-flash-medium"
     openai_model: str = "gpt-4o"
     google_models_list: Optional[List[str]] = []
@@ -1695,6 +1799,7 @@ def update_settings_endpoint(settings: SettingsUpdate):
         "transcribe_interval": settings.transcribe_interval,
         "headless": settings.headless,
         "enable_transcribe": settings.enable_transcribe,
+        "enable_auto_agent": settings.enable_auto_agent,
         "openai_api_key": settings.openai_api_key,
         "openai_base_url": settings.openai_base_url,
         "openai_model_name": settings.openai_model_name,
@@ -1731,12 +1836,61 @@ class DisconnectRequest(BaseModel):
 @app.get("/api/auth/status")
 def get_auth_status_endpoint():
     """获取智能体 Google / OpenAI 绑定状态"""
+    import shutil
+    import subprocess
     settings = load_settings()
+
+    # 直接从 config.json 读取 Google 凭证状态（由 agy Lazy Auth 成功后写入）
+
+    # 自动从本地 OpenAI CLI 同步登录态
+    codex_path = shutil.which("codex")
+    if codex_path:
+        try:
+            is_windows = os.name == "nt"
+            r = subprocess.run(
+                [codex_path, "login", "status"],
+                shell=is_windows,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            output = r.stdout or r.stderr or ""
+            if r.returncode == 0 and "Logged in" in output:
+                token_info = output.strip()
+                settings["openai_access_token"] = f"CLI_OAUTH:{token_info}"
+                save_settings(settings)
+        except Exception:
+            pass
+
+    # 自动从本地 Google agy CLI 同步登录态
+    if not settings.get("google_access_token"):
+        agy_path = shutil.which("agy")
+        if not agy_path and os.name == "nt":
+            default_win = os.path.expandvars(r"%USERPROFILE%\AppData\Local\agy\bin\agy.exe")
+            if os.path.exists(default_win):
+                agy_path = default_win
+        if agy_path:
+            try:
+                check_env = os.environ.copy()
+                check_env["BROWSER"] = "false"
+                check_env.pop("DISPLAY", None)
+                check_env.pop("SSH_CONNECTION", None)
+                check_env.pop("SSH_CLIENT", None)
+                r = subprocess.run([agy_path, "models"], capture_output=True, text=True, env=check_env, timeout=3.0)
+                if r.returncode == 0:
+                    settings["google_access_token"] = "CLI_AUTHENTICATED"
+                    save_settings(settings)
+            except Exception:
+                pass
+
     google_token = settings.get("google_access_token", "")
     openai_token = settings.get("openai_access_token", "")
     
     def mask_token(t):
         if not t: return ""
+        if t == "CLI_AUTHENTICATED": return "本地 CLI 已认证登录"
+        if t.startswith("CLI_OAUTH:"):
+            return t.replace("CLI_OAUTH:", "").strip()
         if len(t) <= 10: return "••••••••"
         return f"{t[:4]}••••••••{t[-4:]}"
         
@@ -1786,14 +1940,25 @@ def auth_exchange_endpoint(body: AuthExchangeRequest):
 @app.post("/api/auth/disconnect")
 def auth_disconnect_endpoint(body: DisconnectRequest):
     """断开智能体授权绑定"""
+    import shutil
+    import subprocess
     settings = load_settings()
     provider = body.provider.lower()
     
     if provider == "google":
+        # 清除 config.json 中保存的 agy 授权凭证
         settings["google_access_token"] = ""
         settings["google_refresh_token"] = ""
     elif provider == "openai":
         settings["openai_access_token"] = ""
+        # 自动执行 codex logout 清理 OpenAI CLI 登录状态
+        codex_path = shutil.which("codex")
+        if codex_path:
+            try:
+                is_windows = os.name == "nt"
+                subprocess.run([codex_path, "logout"], shell=is_windows, timeout=5)
+            except Exception as e:
+                print(f"[Auth Disconnect] Failed to run codex logout: {e}")
     else:
         raise HTTPException(status_code=400, detail="未知的服务商")
         
@@ -1812,26 +1977,29 @@ class TerminalAuthState:
 global_terminal_auth = TerminalAuthState()
 
 def read_process_stdout(proc, state_obj):
+    import re
+    ansi_escape = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|\([A-Z]|[^\[()])')
+    print(f"[Debug] read_process_stdout thread started for PID {proc.pid}")
     try:
-        current_line = []
         while True:
             char = proc.stdout.read(1)
             if not char:
+                print(f"[Debug] read_process_stdout received EOF from PID {proc.pid}")
                 break
-            current_line.append(char)
-            line_str = "".join(current_line)
-            # 遇到换行或典型交互提示符时立即刷入缓冲区，保证前端能实时渲染出 URL 或提示
-            if char == "\n" or line_str.endswith(":") or line_str.endswith("：") or line_str.endswith("? ") or len(current_line) >= 120:
-                with state_obj.lock:
-                    state_obj.output_buffer.append(line_str)
-                    if len(state_obj.output_buffer) > 1000:
-                        state_obj.output_buffer.pop(0)
-                current_line = []
-        if current_line:
-            line_str = "".join(current_line)
+            
+            clean = ansi_escape.sub('', char)
             with state_obj.lock:
-                state_obj.output_buffer.append(line_str)
+                if not state_obj.output_buffer:
+                    state_obj.output_buffer.append("")
+                if char == "\n":
+                    state_obj.output_buffer.append("")
+                else:
+                    state_obj.output_buffer[-1] += clean
+                
+                if len(state_obj.output_buffer) > 500:
+                    state_obj.output_buffer.pop(0)
     except Exception as e:
+        print(f"[Debug Error] Exception in read_process_stdout for PID {proc.pid}: {e}")
         with state_obj.lock:
             state_obj.output_buffer.append(f"\n[System Error] 读取输出异常: {e}\n")
     finally:
@@ -1839,10 +2007,79 @@ def read_process_stdout(proc, state_obj):
             proc.wait(timeout=2)
         except:
             pass
+        print(f"[Debug] Process PID {proc.pid} exited with code {proc.returncode}")
         with state_obj.lock:
             state_obj.output_buffer.append(f"\n[System] 进程已退出，退出码: {proc.returncode}\n")
+            if proc.returncode == 0:
+                try:
+                    settings = load_settings()
+                    if state_obj.provider == "openai":
+                        settings["openai_access_token"] = "CLI_AUTHENTICATED"
+                        save_settings(settings)
+                        state_obj.output_buffer.append("[System] 检测到 codex 运行正常，已自动同步为已绑定状态！\n")
+                except Exception as se:
+                    state_obj.output_buffer.append(f"[System Error] 自动同步绑定状态失败: {se}\n")
             if state_obj.process == proc:
                 state_obj.process = None
+
+def check_google_status_thread(state_obj):
+    import subprocess
+    import shutil
+    import os
+    settings = load_settings()
+    agy_path = shutil.which("agy")
+    if not agy_path and os.name == "nt":
+        default_win = os.path.expandvars(r"%USERPROFILE%\\AppData\\Local\\agy\\bin\\agy.exe")
+        if os.path.exists(default_win):
+            agy_path = default_win
+    
+    if not agy_path:
+        with state_obj.lock:
+            state_obj.output_buffer.append("[System Error] 未找到 agy CLI 路径，请先安装。\n")
+            state_obj.process = None
+        return
+
+    env = os.environ.copy()
+    env["BROWSER"] = "false"
+    env.pop("DISPLAY", None)
+    env.pop("SSH_CONNECTION", None)
+    env.pop("SSH_CLIENT", None)
+
+    try:
+        proc = subprocess.run(
+            [agy_path, "models"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=3.0
+        )
+        if proc.returncode == 0:
+            with state_obj.lock:
+                state_obj.output_buffer.append("[System] 检测到 agy 运行正常，已获取到模型列表！\n")
+                state_obj.output_buffer.append(proc.stdout)
+                state_obj.output_buffer.append("\n[System] 同步成功！账号已自动绑定。\n")
+            settings["google_access_token"] = "CLI_AUTHENTICATED"
+            save_settings(settings)
+        else:
+            with state_obj.lock:
+                state_obj.output_buffer.append(f"[System Error] 检测失败，退出码: {proc.returncode}\n")
+                state_obj.output_buffer.append(proc.stderr or proc.stdout)
+                state_obj.output_buffer.append("\n👉 未检测到有效的本地已登录状态。\n")
+                state_obj.output_buffer.append("👉 请打开您的本地终端，执行一次性登录授权：\n")
+                state_obj.output_buffer.append("   - Windows 宿主机：在 PowerShell 中运行 `agy`，选择 1. Google OAuth 完成授权。\n")
+                state_obj.output_buffer.append("   - Docker 容器：运行 `docker exec -it <容器名称> agy` 完成授权。\n")
+    except subprocess.TimeoutExpired:
+        with state_obj.lock:
+            state_obj.output_buffer.append("[System] 未检测到已登录的凭证，进程检测超时。\n")
+            state_obj.output_buffer.append("👉 请打开您的本地终端，执行一次性登录授权：\n")
+            state_obj.output_buffer.append("   - Windows 宿主机：在 PowerShell 中运行 `agy`，选择 1. Google OAuth 完成授权。\n")
+            state_obj.output_buffer.append("   - Docker 容器：运行 `docker exec -it <容器名称> agy` 完成授权。\n")
+    except Exception as e:
+        with state_obj.lock:
+            state_obj.output_buffer.append(f"[System Error] 探测进程出现异常: {e}\n")
+    finally:
+        with state_obj.lock:
+            state_obj.process = None
 
 class TerminalStartRequest(BaseModel):
     provider: str
@@ -1852,101 +2089,60 @@ def terminal_start_endpoint(body: TerminalStartRequest):
     import shlex
     import subprocess
     import shutil
-    import json
+    import threading
     settings = load_settings()
     provider = body.provider.lower()
-    
-    # 1. 前置登录状态检查，若已登录则直接退出并不启动子进程，输出成功回显
-    if provider == "google":
-        config_dir = os.path.expanduser("~/.config/opencode")
-        accounts_file = os.path.join(config_dir, "antigravity-accounts.json")
-        if os.path.exists(accounts_file):
-            try:
-                with open(accounts_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    accounts = data.get("accounts", [])
-                    if accounts:
-                        active_email = accounts[0].get("email", "已授权账号")
-                        settings["google_access_token"] = f"CLI_OAUTH:{active_email}"
-                        save_settings(settings)
-                        
-                        with global_terminal_auth.lock:
-                            global_terminal_auth.output_buffer = [
-                                f"[System] 正在拉起登录命令: {settings.get('google_login_cmd', 'agy login')}\n",
-                                f"🎉 [System] 检测到您的 CLI 客户端已经处于登录就绪状态，无需重新登录！\n",
-                                f"当前登录账号：{active_email}\n",
-                                f"[System] 本地已同步保存授权状态。\n"
-                            ]
-                            global_terminal_auth.provider = provider
-                        return {"status": "success", "message": "已检测到登录态，无需重新授权"}
-            except Exception:
-                pass
-                
-    elif provider == "openai":
-        codex_path = shutil.which("codex")
-        if codex_path:
-            try:
-                is_windows = os.name == "nt"
-                r = subprocess.run(
-                    [codex_path, "login", "status"],
-                    shell=is_windows,
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                output = r.stdout or r.stderr or ""
-                if r.returncode == 0 and "Logged in" in output:
-                    token_info = output.strip()
-                    settings["openai_access_token"] = f"CLI_OAUTH:{token_info}"
-                    save_settings(settings)
-                    
-                    with global_terminal_auth.lock:
-                        global_terminal_auth.output_buffer = [
-                            f"[System] 正在拉起登录命令: {settings.get('openai_login_cmd', 'codex login --device-auth')}\n",
-                            f"🎉 [System] 检测到您的 OpenAI Codex CLI 已经处于登录就绪状态，无需重新登录！\n",
-                            f"当前状态：{token_info}\n",
-                            f"[System] 本地已同步保存授权状态。\n"
-                        ]
-                        global_terminal_auth.provider = provider
-                    return {"status": "success", "message": "已检测到登录态，无需重新授权"}
-            except Exception:
-                pass
 
     if provider == "google":
-        cmd_str = settings.get("google_login_cmd", "antigravity login --no-browser")
+        # Google: 开启非阻塞的同步状态检测线程
+        class DummyProcess:
+            def __init__(self):
+                self.pid = 9999
+                self.returncode = 0
+            def kill(self):
+                pass
+        
+        with global_terminal_auth.lock:
+            global_terminal_auth.output_buffer = ["[System] 开始检测本地 CLI 登录状态...\n"]
+            global_terminal_auth.provider = "google"
+            global_terminal_auth.process = DummyProcess()
+        
+        threading.Thread(target=check_google_status_thread, args=(global_terminal_auth,), daemon=True).start()
+        return {"status": "success", "message": "检测任务已拉起"}
+
     elif provider == "openai":
-        cmd_str = settings.get("openai_login_cmd", "codex login --no-browser")
+        cmd_str = settings.get("openai_login_cmd", "codex login --device-auth")
+        is_windows = os.name == "nt"
+        cmd_args = cmd_str if is_windows else shlex.split(cmd_str)
+        cmd_display = cmd_str
     else:
         raise HTTPException(status_code=400, detail="未知的服务商")
-        
+
+    print(f"[Debug] terminal_start_endpoint called. Provider: {provider}, cmd_args: {cmd_args}")
+
     with global_terminal_auth.lock:
         if global_terminal_auth.process:
             try:
+                print(f"[Debug] Killing previous process PID {global_terminal_auth.process.pid}")
                 global_terminal_auth.process.kill()
             except:
                 pass
             global_terminal_auth.process = None
-            
-        global_terminal_auth.output_buffer = [f"[System] 正在拉起登录命令: {cmd_str}\n"]
+
+        global_terminal_auth.output_buffer = [f"[System] 正在拉起: {cmd_display}\n"]
         global_terminal_auth.provider = provider
-        
+
         proxy_url = settings.get("proxy_url", "")
         env = os.environ.copy()
         if proxy_url:
             env["HTTP_PROXY"] = proxy_url
             env["HTTPS_PROXY"] = proxy_url
-            
-        # 强制 Python 无缓冲以及 UTF8 编码
-        env["PYTHONUNBUFFERED"] = "1"
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUTF8"] = "1"
-        
+
         try:
-            is_windows = os.name == "nt"
-            cmd_args = cmd_str if is_windows else shlex.split(cmd_str)
+            use_shell = (os.name == "nt")
             proc = subprocess.Popen(
                 cmd_args,
-                shell=is_windows,
+                shell=use_shell,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -1957,60 +2153,224 @@ def terminal_start_endpoint(body: TerminalStartRequest):
                 bufsize=0,
                 cwd=ROOT_DIR
             )
+            print(f"[Debug] Process successfully spawned. PID: {proc.pid}")
             global_terminal_auth.process = proc
-            
+
             t = threading.Thread(target=read_process_stdout, args=(proc, global_terminal_auth), daemon=True)
             t.start()
-            
+
             return {"status": "success", "message": "登录进程已启动"}
         except Exception as e:
             global_terminal_auth.output_buffer.append(f"[System Error] 进程启动失败: {e}\n")
             raise HTTPException(status_code=500, detail=f"启动失败: {e}")
 
-@app.get("/api/auth/terminal/poll")
-def terminal_poll_endpoint():
-    with global_terminal_auth.lock:
-        is_running = global_terminal_auth.process is not None
-        logs = "".join(global_terminal_auth.output_buffer)
-        provider = global_terminal_auth.provider
-    return {
-        "status": "success",
-        "is_running": is_running,
-        "logs": logs,
-        "provider": provider
-    }
+from fastapi import WebSocket, WebSocketDisconnect
 
-class TerminalInputRequest(BaseModel):
-    code: str
+class TerminalSession:
+    def __init__(self, proc, ws):
+        self.proc = proc
+        self.ws = ws
 
-@app.post("/api/auth/terminal/input")
-def terminal_input_endpoint(body: TerminalInputRequest):
-    with global_terminal_auth.lock:
-        proc = global_terminal_auth.process
-        if not proc:
-            raise HTTPException(status_code=400, detail="没有正在运行的登录进程")
-        try:
-            proc.stdin.write(body.code + "\n")
-            proc.stdin.flush()
-            global_terminal_auth.output_buffer.append(f"[Input] ******** (已发送至终端)\n")
-            return {"status": "success", "message": "输入已发送"}
-        except Exception as e:
-            global_terminal_auth.output_buffer.append(f"[System Error] 写入进程失败: {e}\n")
-            raise HTTPException(status_code=500, detail=f"写入失败: {e}")
+active_terminal_sessions = {}  # provider -> TerminalSession
+
+@app.websocket("/api/auth/terminal/ws")
+async def terminal_ws_endpoint(websocket: WebSocket, provider: str):
+    await websocket.accept()
+    
+    import shutil
+    import os
+    import threading
+    import asyncio
+    import subprocess
+    
+    settings = load_settings()
+    provider = provider.lower()
+    
+    # 动态构建启动指令与参数
+    if provider == "google":
+        agy_path = shutil.which("agy")
+        if not agy_path and os.name == "nt":
+            default_win = os.path.expandvars(r"%USERPROFILE%\AppData\Local\agy\bin\agy.exe")
+            if os.path.exists(default_win):
+                agy_path = default_win
+        if not agy_path:
+            await websocket.send_text("[System Error] 未找到 agy CLI 可执行文件，请先安装。\r\n")
+            await websocket.close()
+            return
+        cmd_args = [agy_path]
+    elif provider == "openai":
+        cmd_str = settings.get("openai_login_cmd", "codex login --device-auth")
+        import shlex
+        cmd_args = cmd_str if os.name == "nt" else shlex.split(cmd_str)
+    else:
+        await websocket.send_text("[System Error] 未知的服务商。\r\n")
+        await websocket.close()
+        return
+
+    # 设置环境变量
+    env = os.environ.copy()
+    env["BROWSER"] = "false"
+    env.pop("DISPLAY", None)
+    env.pop("SSH_CONNECTION", None)
+    env.pop("SSH_CLIENT", None)
+    
+    # 注意：我们这里不需要强制注入 SSH_CONNECTION 以退化为文本形式！
+    # 因为使用 PTY，Bubbletea 就可以在网页的 xterm.js 窗口中以完整的 GUI TUI 彩色交互正常渲染运行！
+    # 唯一需要注意的是代理：只为 OpenAI 注入代理以防 agy 挂死
+    proxy_url = settings.get("proxy_url", "")
+    if proxy_url and provider == "openai":
+        env["HTTP_PROXY"] = proxy_url
+        env["HTTPS_PROXY"] = proxy_url
+
+    is_windows = os.name == "nt"
+    proc = None
+    
+    try:
+        if is_windows:
+            from winpty import PtyProcess
+            cmd_line = subprocess.list2cmdline(cmd_args) if isinstance(cmd_args, list) else cmd_args
+            proc = PtyProcess.spawn(cmd_line, env=env, cwd=ROOT_DIR, dimensions=(24, 80))
+        else:
+            # Linux POSIX PTY Spawning using pexec/pty
+            import pty
+            import sys
+            pid, fd = pty.fork()
+            if pid == 0: # child
+                try:
+                    os.execve(cmd_args[0], cmd_args, env)
+                except Exception as ex:
+                    sys.stderr.write(f"Failed to exec command: {ex}\n")
+                    sys.stderr.flush()
+                    os._exit(1)
+            else: # parent
+                class LinuxPtyProcess:
+                    def __init__(self, pid, fd):
+                        self.pid = pid
+                        self.fd = fd
+                        self.exitstatus = None
+                    def isalive(self):
+                        if self.exitstatus is not None:
+                            return False
+                        try:
+                            r_pid, status = os.waitpid(self.pid, os.WNOHANG)
+                            if r_pid != 0:
+                                self.exitstatus = os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1
+                                return False
+                            return True
+                        except:
+                            return False
+                    def read(self, size=1024):
+                        import select
+                        r, _, _ = select.select([self.fd], [], [], 0.05)
+                        if self.fd in r:
+                            try:
+                                data = os.read(self.fd, size)
+                                return data.decode("utf-8", errors="replace")
+                            except:
+                                return ""
+                        return ""
+                    def write(self, data):
+                        try:
+                            os.write(self.fd, data.encode("utf-8"))
+                        except:
+                            pass
+                    def kill(self):
+                        import signal
+                        try:
+                            os.kill(self.pid, signal.SIGKILL)
+                        except:
+                            pass
+                proc = LinuxPtyProcess(pid, fd)
+
+        # 注册当前激活的终端 session
+        active_terminal_sessions[provider] = TerminalSession(proc, websocket)
+        
+        loop = asyncio.get_running_loop()
+        
+        # 开启读取 PTY 字符线程并发送到网页
+        def read_pty_loop():
+            try:
+                while True:
+                    if is_windows:
+                        if not proc.isalive():
+                            break
+                        data = proc.read(1024)
+                    else:
+                        if not proc.isalive():
+                            break
+                        data = proc.read(1024)
+                    
+                    if data:
+                        asyncio.run_coroutine_threadsafe(websocket.send_text(data), loop)
+            except EOFError:
+                pass
+            except Exception as e:
+                print(f"[Debug Error] Exception in read_pty_loop: {e}")
+            finally:
+                asyncio.run_coroutine_threadsafe(websocket.close(), loop)
+                
+        threading.Thread(target=read_pty_loop, daemon=True).start()
+        
+        # 接收并处理网页发送的按键输入写入 PTY
+        while True:
+            is_alive = proc.isalive() if is_windows else proc.isalive()
+            if not is_alive:
+                break
+            
+            text = await websocket.receive_text()
+            if text:
+                proc.write(text)
+                
+    except WebSocketDisconnect:
+        print(f"[Debug] Web terminal client disconnected for {provider}")
+    except Exception as e:
+        print(f"[Debug Error] Exception in terminal ws: {e}")
+    finally:
+        # 清理与同步绑定状态
+        if proc:
+            is_alive = proc.isalive() if is_windows else proc.isalive()
+            if is_alive:
+                try:
+                    proc.kill()
+                except:
+                    pass
+            
+            # 检测最终是否登录成功
+            if provider == "google":
+                try:
+                    check_env = os.environ.copy()
+                    check_env["BROWSER"] = "false"
+                    check_env.pop("DISPLAY", None)
+                    r = subprocess.run([cmd_args[0], "models"], capture_output=True, text=True, env=check_env, timeout=3.0)
+                    if r.returncode == 0:
+                        settings["google_access_token"] = "CLI_AUTHENTICATED"
+                        save_settings(settings)
+                        print(f"[Debug] Sync successful: google authenticated via terminal login!")
+                except Exception as se:
+                    print(f"[Debug Error] Final sync check failed: {se}")
+            elif provider == "openai":
+                try:
+                    r = subprocess.run("codex login status", shell=True, capture_output=True, text=True, timeout=3)
+                    if r.returncode == 0:
+                        settings["openai_access_token"] = "CLI_AUTHENTICATED"
+                        save_settings(settings)
+                        print(f"[Debug] Sync successful: openai authenticated via terminal login!")
+                except Exception as se:
+                    print(f"[Debug Error] Final sync check failed: {se}")
+
+        active_terminal_sessions.pop(provider, None)
 
 @app.post("/api/auth/terminal/kill")
-def terminal_kill_endpoint():
-    with global_terminal_auth.lock:
-        proc = global_terminal_auth.process
-        if proc:
-            try:
-                proc.kill()
-            except:
-                pass
-            global_terminal_auth.process = None
-            global_terminal_auth.output_buffer.append("[System] 登录进程已被强制终止。\n")
-            return {"status": "success", "message": "进程已终止"}
-        return {"status": "success", "message": "无运行中的进程"}
+def terminal_kill_endpoint(provider: str = "google"):
+    provider = provider.lower()
+    session = active_terminal_sessions.get(provider)
+    if session:
+        try:
+            session.proc.kill()
+        except:
+            pass
+        return {"status": "success", "message": "终端会话已终止"}
+    return {"status": "success", "message": "无活动会话"}
 
 # === 智能体 CLI 诊断与一键安装接口 ===
 
@@ -2027,38 +2387,32 @@ def get_cli_status_endpoint():
     import shutil
     import subprocess
     
-    # 检测 Google Antigravity
-    antigravity_path = shutil.which("antigravity")
-    antigravity_version = "未知"
-    if antigravity_path:
+    # 检测 agy (Google Antigravity AI 智能体命令行)
+    agy_path = shutil.which("agy")
+    agy_version = "未知"
+    if agy_path:
         try:
-            r = subprocess.run([antigravity_path, "--version"], capture_output=True, text=True, timeout=5)
-            if r.returncode == 0:
-                antigravity_version = r.stdout.strip()
-            else:
-                antigravity_version = "已安装"
+            r = subprocess.run([agy_path, "--version"], capture_output=True, text=True, timeout=5)
+            agy_version = (r.stdout.strip() or r.stderr.strip() or "已安装")[:100]
         except Exception:
-            antigravity_version = "已安装"
-            
-    # 检测 OpenAI Codex
+            agy_version = "已安装"
+
+    # 检测 codex (OpenAI Codex CLI)
     codex_path = shutil.which("codex")
     codex_version = "未知"
     if codex_path:
         try:
             r = subprocess.run([codex_path, "--version"], capture_output=True, text=True, timeout=5)
-            if r.returncode == 0:
-                codex_version = r.stdout.strip()
-            else:
-                codex_version = "已安装"
+            codex_version = (r.stdout.strip() or r.stderr.strip() or "已安装")[:100]
         except Exception:
             codex_version = "已安装"
             
     return {
         "status": "success",
         "google": {
-            "installed": bool(antigravity_path),
-            "path": antigravity_path or "未找到",
-            "version": antigravity_version
+            "installed": bool(agy_path),
+            "path": agy_path or "未找到",
+            "version": agy_version
         },
         "openai": {
             "installed": bool(codex_path),
@@ -2066,6 +2420,99 @@ def get_cli_status_endpoint():
             "version": codex_version
         }
     }
+
+
+
+
+# === CLI 一键安装接口 ===
+
+class CLIInstallState:
+    def __init__(self):
+        self.process = None
+        self.output_buffer = []
+        self.lock = threading.Lock()
+
+global_cli_install = CLIInstallState()
+
+class CLIInstallRequest(BaseModel):
+    provider: str
+
+@app.post("/api/auth/cli/install")
+def cli_install_endpoint(body: CLIInstallRequest):
+    import subprocess
+    import re
+    provider = body.provider.lower()
+    is_windows = os.name == "nt"
+    
+    # 不同平台的安装命令
+    if provider == "google":
+        if is_windows:
+            # Windows: 用 npm 安装 opencode（必须），尝试 winget 安装 agy（可选）
+            full_cmd = (
+                "npm install -g opencode-ai"
+                " & echo [System] opencode 安装完成，正在尝试通过 winget 安装 agy..."
+                " & winget install --id Google.Antigravity --silent --accept-source-agreements --accept-package-agreements"
+                " & echo [System] 全部安装流程完成（agy 若 winget 不可用可忽略）"
+            )
+        else:
+            # Linux/macOS
+            full_cmd = (
+                "npm install -g opencode-ai"
+                " && echo '[System] opencode 安装完成，正在安装 agy...'"
+                " && curl -fsSL https://antigravity.google/cli/install.sh | bash"
+            )
+
+    elif provider == "openai":
+        full_cmd = "npm install -g @openai/codex"
+    else:
+        raise HTTPException(status_code=400, detail="未知的服务商")
+    
+    with global_cli_install.lock:
+        if global_cli_install.process and global_cli_install.process.poll() is None:
+            return {"status": "success", "message": "安装任务已在运行中"}
+        
+        global_cli_install.output_buffer = [f"[System] 正在拉起安装: {full_cmd}\n"]
+        
+        ansi_escape = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|\([A-Z]|[^\[(])')
+
+        try:
+            proc = subprocess.Popen(
+                full_cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1
+            )
+            global_cli_install.process = proc
+
+            def _read(p, state):
+                for line in p.stdout:
+                    clean = ansi_escape.sub('', line)
+                    with state.lock:
+                        state.output_buffer.append(clean)
+                        if len(state.output_buffer) > 500:
+                            state.output_buffer.pop(0)
+                try:
+                    p.wait(timeout=2)
+                except:
+                    pass
+                with state.lock:
+                    state.output_buffer.append(f"\n[System] 安装命令已完成，退出码: {p.returncode}\n")
+            
+            threading.Thread(target=_read, args=(proc, global_cli_install), daemon=True).start()
+            return {"status": "success", "message": "安装任务已启动"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"启动安装失败: {e}")
+
+@app.get("/api/auth/cli/install-logs")
+def cli_install_logs_endpoint():
+    with global_cli_install.lock:
+        is_running = global_cli_install.process is not None and global_cli_install.process.poll() is None
+        logs = "".join(global_cli_install.output_buffer)
+    return {"status": "success", "logs": logs, "is_running": is_running}
 
 @app.get("/api/auth/cli/models")
 def get_cli_models_endpoint(provider: str):
@@ -2387,14 +2834,32 @@ def trigger_video_teardown_endpoint(body: TeardownRequest, background_tasks: Bac
     def run_hothook_cli_in_background():
         google_model = settings.get("google_model", "gemini-2.5-pro")
         openai_model = settings.get("openai_model", "gpt-4o")
-        
+
+        # agy --model 接受其自身的显示名，而 config 中存的是 slug，需要做映射
+        AGY_MODEL_MAP = {
+            "gemini-2.5-pro":           "Gemini 2.5 Pro",
+            "gemini-3.5-flash-medium":  "Gemini 3.5 Flash (Medium)",
+            "gemini-3.5-flash-high":    "Gemini 3.5 Flash (High)",
+            "gemini-3.5-flash-low":     "Gemini 3.5 Flash (Low)",
+            "gemini-3.1-pro-low":       "Gemini 3.1 Pro (Low)",
+            "gemini-3.1-pro-high":      "Gemini 3.1 Pro (High)",
+        }
+        agy_model_name = AGY_MODEL_MAP.get(google_model, google_model)
+
+        # 构建统一的绝对路径以防止 agy 搜寻系统盘/C盘
+        abs_project_dir = ROOT_DIR.replace("\\", "/")
+        abs_skill_path = f"{abs_project_dir}/skills/hothook/SKILL.md"
+        abs_db_path = f"{abs_project_dir}/data/distiller.db"
+        abs_output_dir = f"{abs_project_dir}/output"
+
         if agent_cmd == "agy":
             cmd = [
                 agent_cmd,
                 "--dangerously-skip-permissions",
-                "--model", google_model,
+                "--add-dir", ROOT_DIR,
+                "--model", agy_model_name,
                 "-p",
-                f"请加载项目，认真阅读位于 skills/hothook/SKILL.md 的技能定义与分析流程，查询本地数据库中 ID 为 {body.note_id} (标题为『{title}』) 的视频记录，完成深度分析，并生成最终的单文件 HTML 报告与改写脚本。"
+                f"您的项目工作区根目录位于 {abs_project_dir}。请加载该工作区并认真阅读位于 {abs_skill_path} 的技能定义与分析流程。请查询位于 {abs_db_path} 的 SQLite 本地数据库中 ID 为 {body.note_id} (标题为『{title}』) 的视频记录，完成深度分析后，将生成的最终单文件 HTML 报告与改写脚本保存到 {abs_output_dir} 目录下。"
             ]
         else:
             cmd = [
@@ -2402,7 +2867,7 @@ def trigger_video_teardown_endpoint(body: TeardownRequest, background_tasks: Bac
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--model", openai_model,
                 "-p",
-                f"请加载项目，认真阅读位于 skills/hothook/SKILL.md 的技能定义与分析流程，查询本地数据库中 ID 为 {body.note_id} (标题为『{title}』) 的视频记录，完成深度分析，并生成最终的单文件 HTML 报告与改写脚本。"
+                f"您的项目工作区根目录位于 {abs_project_dir}。请加载该工作区并认真阅读位于 {abs_skill_path} 的技能定义与分析流程。请查询位于 {abs_db_path} 的 SQLite 本地数据库中 ID 为 {body.note_id} (标题为『{title}』) 的视频记录，完成深度分析后，将生成的最终单文件 HTML 报告与改写脚本保存到 {abs_output_dir} 目录下。"
             ]
         
         env = os.environ.copy()
@@ -2419,27 +2884,38 @@ def trigger_video_teardown_endpoint(body: TeardownRequest, background_tasks: Bac
         log_path = os.path.join(log_dir, f"hothook_{body.note_id}.log")
         
         try:
-            # 记录初始信息并启动
+            # 记录初始信息
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write(f"=== HotHook 智能体单视频拆解任务启动 ===\n")
                 f.write(f"目标视频 ID: {body.note_id}\n")
                 f.write(f"目标视频标题: 『{title}』\n")
                 f.write(f"命令: {' '.join(cmd)}\n\n")
-                f.flush()
-                
-                is_windows = os.name == "nt"
-                process = subprocess.Popen(
-                    cmd,
-                    shell=is_windows,
-                    stdout=f,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    cwd=ROOT_DIR,
-                    env=env
-                )
-                process.wait()
+
+            # 始终使用 shell=False，Windows/Linux 均正确传递参数列表
+            process = subprocess.Popen(
+                cmd,
+                shell=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=ROOT_DIR,
+                env=env
+            )
+
+            # 逐行无缓冲读取并追加写入，实现完美的前端流式展现
+            while True:
+                line = process.stdout.readline()
+                if not line:
+                    break
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(line)
+                    f.flush()
+
+            process.wait()
+
+            with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"\n=== HotHook 智能体拆解任务完成，退出码: {process.returncode} ===\n")
         except Exception as ex:
             with open(log_path, "a", encoding="utf-8") as f:
@@ -2526,7 +3002,7 @@ def get_transcribe_tasks():
             SELECT n.id, n.title, b.name as blogger_name
             FROM blogger_notes n
             JOIN bloggers b ON n.blogger_id = b.id
-            WHERE n.type = 'video' AND (
+            WHERE b.is_transcribe = 1 AND n.type = 'video' AND (
                 n.desc LIKE 'http://%' OR 
                 n.desc LIKE 'https://%' OR 
                 n.desc LIKE '[转录失败_第%'

@@ -198,3 +198,92 @@
   * **精准容器隔离**：重构 `click_comment_button(page, vid)` 与 `hover_share_button(page, vid)`，支持传入当前处理的视频 ID (`vid`)。函数在定位时，优先匹配 `[data-e2e="feed-active-video"][data-e2e-vid="{vid}"]` 确定唯一的激活视频卡片容器，然后在该容器内部通过 `container.locator()` 检索评论和分享，完全隔离了背景 DOM 的干扰。如果未传入 vid，则依次降级到通用激活容器和全局兜底。
   * **输出编码重载**：在 `pipeline.py` 头部的 import 区，加入 `sys.stdout.reconfigure(encoding='utf-8', errors='replace')` 重配置流编码，使其无论控制台如何设置都始终以 UTF-8 输出，与后端对接管口对齐。
 
+---
+
+## Bug 16: Google 智能体 CLI 授权重定向死锁与 Windows 无头终端运行崩溃问题 (0xC000013A)
+
+* **发生时间**：2026-07-15
+* **问题现象**：
+  1. 在无真实 TTY 的后台 Python 重定向管道中启动 Google `agy` 登录交互流时，Go 语言命令行工具会因无法渲染 Bubbletea TUI 而抛出 `0xC000013A` (3221225786) 崩溃退出。
+  2. 即使运行 `agy models` 检测状态，如果未登录，其依然会尝试渲染 TUI，且由于 Pipe 重定向启动了 Go 运行时的 block buffering 块缓冲，导致授权 URL 堵在内存中无法刷出，与后台 stdin 形成永久死锁。
+* **主要根源**：
+  - Windows 控制台句柄绕过：Go 语言的命令行选单与终端 TUI 库（如 Bubbletea）在 Windows 下默认尝试直接开启物理控制台句柄 `CONOUT$` / `CONIN$`。当 Python 使用常规 `subprocess.PIPE` 管道重定向时，Go 会绕开管道直接向物理终端设备读写，导致输出无法被 Python 捕获，且输入无法从网页端送入，造成死锁卡死。
+  - 无物理 TTY 运行 Bubbletea 会导致 0xC000013A (3221225786) 崩溃。
+* **解决方案**：
+  - **基于 xterm.js + PTY WebSocket 的真网页终端重构**：
+    - **前端集成**：在前端载入 `xterm.js` 与 `xterm-addon-fit` 库，代替原有的 `<pre>` 日志框。慢速渲染导致挤压的部分已被 `fitAddon.fit()` 彻底解决。初始化时自动调用 `term.focus()` 获得输入焦点。
+    - **点击与粘贴监听**：对终端容器绑定 `click` 强制聚焦监听。同时绑定 `paste` 粘贴事件，一旦用户右键或快捷键粘贴，自动从剪贴板提取 Token 并通过 WebSocket 发给后端伪终端，实现零死角密钥回填。
+    - **后端双向伪终端（PTY）桥接**：
+      - Windows 平台：使用 `pywinpty` 的 `PtyProcess` 产生 ConPTY 物理会话，使 `agy` 能够获取真实的终端窗口环境，完美呈现 Bubbletea 彩色字符画及选单。
+      - Linux/Docker 平台：使用标准库 `pty` 模块进行 `pty.fork()` 进行 POSIX PTY 伪终端桥接。
+      - 架设全新的 WebSocket 路由 `/api/auth/terminal/ws` 进行字符双向流式传递，进程退出时自动刷新绑定状态。
+
+---
+
+## Bug 17: Windows 子进程命令参数丢失与智能体任务日志非流式输出问题
+
+* **发生时间**：2026-07-16
+* **问题现象**：
+  1. 在 Windows 环境下启动单视频拆解时，`agy` 进程完全没有执行任何有意义的操作便以退出码 `1` 退出，且生成的日志文件仅有头部 Header。
+  2. 智能体分析过程中，前端的日志监控界面一直处于空白状态，直到整个任务彻底运行结束，日志才“一瞬间”全部吐出来，缺乏过程感知。
+* **主要根源**：
+  - Windows 环境下如果在使用 `subprocess.Popen` 时开启了 `shell=True`，且传入的命令是一个参数列表（List），则 cmd.exe 只会把列表的第一项（即可执行程序路径 `agy`）作为命令执行，后面的所有参数均会被截断丢弃。
+  - Python 对 `process.stdout` 的内置迭代器（如 `for line in process.stdout`）在读取重定向流时存在内部块缓存，在缓冲区未满（通常为 4KB）或没有接收到 EOF 之前不会向下产出，导致日志无法流式传输。
+* **解决方案**：
+  - **传参安全性控制**：将 `shell` 参数统一强限制为 `False`（`shell=False`）。在不启用 shell 解释器的前提下，操作系统内核能安全且完整地将参数列表（List）传给子进程。
+  - **流式无缓冲日志输出**：改用底层 `readline()` 循环无缓冲读取，每读取到一行数据，立即使用 `"a"` 模式打开日志追加写入并 `flush()` 刷新磁盘缓存后关闭，彻底打通了到前端控制台的流式展现通道。
+
+---
+
+## Bug 18: Google 智能体 agy CLI 沙箱检测路径错乱与全盘搜寻问题
+
+* **发生时间**：2026-07-16
+* **问题现象**：
+  - 智能体进程在后台运行时，不断尝试访问用户的系统目录 `C:\Users\Administrator\.gemini\antigravity-cli\scratch` 或对 C 盘开展大量的文件遍历，提示 `skills/hothook/SKILL.md` 技能定义文件和数据库无法找到，生成的文件也无法保存到项目的 output 文件夹中。
+* **主要根源**：
+  - `agy` CLI 运行智能体具有独立的沙箱隔离机制。若在 Prompt（-p）中只给出相对路径，它默认不会以 Python 程序的当前工作目录（CWD）为基准，而是在自己的用户配置盘中寻找，进而触发其全盘自动搜寻逻辑。
+* **解决方案**：
+  - **动态工作区装载**：在 `cmd` 参数中追加 `--add-dir` 参数并传入动态的当前项目根目录 `ROOT_DIR`。
+  - **绝对路径强制绑定**：将内置 Prompt 模板中的技能定义文件（`SKILL.md`）、SQLite 本地数据库（`distiller.db`）以及最终报告与改写脚本的保存输出路径（`output`）全部重构为**基于运行环境动态生成的绝对路径**（例如在 Windows 下为 `D:/daima/...`，在 Docker 容器内为 `/app/...`）。从而引导智能体直接对目标位置进行读写，避免了盲目遍历系统盘。
+
+---
+
+## Bug 19: 系统设置页面加载时发生 TypeError: Cannot set properties of null (setting 'value') 崩溃
+
+* **发生时间**：2026-07-27
+* **问题现象**：在前端点击“系统设置”页面时，页面数据无法正常回显加载，控制台抛出 `TypeError: Cannot set properties of null (setting 'value') at loadSettingsPageData (app.js:2144:67)`。
+* **主要根源**：前端 `app.js` 的 `loadSettingsPageData` 和 `handleSystemSettingsSubmit` 依赖于 `setting-google-login-cmd` 对应的 DOM 输入框元素来进行设置参数的回显和保存。然而，在 `index.html` 前期改版为双列网格布局后，不慎漏掉了 GOOGLE CLI 登录指令的 HTML 输入项，导致 `document.getElementById("setting-google-login-cmd")` 返回 `null`，引发 TypeError 崩溃。
+* **解决方案**：在 `index.html` 的 `system-settings-form` 中补全了 ID 为 `setting-google-login-cmd` 的 `form-group` 容器和 `<input>` 输入框元素，使其与 `app.js` 的读写逻辑重新对齐。
+
+---
+
+## Bug 20: 对标账号表格 10 列表头与数据行 9 列不匹配引发错位，及缺少自动唤醒智能体 CLI 开关控制
+
+* **发生时间**：2026-07-27
+* **问题现象**：
+  1. 对标账号 UI 表格管理页面中，所有数据单元格（如“主营定位”、“监控链接”）整体向左错位挪动了 1 列，最右侧“管理操作”列完全留空。
+  2. 抓取流水线在完成数据导入后，会自动触发 `agy` CLI 唤醒智能体，缺乏可控制的关闭选项。
+* **主要根源**：
+  1. 表格 HTML 表头 `<thead>` 声明了 10 个 `<th>` 列（包含单独的“账号平台”列），但前端 `app.js` 的 `loadBloggersList` 渲染数据行时把 `b.name` 和 `platformBadge` 合并在第 1 个 `<td>` 中，导致 `<tbody>` 实际只有 9 个 `<td>` 单元格，造成全局向左挪位 1 列。
+  2. 流水线 `pipeline.py` 步骤 3.5 无条件检测 Token 并自动拉起 `trigger_agent_cli`，前端和后端缺少对自动唤醒行为的控制开关。
+* **解决方案**：
+  1. 修改 `app.js`，将平台 Badge 独立拆分为第 2 个 `<td>` 单元格，调整空状态 `colspan="10"`，并在各 `<td>` 增加显式的 `white-space: nowrap` 与 `vertical-align: middle` 约束。
+  2. 在 `style.css` 中为 `#table-bloggers-management` 增加全局防变形与最小列宽约束，禁止文本发生竖向折行。
+  3. 在 `index.html` 的 `style.css` 与 `app.js` 引用中加入版本号 `?v=20260727_2` 强行击穿浏览器静态文件缓存，确保修改立即生效。
+  4. 在后端配置及前端系统设置中增加 `enable_auto_agent` 开关项，并更新 `pipeline.py` 在 `trigger_agent_cli` 中增加对该开关的判断逻辑。关闭时，抓取导入完成后自动跳过 CLI 唤醒。
+
+---
+
+## Bug 21: 主页监控链接显示冗长 URL 且缺少单击跳转逻辑，及底层横向滚动条原生样式粗糙突兀
+
+* **发生时间**：2026-07-27
+* **问题现象**：
+  1. 对标账号表格中的“主页监控链接”直接把完整长 URL 渲染出来，破坏了整体杂志界面的素雅美感；且无法在不双击编辑的前提下直接在浏览器打开该链接。
+  2. 表格底部的横向滚动条使用了 Windows / 浏览器原生的灰色粗大带箭头的拉条（带白轨和方角），与整体高雅杂志风格极不协调。
+* **主要根源**：
+  1. 单元格将 raw `home_url` 完整填充在 `innerText` 中，缺少统一的 Link Badge 视觉包装以及单/双击手势分离监听。
+  2. 未配置自定义 Webkit 及 Firefox 滚动条 CSS 规则，导致直接继承了操作系统的原生滚动条外观。
+* **解决方案**：
+  1. 在 `app.js` 中将链接列改渲染为精美的 `主页链接 ↗` Badge（未配置时显示 `未配置 (双击设置)`），并在节点上挂载 `data-url` 属性存放真实 URL 字符串。
+  2. 引入防冲突手势：单击在 250ms 延迟后在新标签页 `window.open` 打开主页；双击在 250ms 内清除单击定时器，自动调起 `<input>` 并初始化填充真实 URL 字符串供编辑。
+  3. 在 `style.css` 中为 `.table-container` 与全局加入定制的无底色极简滚动条样式 (`::-webkit-scrollbar`)，彻底移除底轨白色背景 (`background: transparent !important`) 与箭角按钮，使用统一的暖粘土纸面墨色 `var(--ink-tertiary)` 拖拽条，Hover 时高亮为复古陶红/暗夜金 (`var(--accent-primary)`)。

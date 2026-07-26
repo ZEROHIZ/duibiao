@@ -280,10 +280,6 @@ function setupEventListeners() {
     if (btnGoogleTerminalKill) {
         btnGoogleTerminalKill.addEventListener("click", () => killTerminalAuth("google"));
     }
-    const btnGoogleTerminalSubmit = document.getElementById("btn-google-terminal-submit");
-    if (btnGoogleTerminalSubmit) {
-        btnGoogleTerminalSubmit.addEventListener("click", () => submitTerminalCode("google"));
-    }
     const btnGoogleBindToken = document.getElementById("btn-google-bind-token");
     if (btnGoogleBindToken) {
         btnGoogleBindToken.addEventListener("click", () => bindOAuthToken("google"));
@@ -300,10 +296,6 @@ function setupEventListeners() {
     const btnOpenaiTerminalKill = document.getElementById("btn-openai-terminal-kill");
     if (btnOpenaiTerminalKill) {
         btnOpenaiTerminalKill.addEventListener("click", () => killTerminalAuth("openai"));
-    }
-    const btnOpenaiTerminalSubmit = document.getElementById("btn-openai-terminal-submit");
-    if (btnOpenaiTerminalSubmit) {
-        btnOpenaiTerminalSubmit.addEventListener("click", () => submitTerminalCode("openai"));
     }
     const btnOpenaiBindToken = document.getElementById("btn-openai-bind-token");
     if (btnOpenaiBindToken) {
@@ -934,12 +926,14 @@ async function handleAddBloggerSubmit(e) {
     e.preventDefault();
     const nameInput = document.getElementById("add-form-name");
     const urlInput = document.getElementById("add-form-url");
+    const platformSelect = document.getElementById("add-form-platform");
 
     if (!nameInput) return;
 
     const payload = {
         name: nameInput.value.trim(),
-        home_url: urlInput ? urlInput.value.trim() : ""
+        home_url: urlInput ? urlInput.value.trim() : "",
+        platform: platformSelect ? platformSelect.value : "douyin"
     };
 
     try {
@@ -968,7 +962,7 @@ async function loadBloggersList() {
     const tableBody = document.querySelector("#table-bloggers-management tbody");
     const gridContainer = document.getElementById("blogger-grid-container");
     
-    tableBody.innerHTML = `<tr><td colspan="8" class="lead-text">加载对标账号中...</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="10" class="lead-text">加载对标账号中...</td></tr>`;
     gridContainer.innerHTML = `<div class="lead-text">加载对标账号中...</div>`;
 
     try {
@@ -977,7 +971,7 @@ async function loadBloggersList() {
         const data = await res.json();
 
         if (data.length === 0) {
-            const emptyHtml = `<tr><td colspan="8" style="font-style: italic;" class="lead-text">暂无对标账号，点击上方“录入监控博主”进行添加。</td></tr>`;
+            const emptyHtml = `<tr><td colspan="10" style="font-style: italic;" class="lead-text">暂无对标账号，点击上方“录入监控博主”进行添加。</td></tr>`;
             tableBody.innerHTML = emptyHtml;
             gridContainer.innerHTML = `<div class="lead-text" style="font-style: italic;">暂无对标账号。</div>`;
             return;
@@ -1003,33 +997,55 @@ async function loadBloggersList() {
             // 允许所有博主都可以点击进入详情页，对于未同步博主也提供详情按钮以方便同步
             const distillActionHtml = `<button class="btn-text" style="color: var(--accent-primary)" onclick="loadBloggerDetail('${b.name}')">蒸馏拆解</button>`;
 
+            // 语音转录开关按钮
+            const isTranscribe = b.is_transcribe !== 0;
+            const transcribeBtnHtml = `<button class="btn-text" style="color: ${isTranscribe ? 'var(--accent-primary)' : 'var(--ink-secondary)'}; border: 1px solid ${isTranscribe ? 'var(--accent-primary)' : 'var(--ink-tertiary)'}; padding: 0.15rem 0.4rem; font-size: 0.8rem; background: transparent; cursor: pointer; border-radius: 2px;" onclick="toggleBloggerTranscribe(${b.id}, ${b.is_transcribe})">${isTranscribe ? '已开启' : '已关闭'}</button>`;
+
+            // 平台属性 Badge 标签
+            const platformBadge = `<span class="editable-field" data-id="${b.id}" data-field="platform" title="双击可快速修改平台" style="cursor: pointer; font-size: 0.75rem; border: 1px solid var(--ink-tertiary); padding: 0.1rem 0.35rem; border-radius: 2px; color: var(--ink-secondary); font-family: var(--font-sans); display: inline-block; vertical-align: middle;">${
+                b.platform === 'bilibili' ? 'B站' : 
+                b.platform === 'xiaohongshu' ? '小红书' : 
+                b.platform === 'wechat_channels' ? '视频号' : '抖音'
+            }</span>`;
+
             // 仅保留删除操作按钮，改名改为双击文字
             const deleteHtml = `<button class="btn-text" style="color: var(--accent-primary); margin-left: 0.75rem;" onclick="deleteBloggerConfirm(${b.id}, '${b.name}')">删除</button>`;
             const actionsHtml = `<div style="display: flex; align-items: center; justify-content: flex-start;">${distillActionHtml}${deleteHtml}</div>`;
 
+            // 监控主页链接 Badge
+            const urlBadge = urlVal 
+                ? `<span class="editable-field home-url-link" data-id="${b.id}" data-field="home_url" data-url="${urlVal}" title="单击在新标签页打开，双击编辑链接" style="cursor: pointer; border-bottom: 1px dashed var(--accent-primary); color: var(--accent-primary); font-family: var(--font-sans); font-size: 0.88rem; font-weight: 500; display: inline-block; padding-bottom: 2px;">主页链接 ↗</span>`
+                : `<span class="editable-field home-url-link" data-id="${b.id}" data-field="home_url" data-url="" title="双击配置个人主页链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-tertiary); color: var(--ink-tertiary); font-family: var(--font-sans); font-size: 0.85rem; display: inline-block; padding-bottom: 2px;">未配置 (双击设置)</span>`;
+
             tr.innerHTML = `
-                <td>
-                    <span class="editable-field" data-id="${b.id}" data-field="name" title="双击可直接修改博主名称" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-size: 1.05rem; font-family: var(--font-serif); font-weight: 600; display: inline-block; padding-bottom: 2px;">${b.name}</span>
+                <td style="white-space: nowrap; vertical-align: middle;">
+                    <span class="editable-field" data-id="${b.id}" data-field="name" title="双击可直接修改博主名称" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-size: 1.05rem; font-family: var(--font-serif); font-weight: 600; display: inline-block; padding-bottom: 2px; vertical-align: middle;">${b.name}</span>
                 </td>
-                <td>
+                <td style="white-space: nowrap; vertical-align: middle; text-align: center;">
+                    ${platformBadge}
+                </td>
+                <td style="white-space: nowrap; vertical-align: middle; max-width: 180px; overflow: hidden; text-overflow: ellipsis;">
                     ${categoryBadge}
                 </td>
-                <td>
-                    <span class="editable-field" data-id="${b.id}" data-field="home_url" title="双击可直接修改监控主页链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-family: var(--font-mono); font-size: 0.85rem; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; padding-bottom: 2px; vertical-align: middle;">${urlVal || "双击配置个人主页链接..."}</span>
+                <td style="white-space: nowrap; vertical-align: middle; max-width: 280px; overflow: hidden; text-overflow: ellipsis;">
+                    ${urlBadge}
                 </td>
-                <td style="font-family: var(--font-serif); color: var(--accent-primary); font-weight: 500;">
+                <td style="white-space: nowrap; vertical-align: middle; text-align: center;">
+                    ${transcribeBtnHtml}
+                </td>
+                <td style="white-space: nowrap; vertical-align: middle; font-family: var(--font-serif); color: var(--accent-primary); font-weight: 500;">
                     ${hasDistilled ? b.avg_likes.toLocaleString() : '待同步/0'}
                 </td>
-                <td>
+                <td style="white-space: nowrap; vertical-align: middle;">
                     <span style="font-size: 0.85rem; color: var(--ink-secondary)">
                         ${hasDistilled ? `${b.avg_collects.toLocaleString()} / ${b.avg_comments.toLocaleString()}` : '待同步/0'}
                     </span>
                 </td>
-                <td style="font-size: 0.9rem; font-style: italic; color: var(--ink-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <td style="font-size: 0.9rem; font-style: italic; color: var(--ink-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;">
                     ${latestTitle}
                 </td>
-                <td style="font-size: 0.85rem; color: var(--ink-tertiary);">${latestTime}</td>
-                <td>
+                <td style="font-size: 0.85rem; color: var(--ink-tertiary); white-space: nowrap; vertical-align: middle;">${latestTime}</td>
+                <td style="white-space: nowrap; vertical-align: middle;">
                     ${actionsHtml}
                 </td>
             `;
@@ -1045,11 +1061,36 @@ async function loadBloggersList() {
             tableBody.appendChild(tr);
         });
 
-        // 绑定双击编辑事件
+        // 绑定双击编辑与单双击事件区分处理
         tableBody.querySelectorAll(".editable-field").forEach(el => {
-            el.addEventListener("dblclick", (e) => {
-                startInlineEdit(e.currentTarget);
-            });
+            let clickTimer = null;
+            const field = el.getAttribute("data-field");
+            
+            if (field === "home_url") {
+                el.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    const url = el.getAttribute("data-url");
+                    if (!url || el.classList.contains("editing")) return;
+                    
+                    if (clickTimer) clearTimeout(clickTimer);
+                    clickTimer = setTimeout(() => {
+                        window.open(url, "_blank");
+                    }, 250);
+                });
+                
+                el.addEventListener("dblclick", (e) => {
+                    e.stopPropagation();
+                    if (clickTimer) {
+                        clearTimeout(clickTimer);
+                        clickTimer = null;
+                    }
+                    startInlineEdit(e.currentTarget);
+                });
+            } else {
+                el.addEventListener("dblclick", (e) => {
+                    startInlineEdit(e.currentTarget);
+                });
+            }
         });
 
         // 2. 渲染网格卡片视图
@@ -1103,7 +1144,7 @@ async function loadBloggersList() {
             }
         }
     } catch (e) {
-        tableBody.innerHTML = `<tr><td colspan="7" style="color: var(--accent-primary)">数据加载失败</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="9" style="color: var(--accent-primary)">数据加载失败</td></tr>`;
         gridContainer.innerHTML = `<div class="lead-text" style="color: var(--accent-primary)">无法加载博主列表。</div>`;
     }
 }
@@ -1115,11 +1156,37 @@ function startInlineEdit(el) {
     
     const bloggerId = el.getAttribute("data-id");
     const field = el.getAttribute("data-field");
-    const originalValue = el.innerText === "双击配置个人主页链接..." ? "" : el.innerText;
+    let originalValue = el.innerText;
+    if (field === "home_url") {
+        originalValue = el.getAttribute("data-url") || "";
+    } else if (originalValue === "未配置 (双击设置)" || originalValue === "双击配置个人主页链接...") {
+        originalValue = "";
+    }
     
-    const input = document.createElement("input");
-    input.type = "text";
-    input.value = originalValue;
+    let input;
+    if (field === "platform") {
+        input = document.createElement("select");
+        const optionsData = [
+            { value: "douyin", text: "抖音" },
+            { value: "bilibili", text: "B站" },
+            { value: "xiaohongshu", text: "小红书" },
+            { value: "wechat_channels", text: "视频号" }
+        ];
+        optionsData.forEach(opt => {
+            const option = document.createElement("option");
+            option.value = opt.value;
+            option.textContent = opt.text;
+            if (originalValue === opt.text || originalValue === opt.value) {
+                option.selected = true;
+            }
+            input.appendChild(option);
+        });
+    } else {
+        input = document.createElement("input");
+        input.type = "text";
+        input.value = originalValue;
+    }
+    
     input.style.width = "100%";
     input.style.fontFamily = field === "home_url" ? "var(--font-mono)" : "var(--font-sans)";
     input.style.fontSize = el.style.fontSize;
@@ -1133,7 +1200,9 @@ function startInlineEdit(el) {
     el.innerHTML = "";
     el.appendChild(input);
     input.focus();
-    input.select();
+    if (input.select) {
+        input.select();
+    }
     
     let finished = false;
     
@@ -1142,7 +1211,14 @@ function startInlineEdit(el) {
         finished = true;
         
         const newValue = input.value.trim();
-        if (save && newValue !== originalValue) {
+        let hasChanged = newValue !== originalValue;
+        if (field === "platform") {
+            const textMap = { "抖音": "douyin", "B站": "bilibili", "小红书": "xiaohongshu", "视频号": "wechat_channels" };
+            const origValNormalized = textMap[originalValue] || originalValue;
+            hasChanged = newValue !== origValNormalized;
+        }
+        
+        if (save && hasChanged) {
             el.innerText = "保存中...";
             try {
                 let url;
@@ -1153,6 +1229,9 @@ function startInlineEdit(el) {
                 } else if (field === "category") {
                     url = `${API_BASE}/api/bloggers/${bloggerId}/category`;
                     payload = { category: newValue };
+                } else if (field === "platform") {
+                    url = `${API_BASE}/api/bloggers/${bloggerId}/platform`;
+                    payload = { platform: newValue };
                 } else {
                     url = `${API_BASE}/api/bloggers/${bloggerId}/name`;
                     payload = { name: newValue };
@@ -1176,16 +1255,26 @@ function startInlineEdit(el) {
                 } else {
                     const err = await res.json();
                     showToast(`修改失败: ${err.detail || "冲突或错误"}`, "error");
-                    el.innerText = originalValue || "";
-                    el.classList.remove("editing");
+                    resetElState();
                 }
             } catch (err) {
                 showToast("网络请求失败", "error");
-                el.innerText = originalValue || (field === "home_url" ? "双击配置个人主页链接..." : "");
-                el.classList.remove("editing");
+                resetElState();
             }
         } else {
-            el.innerText = originalValue || (field === "home_url" ? "双击配置个人主页链接..." : "");
+            resetElState();
+        }
+
+        function resetElState() {
+            if (field === "home_url") {
+                const urlVal = originalValue;
+                el.innerHTML = urlVal ? "主页链接 ↗" : "未配置 (双击设置)";
+                el.setAttribute("data-url", urlVal);
+                el.style.color = urlVal ? "var(--accent-primary)" : "var(--ink-tertiary)";
+                el.style.borderBottomColor = urlVal ? "var(--accent-primary)" : "var(--ink-tertiary)";
+            } else {
+                el.innerText = originalValue || "";
+            }
             el.classList.remove("editing");
         }
     };
@@ -1247,7 +1336,11 @@ async function loadAllWorksTimeline() {
             const isUrl = note.desc && (note.desc.startsWith("http://") || note.desc.startsWith("https://"));
             const isFailed = note.desc && note.desc.startsWith("[转录失败]");
             if (isUrl) {
-                descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">⏳ 视频已导入，后台语音转录队列正在排队处理中... (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+                if (note.is_transcribe === 0) {
+                    descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">🚫 语音转录已关闭 (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+                } else {
+                    descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">⏳ 视频已导入，后台语音转录队列正在排队处理中... (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+                }
             } else if (isFailed) {
                 const cleanUrl = note.desc.includes("http") ? note.desc.substring(note.desc.indexOf("http")) : "#";
                 descHtml = `<span style="color: var(--accent-primary); font-size: 0.82rem; font-style: italic;">❌ 语音转译失败 (Whisper 服务繁忙)。原视频链接: <a href="${cleanUrl}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">点击去原视频播放</a></span>`;
@@ -1372,6 +1465,28 @@ async function executeDelete(bloggerId) {
         showToast("网络连接失败，请确认后端服务状态。", "error");
     }
 }
+
+async function toggleBloggerTranscribe(bloggerId, currentVal) {
+    const newVal = currentVal === 0 ? 1 : 0;
+    try {
+        const res = await fetch(`${API_BASE}/api/bloggers/${bloggerId}/is_transcribe`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ is_transcribe: newVal })
+        });
+        if (res.ok) {
+            showToast(newVal === 1 ? "已开启该账号的语音转录功能" : "已关闭该账号的语音转录功能，后续将只获取内容不进行转录", "success");
+            loadBloggersList();
+        } else {
+            const err = await res.json();
+            showToast(`操作失败: ${err.detail || "未知错误"}`, "error");
+        }
+    } catch (e) {
+        showToast("网络连接失败，请确认后端服务状态。", "error");
+    }
+}
+window.toggleBloggerTranscribe = toggleBloggerTranscribe;
+
 
 // 加载指定博主的深度蒸馏细节
 async function loadBloggerDetail(bloggerName) {
@@ -1810,7 +1925,11 @@ async function loadBloggerNotesList(bloggerName) {
             const isUrl = note.desc && (note.desc.startsWith("http://") || note.desc.startsWith("https://"));
             const isFailed = note.desc && note.desc.startsWith("[转录失败]");
             if (isUrl) {
-                descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">⏳ 视频已导入，后台语音转录队列正在排队处理中... (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+                if (note.is_transcribe === 0) {
+                    descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">🚫 语音转录已关闭 (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+                } else {
+                    descHtml = `<span style="color: var(--ink-secondary); font-size: 0.82rem; font-style: italic;">⏳ 视频已导入，后台语音转录队列正在排队处理中... (直链: <a href="${note.desc}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">在新窗口播放</a>)</span>`;
+                }
             } else if (isFailed) {
                 const cleanUrl = note.desc.includes("http") ? note.desc.substring(note.desc.indexOf("http")) : "#";
                 descHtml = `<span style="color: var(--accent-primary); font-size: 0.82rem; font-style: italic;">❌ 语音转译失败 (Whisper 服务繁忙)。原视频链接: <a href="${cleanUrl}" target="_blank" style="color: var(--accent-primary); text-decoration: underline;">点击去原视频播放</a></span>`;
@@ -2056,6 +2175,7 @@ async function loadSettingsPageData() {
         document.getElementById("setting-transcribe-interval").value = settings.transcribe_interval || 5;
         document.getElementById("setting-headless").value = settings.headless !== false ? "true" : "false";
         document.getElementById("setting-enable-transcribe").value = settings.enable_transcribe !== false ? "true" : "false";
+        document.getElementById("setting-enable-auto-agent").value = settings.enable_auto_agent !== false ? "true" : "false";
         
         document.getElementById("setting-enable-auto-crawl").value = settings.enable_auto_crawl !== false ? "true" : "false";
         document.getElementById("setting-crawl-time").value = settings.crawl_time || "03:00";
@@ -2317,6 +2437,7 @@ async function handleSystemSettingsSubmit(e) {
     const transcribe_interval = parseInt(document.getElementById("setting-transcribe-interval").value);
     const headless = document.getElementById("setting-headless").value === "true";
     const enable_transcribe = document.getElementById("setting-enable-transcribe").value === "true";
+    const enable_auto_agent = document.getElementById("setting-enable-auto-agent").value === "true";
     
     const enable_auto_crawl = document.getElementById("setting-enable-auto-crawl").value === "true";
     const crawl_time = document.getElementById("setting-crawl-time").value.trim();
@@ -2343,6 +2464,7 @@ async function handleSystemSettingsSubmit(e) {
                 transcribe_interval, 
                 headless, 
                 enable_transcribe,
+                enable_auto_agent,
                 enable_auto_crawl,
                 crawl_time,
                 enable_feishu,
@@ -2835,149 +2957,105 @@ async function loadOAuthPageData() {
 
 // 全局终端日志轮询定时器
 let googleTerminalPollTimer = null;
-let openaiTerminalPollTimer = null;
+let activeTerminals = {}; // provider -> { term, ws }
 
-// 3. 启动后台交互式终端登录
+// 3. 开启网页交互式终端登录 (通过 xterm.js + PTY WebSocket 双向传输)
 async function startTerminalAuth(provider) {
-    const logBox = document.getElementById(`${provider}-terminal-log`);
-    const inputRow = document.getElementById(`${provider}-terminal-input-row`);
+    const container = document.getElementById(`${provider}-terminal-container`);
     const killBtn = document.getElementById(`btn-${provider}-terminal-kill`);
     
-    logBox.style.display = "block";
-    logBox.textContent = "[System] 正在拉起登录终端，请稍候...\n";
-    inputRow.style.display = "none";
+    if (!container) return;
+    container.style.display = "block";
+    container.innerHTML = ""; // 清空之前的内容
     killBtn.style.display = "inline-block";
     
-    try {
-        const res = await fetch(`${API_BASE}/api/auth/terminal/start`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider })
-        });
-        const json = await res.json();
-        if (res.ok && json.status === "success") {
-            showToast("终端登录进程已成功启动！", "info");
-            
-            // 启动定时轮询
-            if (provider === "google") {
-                if (googleTerminalPollTimer) clearInterval(googleTerminalPollTimer);
-                googleTerminalPollTimer = setInterval(() => pollTerminalLogs("google"), 1000);
-            } else {
-                if (openaiTerminalPollTimer) clearInterval(openaiTerminalPollTimer);
-                openaiTerminalPollTimer = setInterval(() => pollTerminalLogs("openai"), 1000);
-            }
-        } else {
-            logBox.textContent += `[System Error] 启动失败: ${json.detail || "未知异常"}\n`;
-            killBtn.style.display = "none";
+    // 初始化 xterm.js
+    const term = new Terminal({
+        cursorBlink: true,
+        cursorStyle: "block",
+        theme: {
+            background: "#1a1a1a",
+            foreground: "#f0f0f0",
+            cursor: "#00ff00"
         }
-    } catch (err) {
-        logBox.textContent += `[System Error] 网络请求异常: ${err.message}\n`;
+    });
+
+    // 载入 FitAddon 使得终端自适应宽度和高度，不被挤压
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    
+    term.open(container);
+    
+    // 延时进行适配以保证 DOM 彻底渲染完毕，并自动聚焦以接受键盘输入
+    setTimeout(() => {
+        try {
+            fitAddon.fit();
+            term.focus();
+        } catch (e) {
+            console.error("Fit terminal failed:", e);
+        }
+    }, 100);
+
+    // 绑定点击事件：点击容器内任何地方都强制聚焦终端，以便随时输入
+    container.addEventListener("click", () => {
+        term.focus();
+    });
+
+    term.write("[System] 正在连接 PTY 伪终端...\r\n");
+
+    // 建立 WebSocket 连接
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/api/auth/terminal/ws?provider=${provider}`;
+    const ws = new WebSocket(wsUrl);
+    
+    activeTerminals[provider] = { term, ws };
+
+    // 兜底粘贴逻辑：如果通过浏览器右键或快捷键向容器粘贴，自动捕获并发送给终端
+    container.addEventListener("paste", (e) => {
+        e.preventDefault();
+        const clipboardData = e.clipboardData || window.clipboardData;
+        const text = clipboardData.getData("text");
+        if (text && ws.readyState === WebSocket.OPEN) {
+            ws.send(text);
+        }
+    });
+    
+    ws.onmessage = (event) => {
+        term.write(event.data);
+    };
+    
+    term.onData((data) => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(data);
+        }
+    });
+    
+    ws.onclose = () => {
+        term.write("\r\n[System] 终端会话已断开连接。\r\n");
         killBtn.style.display = "none";
-    }
-}
-
-// 3.5. 轮询获取终端日志
-async function pollTerminalLogs(provider) {
-    const logBox = document.getElementById(`${provider}-terminal-log`);
-    const inputRow = document.getElementById(`${provider}-terminal-input-row`);
-    const killBtn = document.getElementById(`btn-${provider}-terminal-kill`);
+        delete activeTerminals[provider];
+        // 探测进程结束 2 秒后刷新绑定状态
+        setTimeout(loadOAuthPageData, 2000);
+    };
     
-    try {
-        const res = await fetch(`${API_BASE}/api/auth/terminal/poll`);
-        const data = await res.json();
-        if (res.ok && data.status === "success") {
-            // 对日志内容进行正则匹配提取，将 http/https 链接替换为可点击的 <a> 标签
-            let formattedLogs = data.logs;
-            
-            // 超链接转换正则表达式
-            const urlRegex = /(https?:\/\/[^\s\r\n\t]+)/gi;
-            
-            // 由于 logs 输出在 pre 标签中，我们可以用 innerHTML，但需要防止 XSS，先做转义
-            const escapedLogs = formattedLogs
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-                
-            const linkedLogs = escapedLogs.replace(urlRegex, (url) => {
-                return `<a href="${url}" target="_blank" style="color: var(--accent-primary); text-decoration: underline; font-weight: bold;">${url}</a>`;
-            });
-            
-            logBox.innerHTML = linkedLogs;
-            
-            // 滚动到最底部
-            logBox.scrollTop = logBox.scrollHeight;
-            
-            if (data.is_running) {
-                // 如果运行中，且日志中包含需要输入的词，如 "code", "token", "验证码", "enter", "key"，则显示输入框
-                const logLower = formattedLogs.toLowerCase();
-                if (logLower.includes("enter") || logLower.includes("code") || logLower.includes("token") || logLower.includes("验证码") || logLower.includes("key") || logLower.includes("输入")) {
-                    inputRow.style.display = "flex";
-                }
-            } else {
-                // 已退出，清除定时器
-                if (provider === "google") {
-                    clearInterval(googleTerminalPollTimer);
-                    googleTerminalPollTimer = null;
-                } else {
-                    clearInterval(openaiTerminalPollTimer);
-                    openaiTerminalPollTimer = null;
-                }
-                killBtn.style.display = "none";
-                inputRow.style.display = "none";
-                // 刷新页面状态，因为进程成功运行完可能写入了全局 config
-                setTimeout(loadOAuthPageData, 2000);
-            }
-        }
-    } catch (e) {
-        console.error("轮询终端日志失败:", e);
-    }
+    ws.onerror = (err) => {
+        term.write(`\r\n[System Error] 连接出现异常: ${err.message || "连接失败"}\r\n`);
+    };
 }
 
-// 3.8. 提交验证码到终端
-async function submitTerminalCode(provider) {
-    const codeInput = document.getElementById(`input-${provider}-terminal-code`);
-    const code = codeInput.value.trim();
-    if (!code) {
-        showToast("请输入需要发送给终端的内容", "error");
-        return;
-    }
-    
-    try {
-        const res = await fetch(`${API_BASE}/api/auth/terminal/input`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code })
-        });
-        const json = await res.json();
-        if (res.ok && json.status === "success") {
-            showToast("已成功发送输入", "success");
-            codeInput.value = "";
-        } else {
-            showToast(`发送失败: ${json.detail}`, "error");
-        }
-    } catch (e) {
-        showToast("发送异常", "error");
-    }
-}
-
-// 3.9. 强杀终端进程
+// 3.9. 强杀终端进程并断开连接
 async function killTerminalAuth(provider) {
+    const session = activeTerminals[provider];
     try {
-        const res = await fetch(`${API_BASE}/api/auth/terminal/kill`, { method: "POST" });
-        if (res.ok) {
-            showToast("终端进程已强制中止", "info");
-            if (provider === "google") {
-                clearInterval(googleTerminalPollTimer);
-                googleTerminalPollTimer = null;
-            } else {
-                clearInterval(openaiTerminalPollTimer);
-                openaiTerminalPollTimer = null;
-            }
-            document.getElementById(`btn-${provider}-terminal-kill`).style.display = "none";
-            document.getElementById(`${provider}-terminal-input-row`).style.display = "none";
+        // 请求后端强杀
+        await fetch(`${API_BASE}/api/auth/terminal/kill?provider=${provider}`, { method: "POST" });
+        if (session && session.ws) {
+            session.ws.close();
         }
+        showToast("终端会话已成功中止", "info");
     } catch (e) {
-        showToast("中止失败", "error");
+        showToast("中止终端会话失败", "error");
     }
 }
 
