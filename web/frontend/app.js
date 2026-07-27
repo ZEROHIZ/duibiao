@@ -508,6 +508,36 @@ function setupEventListeners() {
         btnToggleAdd.addEventListener("click", toggleAddBloggerForm);
     }
 
+    // 一键同步得到文案按钮事件
+    const btnSyncBijiNow = document.getElementById("btn-sync-biji-now");
+    if (btnSyncBijiNow) {
+        btnSyncBijiNow.addEventListener("click", () => {
+            showToast("正在提交得到文案自动化同步任务到后台...", "info");
+            fetch(`${API_BASE}/api/biji/sync`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ account_id: "account_01", max_posts: 20 })
+            })
+            .then(res => res.json())
+            .then(json => {
+                if (json.status === "success") {
+                    showToast(`⚡ 得到文案同步任务已启动！正在跳至【任务日志】查看实时输出与二维码...`, "success");
+                    switchTab("logs");
+                    setTimeout(() => {
+                        if (typeof loadLogsPageData === "function") {
+                            loadLogsPageData(json.task_id);
+                        }
+                    }, 500);
+                } else {
+                    showToast(`启动失败: ${json.message || "未知错误"}`, "error");
+                }
+            })
+            .catch(err => {
+                showToast(`网络请求失败: ${err.message}`, "error");
+            });
+        });
+    }
+
     // 新增博主表单提交事件
     const addBloggerForm = document.getElementById("add-blogger-form");
     if (addBloggerForm) {
@@ -2304,6 +2334,14 @@ async function loadSettingsPageTasks() {
             });
         });
         
+        // 自动聚焦逻辑：
+        // 1. 如果用户尚未选定任何任务 (!activeConsoleTaskId)，优先选中最新的进行中任务或顶部任务
+        // 2. 如果用户已经主动点击选择了某个任务，尊重用户的选择，背景刷新时绝不强行抢焦点跳走！
+        if (!activeConsoleTaskId && tasks.length > 0) {
+            const runningTask = tasks.find(t => t.status === "running" || t.status === "queued");
+            selectConsoleTask(runningTask ? runningTask.id : tasks[0].id);
+        }
+
         // 如果有正在运行的任务，且没有全局的轮询机制，就在日志页每 3 秒刷新一次列表
         if (hasActiveTasks && currentTab === "logs") {
             setTimeout(loadSettingsPageTasks, 3000);
@@ -2371,9 +2409,15 @@ function pollConsoleLog(taskId) {
                         
                         // 动态改变截图提示，指导用户进行登录
                         if (json.current_step.includes("扫码登录") && screenshotTitle && screenshotDesc) {
-                            screenshotTitle.textContent = "⚠️ 请使用抖音 APP 扫码登录";
-                            screenshotTitle.style.color = "var(--accent-primary)";
-                            screenshotDesc.textContent = "系统检测到未登录状态。请使用手机抖音 APP 扫描下方二维码完成登录。登录完成后系统将自动刷新页面验证并继续抓取。";
+                            if (taskId.includes("biji") || (json.logs && json.logs.includes("biji"))) {
+                                screenshotTitle.textContent = "⚠️ 请使用微信或得到 APP 扫码登录";
+                                screenshotTitle.style.color = "var(--accent-primary)";
+                                screenshotDesc.textContent = "系统检测到得到 (biji.com) 未登录状态。请使用手机微信或得到 APP 扫描下方二维码完成登录。注意：微信若未绑定得到账号，请先在手机端登录绑定后再扫码。";
+                            } else {
+                                screenshotTitle.textContent = "⚠️ 请使用抖音 APP 扫码登录";
+                                screenshotTitle.style.color = "var(--accent-primary)";
+                                screenshotDesc.textContent = "系统检测到未登录状态。请使用手机抖音 APP 扫描下方二维码完成登录。登录完成后系统将自动刷新页面验证并继续抓取。";
+                            }
                         } else if (screenshotTitle && screenshotDesc) {
                             screenshotTitle.textContent = "异常/验证码截图排查";
                             screenshotTitle.style.color = "";
@@ -2407,8 +2451,8 @@ function pollConsoleLog(taskId) {
                     }
                 }
                 
-                // 如果任务已经结束，则停止轮询，并立即触发一次左侧任务列表刷新
-                if (json.status === "success" || json.status === "failed") {
+                // 如果任务已经结束，则停止轮询，并刷新左侧任务列表
+                if (json.task_status === "success" || json.task_status === "failed" || json.task_status === "completed") {
                     if (consolePollInterval) {
                         clearInterval(consolePollInterval);
                         consolePollInterval = null;

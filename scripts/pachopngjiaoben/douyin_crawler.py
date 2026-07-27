@@ -89,8 +89,6 @@ def extract_title(desc):
     if not desc:
         return "无标题视频"
     first_line = desc.split('\n')[0].strip()
-    if len(first_line) > 25:
-        return first_line[:25] + "..."
     return first_line or "无标题视频"
 
 

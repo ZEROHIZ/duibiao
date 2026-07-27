@@ -231,7 +231,10 @@
                 <div id="blogger-list-view" class="subview active-subview">
                     <!-- Add Blogger Form collapsible -->
                     <div style="margin-bottom: 1.5rem;">
-                        <button id="btn-toggle-add-blogger" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.35rem 0.85rem;">+ 录入监控博主</button>
+                        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                            <button id="btn-toggle-add-blogger" class="btn-text" style="border: 1px solid var(--ink-primary); padding: 0.35rem 0.85rem;">+ 录入监控博主</button>
+                            <button id="btn-sync-biji-now" class="btn-text" style="border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.35rem 0.85rem; font-weight: 600;">⚡ 一键同步得到文案</button>
+                        </div>
                         <div id="add-blogger-form-container" style="display: none; border: 1px solid var(--ink-primary); padding: 1.25rem; margin-top: 0.75rem; background-color: var(--bg-secondary); max-width: 550px;">
                             <h4 class="aside-title" style="margin-bottom: 0.75rem; font-size: 1.05rem;">录入对标账号</h4>
                             <form id="add-blogger-form" class="editorial-form">
@@ -934,6 +937,6 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- UI Logic Script -->
-    <script src="app.js?v=20260727_4"></script>
+    <script src="app.js?v=20260727_5"></script>
 </body>
 </html>

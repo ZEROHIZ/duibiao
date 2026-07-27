@@ -287,3 +287,110 @@
   1. 在 `app.js` 中将链接列改渲染为精美的 `主页链接 ↗` Badge（未配置时显示 `未配置 (双击设置)`），并在节点上挂载 `data-url` 属性存放真实 URL 字符串。
   2. 引入防冲突手势：单击在 250ms 延迟后在新标签页 `window.open` 打开主页；双击在 250ms 内清除单击定时器，自动调起 `<input>` 并初始化填充真实 URL 字符串供编辑。
   3. 在 `style.css` 中为 `.table-container` 与全局加入定制的无底色极简滚动条样式 (`::-webkit-scrollbar`)，彻底移除底轨白色背景 (`background: transparent !important`) 与箭角按钮，使用统一的暖粘土纸面墨色 `var(--ink-tertiary)` 拖拽条，Hover 时高亮为复古陶红/暗夜金 (`var(--accent-primary)`)。
+
+---
+
+## Bug 22: 得到 (biji.com) 爬虫未联动系统无头模式配置且日志输出缓冲延迟
+
+* **发生时间**：2026-07-27
+* **问题现象**：
+  1. 在【系统设置】中把【浏览器运行模式】切换为“关闭无头模式”后，点击一键同步得到文案仍旧在后台静默运行，没有弹出 Chrome 浏览器视窗。
+  2. 任务日志文件无法实时更新输出，必须等到 120 秒超时或任务结束后才一次性爆出所有日志。
+* **主要根源**：
+  1. `app.py` 中的 `/api/biji/sync` 路由未读取 `settings.get("headless")` 配置项，未给 `biji_browser.py` 追加 `--headful` 参数。
+  2. Python 默认在 `subprocess` 中对标准输出 (stdout) 进行 C-stdio 缓冲区留存，导致日志被缓存在内存中直到进程退出；且得到的同步任务未注册进全局 `active_crawl_tasks` 字典中。
+* **解决方案**：
+  1. 在 `app.py` 的 `/api/biji/sync` 路由中自动读取 `load_settings()` 中的 `headless` 开关，当非无头时自动追加 `--headful` 命令行参数。
+  2. 强制传入 `PYTHONUNBUFFERED=1` 环境变量，并在 `run_biji_thread` 中采用按行读取 (`process.stdout`) 与 `f.flush()` 实时清刷写盘。
+  3. 将得到的同步任务注册到 `active_crawl_tasks` 中，并在前端点击同步按钮时自动跳转至【任务日志】选项卡，支持秒级实时刷新日志与扫码二维码展示。
+
+---
+
+## Bug 23: 得到 (biji.com) 登录二维码未渲染至任务控制台下方的截图排查区域
+
+* **发生时间**：2026-07-27
+* **问题现象**：得到抓取提示未登录并生成登录二维码截图后，前端【任务日志】控制台下方的“异常/验证码截图排查”区域仍旧保持隐藏空白，未自动将生成的二维码图片展示给用户扫码。
+* **主要根源**：
+  1. `app.py` 中的 `/api/crawl/status/{task_id}` 接口对日志历史文件查询时，默认返回了空数组 `screenshots: []`，且未能识别 `biji_qr_account_01.png` 截图文件。
+  2. `analyze_task_step` 未将得到截取二维码日志识别为 `⚠️ 等待微信扫码登录中...` 步骤。
+* **解决方案**：
+  1. 在 `app.py` 的 `/api/crawl/status/{task_id}` 路由中扩充截图扫描逻辑：不论是从任务字典还是日志文件读取，均自动扫描 `screenshots/` 目录下匹配任务时间或包含 `biji_qr` 的二维码图片，并回传 URL 数组。
+  2. 升级 `analyze_task_step`，精准捕捉“登录二维码已截取”日志行，设置状态为 `⚠️ 等待微信扫码登录中...`。
+  3. 在 `app.js` 中适配得到提示：“⚠️ 请使用微信或得到 APP 扫码登录”，自动展开并渲染下方二维码图片。
+
+---
+
+## Bug 24: `get_crawler_status` 检索历史日志时报 `NameError: name 'timedelta' is not defined`
+
+* **发生时间**：2026-07-27
+* **问题现象**：在前端【任务日志】中点击查看历史 `biji_sync_xxx.log` 任务日志时，黑框控制台中弹出 `Failed to read agent logs: name 'timedelta' is not defined` 报错。
+* **主要根源**：`app.py` 中的 `/api/crawl/status/{task_id}` 路由在计算历史日志截图时间差时调用了 `timedelta(minutes=10)`，但该函数作用域内未从 `datetime` 模块中导入 `timedelta`。
+* **解决方案**：在 `get_crawler_status` 函数体内加入 `from datetime import timedelta`，彻底解决未定义报错。
+
+---
+
+## Bug 25: 抖音对标爬虫标题省略号截断与得到盲目遍历无干博主问题
+
+* **发生时间**：2026-07-28
+* **问题现象**：
+  1. 抖音对标爬虫抓取入库的视频标题末尾带有 `...` 省略号，未能保存完整文本。
+  2. 得到同步引擎运行时盲目循环得到关注列表中的所有随机账号（如“方师傅”），未以本地数据库待转录博主为驱动目标。
+* **主要根源**：
+  1. `douyin_crawler.py` 的 `extract_title` 函数（第 93 行）对超过 25 字符的标题强制执行了 `[:25] + "..."` 截断。
+  2. `biji_browser.py` 缺乏对本地数据库 `bloggers` 及 `blogger_notes` 待转录状态的先置过滤。
+* **解决方案**：
+  1. 移除 `douyin_crawler.py` 中 `extract_title` 的 25 字符强制截断代码，直接保留完整的 `desc` 标题行，从源头消灭 `...`。
+  2. 将 `biji_browser.py` 重构为**目标驱动**机制：先检索本地主库待转录对标博主卡片；已有 `biji_url` 直接直连作品页，无 `biji_url` 才走知识库寻路与原主页 `url` 比对绑定。
+  3. 提取 `3.json` 原视频 URL 中的抖音数字 ID (`aweme_id`) 与主表 `blogger_notes.id` 100% 绝对精确对齐，并使用全名覆盖修复旧数据库中的省略标题。
+
+---
+
+## Bug 26: 早期历史抓取导致主库博主卡片 `biji_url` 脏数据污染问题
+
+* **发生时间**：2026-07-28
+* **问题现象**：博主『基米叫兽』在主库中的 `biji_url` 被写入了得到博主『方师傅』的作品页链接（`...followName=方师傅`），导致在【直连模式】下直接打开了方师傅的作品页。
+* **主要根源**：在引入【目标驱动】重构之前的历史运行版本中，旧的模糊匹配逻辑在尝试同名关联时，误将未匹配到得到卡片的『基米叫兽』(ID: 314) UPDATE 绑定了方师傅的得到 Follow ID 和 URL。
+* **解决方案**：
+  1. 运行数据修复脚本 `fix_polluted_urls.py`，清除了 `bloggers` 表中所有 `biji_url` 参数与 `bloggers.name` 不匹配的脏数据。
+  2. 在 `biji_browser.py` 中引入**自动链接污染自愈校验**：在【直连模式】前自动解析 `biji_url` 中的 `followName` 参数，若发现与当前博主名不匹配，实时清空脏链接并重转入寻路模式，彻底杜绝历史错链导致张冠李戴。
+
+---
+
+## Bug 27: 前端任务日志查看历史误显二维码截图与控制台非实时更新问题
+
+* **发生时间**：2026-07-28
+* **问题现象**：
+  1. 无论点击列表中的哪个历史任务日志（即使是成功完成的旧日志），下方都固定显示一张包含 `biji_qr_account_01.png` 的二维码截图。
+  2. 右侧控制台在任务执行过程中没有实时刷出最新日志，必须手动刷新页面或重新点击“查看日志”按钮才显示新日志。
+* **主要根源**：
+  1. `app.py` 中的 `get_crawler_status` 接口使用了 `or "biji_qr" in filename` 的无条件判断，导致任何日志查询都匹配并返回了最新的二维码截图 URL。
+  2. `app.py` 返回的 JSON 顶层 `status: "success"` 是 HTTP API 成功标志，而前端 `app.js` 在 `pollConsoleLog` 中误将 `json.status === "success"` 当作任务完成标记，导致第一次请求返回后立即误把 `setInterval` 轮询定时器给 `clearInterval` 销毁了！
+* **解决方案**：
+  1. 在 `app.py` 中严格限制截图过滤：取该任务的实际运行时间窗口（`started_dt - 5分钟` ~ `task_end_dt + 5分钟`），只有落在此时间段内生成的截图才返回；历史无关日志返回空截图数组 `[]`，隐藏截图盒。
+  2. 在 `app.py` 的返回 JSON 中增加独立的 `task_status` 字段（区分 API 响应状态与任务运行状态）；在 `app.js` 中修改为 `json.task_status === "success" || json.task_status === "failed" || json.task_status === "completed"` 时才停止轮询，确保任务运行期间按 1.5 秒频率持续无缝推流实时日志！
+
+---
+
+## Bug 28: 任务刚启动显示“成功”随后又跳回“进行中”与需手动点击查看日志问题
+
+* **发生时间**：2026-07-28
+* **问题现象**：
+  1. 点击触发任务后，任务列表第一秒显示绿色“成功”，几秒后又突然跳回黄色/红色“进行中”。
+  2. 触发新任务后，控制台不会自动选定该新任务，仍需要人工点击“查看日志”按钮。
+* **主要根源**：
+  1. `app.py` 中的 `get_all_agent_tasks` 在扫描日志文件时，忽略了内存中 `active_crawl_tasks` 的实时 `running` 状态，仅凭借 `(now - file_mtime) < 12秒` 来猜测。当进程初始化或日志写入停顿超过 12 秒时，接口直接默认赋了 `status = "success"`（误显示为“成功”）；稍后日志文件写入刷更新时间，又变回了 `running`（变回“进行中”）。
+  2. `app.js` 的 `loadSettingsPageTasks` 在渲染完列表后，未自动联动选定 `status === "running"` 的最新任务。
+* **解决方案**：
+  1. 在 `app.py` 的 `get_all_agent_tasks` 中，优先查询 `active_crawl_tasks` 内存中的真实运行状态。只要后台线程还在 `running`，任务状态 100% 固定为 `running`，彻底消灭状态跳变。
+  2. 在 `app.js` 中实现**新运行任务自动盲选聚焦**：当检测到列表中有新启动的 `running` 任务或尚未选定任务时，自动触发 `selectConsoleTask` 自动切入最新任务并开启实时控制台推流。
+
+---
+
+## Bug 29: GET `/api/crawl/tasks` 报 HTTP 500 `KeyError: 'created_at'` 报错
+
+* **发生时间**：2026-07-28
+* **问题现象**：前端在轮询 `/api/crawl/tasks` 接口时，控制台抛出 `HTTP 500 Internal Server Error`，日志显示 `KeyError: 'created_at'`。
+* **主要根源**：`biji_sync` 在向内存字典 `active_crawl_tasks` 注册运行任务时，使用了 `"task_id"` 和 `"started_at"` 键名，但缺少了 `"id"` 和 `"created_at"` 字段；导致 `get_all_crawl_tasks` 执行 `tasks_list.sort(key=lambda x: x["created_at"])` 时因为不存在 `created_at` 键而抛出 KeyError 异常。
+* **解决方案**：
+  1. 在 `biji_sync` 的 `active_crawl_tasks` 注册字典中补齐 `"id"` 与 `"created_at"` 字段。
+  2. 在 `get_all_crawl_tasks` 中使用 `.get("created_at") or .get("started_at") or ""` 进行防御性安全取值，防止因字段缺漏导致 500 崩溃。

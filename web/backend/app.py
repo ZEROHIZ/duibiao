@@ -1823,6 +1823,124 @@ def update_settings_endpoint(settings: SettingsUpdate):
         raise HTTPException(status_code=500, detail="Failed to save settings")
 
 
+# === Get 笔记 (biji.com) 自动化同步接口 ===
+
+class BijiSyncRequest(BaseModel):
+    account_id: str = "account_01"
+    max_posts: int = 20
+
+@app.post("/api/biji/sync")
+def trigger_biji_sync_endpoint(body: BijiSyncRequest):
+    """手动触发 Get 笔记 (biji.com) 自动化同步"""
+    import subprocess
+    task_id = f"biji_sync_{int(time.time())}"
+    log_dir = os.path.join(ROOT_DIR, "data", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f"{task_id}.log")
+
+    settings = load_settings()
+    is_headless = settings.get("headless", True)
+    if isinstance(is_headless, str):
+        is_headless = (is_headless.lower() == "true")
+
+    cmd = [
+        sys.executable,
+        os.path.join(ROOT_DIR, "scripts", "biji_browser.py"),
+        "--account", body.account_id,
+        "--max-posts", str(body.max_posts)
+    ]
+    if not is_headless:
+        cmd.append("--headful")
+
+    # 注册到全局 active_crawl_tasks 以便前端任务日志实时展示与监控
+    now_iso = datetime.now().isoformat()
+    with tasks_lock:
+        active_crawl_tasks[task_id] = {
+            "id": task_id,
+            "task_id": task_id,
+            "blogger": f"biji_{body.account_id}",
+            "status": "running",
+            "created_at": now_iso,
+            "started_at": now_iso,
+            "finished_at": None,
+            "log_path": log_path,
+            "task_type": "biji_sync"
+        }
+
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUNBUFFERED"] = "1"
+
+    def run_biji_thread():
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=env,
+                cwd=ROOT_DIR
+            )
+            
+            with tasks_lock:
+                active_crawl_tasks[task_id]["process"] = proc
+
+            with open(log_path, "w", encoding="utf-8", buffering=1) as f:
+                f.write(f"=== Get 笔记自动化同步任务 {task_id} 启动 ===\n")
+                f.write(f"账号: {body.account_id}, 单博主配额: {body.max_posts}\n\n")
+                f.flush()
+
+                # 实时按行读取并清刷输出，实现控制台/前端实时日志秒级更新
+                for line in proc.stdout:
+                    f.write(line)
+                    f.flush()
+
+            proc.wait()
+            with tasks_lock:
+                if proc.returncode == 0:
+                    active_crawl_tasks[task_id]["status"] = "success"
+                else:
+                    active_crawl_tasks[task_id]["status"] = "failed"
+                active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+        except Exception as e:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n[Error] 运行 biji_browser.py 失败: {e}\n")
+                f.flush()
+            with tasks_lock:
+                active_crawl_tasks[task_id]["status"] = "failed"
+                active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+
+    threading.Thread(target=run_biji_thread, daemon=True).start()
+    return {
+        "status": "success",
+        "task_id": task_id,
+        "log_path": log_path,
+        "qr_code_url": f"/screenshots/biji_qr_{body.account_id}.png",
+        "message": f"Get 笔记同步任务 [{task_id}] 已在后台启动"
+    }
+
+@app.get("/api/biji/accounts")
+def get_biji_accounts_endpoint():
+    """获取已录入的 Get 笔记账号列表与登录状态"""
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if not os.path.exists(db_path):
+        return []
+    try:
+        conn = sqlite3.connect(db_path, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM biji_browser_accounts ORDER BY last_login_at DESC;")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"[Biji Accounts API] Error: {e}")
+        return []
+
+
 # === 智能体 OAuth 认证接口 (FastAPI) ===
 
 class AuthExchangeRequest(BaseModel):
@@ -2974,17 +3092,17 @@ def run_crawler_pipeline(blogger: str = "all", max_videos: int = None):
 def get_all_crawl_tasks():
     with tasks_lock:
         tasks_list = list(active_crawl_tasks.values())
-    tasks_list.sort(key=lambda x: x["created_at"], reverse=True)
+    tasks_list.sort(key=lambda x: x.get("created_at") or x.get("started_at") or "", reverse=True)
     
     clean_list = []
     for t in tasks_list:
         clean_list.append({
-            "id": t["id"],
-            "blogger": t["blogger"],
-            "status": t["status"],
-            "created_at": t["created_at"],
-            "started_at": t["started_at"],
-            "finished_at": t["finished_at"]
+            "id": t.get("id") or t.get("task_id", ""),
+            "blogger": t.get("blogger", "未知"),
+            "status": t.get("status", "running"),
+            "created_at": t.get("created_at") or t.get("started_at", ""),
+            "started_at": t.get("started_at", ""),
+            "finished_at": t.get("finished_at")
         })
     return clean_list
 
@@ -3051,6 +3169,143 @@ def get_transcribe_tasks():
     tasks_list.sort(key=lambda x: (status_order.get(x["status"], 4), x["created_at"] or ""))
     return tasks_list
 
+def analyze_task_step(logs):
+    if not logs:
+        return "排队中"
+    
+    # 检查是否有错误/失败
+    if "错误：" in logs or "运行发生异常错误:" in logs or "❌ 阶段失败" in logs or "Failed to read logs" in logs or "超时" in logs:
+        for line in reversed(logs.split("\n")):
+            if "错误：" in line or "运行发生异常错误:" in line or "❌ 阶段失败" in line or "超时" in line:
+                return f"同步状态: {line.strip()}"
+        return "同步异常终止"
+        
+    if "🎉 得到 Playwright 抓取流程全部完成！" in logs or "🎉 同步流水线全部成功！" in logs or "流水线同步运行汇总: 1/1 成功" in logs:
+        return "同步完成"
+        
+    if "登录二维码已截取" in logs or "等待扫码登录中" in logs or "请使用手机" in logs and "扫码登录" in logs:
+        return "⚠️ 等待微信扫码登录中..."
+
+    if "[验证码拦截]" in logs or "手动滑块解锁" in logs:
+        return "遇到验证码拦截 (等待手动滑块解锁)"
+        
+    # 从流水线反向查找当前运行的阶段
+    current_phase = ""
+    for line in reversed(logs.split("\n")):
+        if ">>> 开始执行阶段:" in line:
+            current_phase = line.split(">>> 开始执行阶段:")[-1].strip()
+            break
+        if "开始同步博主:" in line:
+            current_phase = line.strip()
+            break
+            
+    # 从爬虫日志反向查找细分动作
+    for line in reversed(logs.split("\n")):
+        if "模拟键盘按下" in line or "ArrowDown" in line:
+            return f"{current_phase} - {line.strip()}"
+        if "当前处理视频 ID" in line or "打开作品详情" in line:
+            return f"{current_phase} - {line.strip()}"
+        if "正在访问目标主页" in line or "正在检测登录状态" in line:
+            return f"{current_phase} - 正在访问得到/主页"
+            
+    if current_phase:
+        return current_phase
+        
+    return "正在执行"
+
+@app.get("/api/crawl/status/{task_id}")
+def get_crawler_status(task_id: str):
+    from datetime import timedelta
+    is_crawl = False
+    task_info = None
+    
+    with tasks_lock:
+        if task_id in active_crawl_tasks:
+            task_info = active_crawl_tasks[task_id]
+            is_crawl = True
+        elif task_id in active_transcribe_tasks:
+            task_info = active_transcribe_tasks[task_id]
+
+    logs = ""
+    started_dt = None
+    
+    if not task_info:
+        # 探测是否是 data/logs 下的任务日志文件 (包含 .log 后缀或无后缀)
+        log_filename = task_id if task_id.endswith(".log") else f"{task_id}.log"
+        agent_log_path = os.path.join(ROOT_DIR, "data", "logs", log_filename)
+        if os.path.exists(agent_log_path):
+            try:
+                mtime = os.path.getmtime(agent_log_path)
+                started_dt = datetime.fromtimestamp(mtime) - timedelta(minutes=10)
+                with open(agent_log_path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                    logs = "".join(lines[-150:])
+            except Exception as e:
+                logs = f"Failed to read agent logs: {e}"
+                
+            current_step = analyze_task_step(logs)
+            is_crawl = True
+        else:
+            return {"status": "error", "message": "Task not found"}
+    else:
+        log_path = task_info["log_path"]
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                    logs = "".join(lines[-150:])
+            except Exception as e:
+                logs = f"Failed to read logs: {e}"
+        if task_info.get("started_at"):
+            try:
+                started_dt = datetime.fromisoformat(task_info["started_at"])
+            except:
+                pass
+                
+        if is_crawl:
+            current_step = analyze_task_step(logs)
+        else:
+            current_step = task_info.get("current_step", "正在进行后台语音转录...")
+
+    # 扫描与当前任务运行时间匹配的截图文件 (包括 biji 二维码与通用截图)
+    screenshots = []
+    screenshots_dir = os.path.join(ROOT_DIR, "screenshots")
+    if os.path.exists(screenshots_dir) and started_dt:
+        try:
+            # 确定任务的时间窗口 (启动时间 - 5分钟 ~ 结束时间 + 5分钟)
+            task_end_dt = datetime.now() + timedelta(minutes=5)
+            if task_info and task_info.get("finished_at"):
+                try:
+                    task_end_dt = datetime.fromisoformat(task_info["finished_at"]) + timedelta(minutes=5)
+                except:
+                    pass
+
+            for filename in os.listdir(screenshots_dir):
+                if filename.lower().endswith((".png", ".jpg", ".jpeg")):
+                    filepath = os.path.join(screenshots_dir, filename)
+                    mtime = os.path.getmtime(filepath)
+                    mtime_dt = datetime.fromtimestamp(mtime)
+                    
+                    # 严格判定：截图修改时间必须落在该任务的实际运行时间窗口内
+                    if (started_dt - timedelta(minutes=5)) <= mtime_dt <= task_end_dt:
+                        screenshots.append(f"/screenshots/{filename}?t={int(mtime)}")
+        except Exception as err:
+            print(f"Error scanning screenshots: {err}")
+            
+    task_status = "running"
+    if task_info:
+        task_status = task_info.get("status", "running")
+    else:
+        task_status = "completed"
+
+    return {
+        "status": "success",
+        "task_status": task_status,
+        "logs": logs,
+        "current_step": current_step,
+        "screenshots": screenshots
+    }
+
 @app.get("/api/agent/tasks")
 def get_all_agent_tasks():
     log_dir = os.path.join(ROOT_DIR, "data", "logs")
@@ -3059,6 +3314,12 @@ def get_all_agent_tasks():
         
     tasks = []
     import datetime
+    
+    with tasks_lock:
+        active_paths_map = {
+            os.path.basename(info.get("log_path", "")): info.get("status", "running")
+            for info in active_crawl_tasks.values() if info.get("log_path")
+        }
     
     for filename in os.listdir(log_dir):
         if not filename.endswith(".log"):
@@ -3073,7 +3334,9 @@ def get_all_agent_tasks():
         
         # 默认名称
         blogger_desc = filename
-        if filename.startswith("hothook_"):
+        if filename.startswith("biji_sync_"):
+            blogger_desc = f"⚡ Get 笔记文案同步 ({filename})"
+        elif filename.startswith("hothook_"):
             note_id = filename.replace("hothook_", "").replace(".log", "")
             blogger_desc = f"🤖 AI 拆解: 视频 ID {note_id}"
             try:
@@ -3095,18 +3358,22 @@ def get_all_agent_tasks():
         elif filename == "cli_install.log":
             blogger_desc = "📦 智能体 CLI 客户端部署安装"
             
-        status = "success"
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-                if "=== HotHook 智能体拆解任务完成" in content or "=== 任务完成" in content or "退出码: 0" in content or "Exit code: 0" in content:
-                    status = "success"
-                elif "❌" in content or "Failed" in content or "Error" in content:
-                    status = "failed"
-                elif (datetime.datetime.now() - dt).total_seconds() < 12:
-                    status = "running"
-        except:
-            pass
+        # 优先从内存状态中读取真实运行状态，防止文件未刷新导致的误判
+        if filename in active_paths_map:
+            status = active_paths_map[filename]
+        else:
+            status = "success"
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                    if "=== HotHook 智能体拆解任务完成" in content or "=== 任务完成" in content or "退出码: 0" in content or "Exit code: 0" in content or "🎉 得到 Playwright 抓取流程全部完成" in content:
+                        status = "success"
+                    elif "❌" in content or "Failed" in content or "Error" in content:
+                        status = "failed"
+                    elif (datetime.datetime.now() - dt).total_seconds() < 15:
+                        status = "running"
+            except:
+                pass
             
         tasks.append({
             "id": filename,
