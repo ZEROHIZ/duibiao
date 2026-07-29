@@ -538,7 +538,37 @@ function setupEventListeners() {
         });
     }
 
-    // 新增博主表单提交事件
+    // 展开/收起录入博主表单时拉取得到账号列表
+    const btnToggleAddBlogger = document.getElementById("btn-toggle-add-blogger");
+    if (btnToggleAddBlogger) {
+        btnToggleAddBlogger.addEventListener("click", () => {
+            loadBijiAccountsList();
+        });
+    }
+
+    const bijiAccountSelect = document.getElementById("add-form-biji-account");
+    const newAccountBox = document.getElementById("new-account-input-box");
+    if (bijiAccountSelect) {
+        bijiAccountSelect.addEventListener("change", (e) => {
+            const val = e.target.value;
+            if (newAccountBox) {
+                newAccountBox.style.display = val === "new" ? "block" : "none";
+            }
+            loadBijiTopicsForAccount(val);
+        });
+    }
+
+    const bijiTopicSelect = document.getElementById("add-form-biji-topic");
+    const newTopicBox = document.getElementById("new-topic-input-box");
+    if (bijiTopicSelect) {
+        bijiTopicSelect.addEventListener("change", (e) => {
+            const val = e.target.value;
+            if (newTopicBox) {
+                newTopicBox.style.display = val === "new" ? "block" : "none";
+            }
+        });
+    }
+
     const addBloggerForm = document.getElementById("add-blogger-form");
     if (addBloggerForm) {
         addBloggerForm.addEventListener("submit", handleAddBloggerSubmit);
@@ -952,18 +982,99 @@ function toggleAddBloggerForm() {
     }
 }
 
+async function loadBijiAccountsList() {
+    const accountSelect = document.getElementById("add-form-biji-account");
+    if (!accountSelect) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/biji/accounts`);
+        const json = await res.json();
+        if (json.status === "success" && json.accounts) {
+            accountSelect.innerHTML = json.accounts.map(acc => 
+                `<option value="${acc.account_id}">${acc.alias_name || acc.account_id} (${acc.status === 'LOGGED_IN' ? '已就绪' : '新账号'})</option>`
+            ).join("") + `<option value="new">➕ 新增得到账号...</option>`;
+            
+            if (json.accounts.length > 0) {
+                loadBijiTopicsForAccount(json.accounts[0].account_id);
+            }
+        }
+    } catch (e) {
+        console.error("加载得到账号列表失败:", e);
+    }
+}
+
+async function loadBijiTopicsForAccount(accountId) {
+    const topicSelect = document.getElementById("add-form-biji-topic");
+    if (!topicSelect) return;
+    if (accountId === "new") {
+        topicSelect.innerHTML = `<option value="">暂不自动添加至得到</option><option value="new">➕ 新建得到知识库...</option>`;
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/biji/topics/${accountId}`);
+        const json = await res.json();
+        if (json.status === "success" && json.topics) {
+            topicSelect.innerHTML = `<option value="">暂不自动添加至得到</option>` + json.topics.map(t => 
+                `<option value="${t.alias}">${t.name} (${t.alias})</option>`
+            ).join("") + `<option value="new">➕ 新建得到知识库...</option>`;
+        }
+    } catch (e) {
+        console.error("加载得到知识库列表失败:", e);
+    }
+}
+
 async function handleAddBloggerSubmit(e) {
     e.preventDefault();
     const nameInput = document.getElementById("add-form-name");
     const urlInput = document.getElementById("add-form-url");
     const platformSelect = document.getElementById("add-form-platform");
+    const bijiAccountSelect = document.getElementById("add-form-biji-account");
+    const newAccountInput = document.getElementById("add-form-new-account-alias");
+    const bijiTopicSelect = document.getElementById("add-form-biji-topic");
+    const newTopicInput = document.getElementById("add-form-new-topic-name");
 
     if (!nameInput) return;
 
+    let selectedAccountId = bijiAccountSelect ? bijiAccountSelect.value : "account_01";
+    let selectedTopicAlias = bijiTopicSelect ? bijiTopicSelect.value : "";
+    let selectedTopicName = "";
+
+    // 1. 新增得到账号
+    if (selectedAccountId === "new") {
+        const aliasVal = newAccountInput ? newAccountInput.value.trim() : "";
+        try {
+            showToast("正在创建新得到浏览器账号...", "info");
+            const accRes = await fetch(`${API_BASE}/api/biji/accounts`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ alias_name: aliasVal })
+            });
+            const accJson = await accRes.json();
+            if (accJson.status === "success") {
+                selectedAccountId = accJson.account.account_id;
+                showToast(`✓ 已成功创建账号凭据: ${accJson.account.alias_name}`, "success");
+            }
+        } catch (err) {
+            alert(`创建得到账号失败: ${err.message}`);
+            return;
+        }
+    }
+
+    // 2. 如果选择了新建得到知识库
+    if (selectedTopicAlias === "new") {
+        selectedTopicName = newTopicInput ? newTopicInput.value.trim() : "";
+        if (!selectedTopicName) {
+            alert("请输入新知识库的名称！");
+            return;
+        }
+    }
+
     const payload = {
-        name: nameInput.value.trim(),
+        name: nameInput ? nameInput.value.trim() : "",
         home_url: urlInput ? urlInput.value.trim() : "",
-        platform: platformSelect ? platformSelect.value : "douyin"
+        platform: platformSelect ? platformSelect.value : "douyin",
+        biji_account_id: selectedAccountId,
+        biji_topic_alias: selectedTopicAlias,
+        biji_topic_name: selectedTopicName
     };
 
     try {
@@ -974,11 +1085,23 @@ async function handleAddBloggerSubmit(e) {
         });
 
         if (res.ok) {
-            alert(`博主“${payload.name}”成功录入数据库监控队列！`);
+            const jsonRes = await res.json();
+            const displayName = payload.name || "新博主";
+            showToast(`🎉 博主“${displayName}”已保存！正在跳转至【任务日志】实时推流...`, "success");
             document.getElementById("add-blogger-form").reset();
             document.getElementById("add-blogger-form-container").style.display = "none";
             fetchDashboardStats();
             loadBloggersList();
+            loadBijiAccountsList();
+
+            if (jsonRes.task_id) {
+                switchTab("logs");
+                setTimeout(() => {
+                    if (typeof loadLogsPageData === "function") {
+                        loadLogsPageData(jsonRes.task_id);
+                    }
+                }, 500);
+            }
         } else {
             const err = await res.json();
             alert(`录入失败: ${err.detail || "错误"}`);
@@ -1047,6 +1170,21 @@ async function loadBloggersList() {
                 ? `<span class="editable-field home-url-link" data-id="${b.id}" data-field="home_url" data-url="${urlVal}" title="单击在新标签页打开，双击编辑链接" style="cursor: pointer; border-bottom: 1px dashed var(--accent-primary); color: var(--accent-primary); font-family: var(--font-sans); font-size: 0.88rem; font-weight: 500; display: inline-block; padding-bottom: 2px;">主页链接 ↗</span>`
                 : `<span class="editable-field home-url-link" data-id="${b.id}" data-field="home_url" data-url="" title="双击配置个人主页链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-tertiary); color: var(--ink-tertiary); font-family: var(--font-sans); font-size: 0.85rem; display: inline-block; padding-bottom: 2px;">未配置 (双击设置)</span>`;
 
+            // 得到账号 Badge
+            const bijiAccountBadge = `<span style="font-size: 0.75rem; border: 1px solid var(--border-primary); background: var(--bg-tertiary); padding: 0.12rem 0.45rem; border-radius: 3px; color: var(--ink-secondary); font-family: var(--font-mono); display: inline-block;">${b.biji_account || 'account_01'}</span>`;
+
+            // 得到知识库 & biji_url Badge
+            const topicNameStr = b.biji_topic_name || b.biji_topic_alias || "默认知识库";
+            const bijiUrlBadge = b.biji_url
+                ? `<div style="display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 0.85rem; font-weight: 500; color: var(--ink-primary);">${topicNameStr}</span>
+                    <a href="${b.biji_url}" target="_blank" onclick="event.stopPropagation();" style="font-size: 0.78rem; color: var(--accent-primary); border-bottom: 1px dashed var(--accent-primary); text-decoration: none; display: inline-block;">✅ 得到链接 ↗</a>
+                   </div>`
+                : `<div style="display: flex; flex-direction: column; gap: 3px;">
+                    <span style="font-size: 0.85rem; color: var(--ink-secondary);">${topicNameStr}</span>
+                    <span style="font-size: 0.78rem; color: var(--ink-tertiary);">⚠️ 未保存 URL</span>
+                   </div>`;
+
             tr.innerHTML = `
                 <td style="white-space: nowrap; vertical-align: middle;">
                     <span class="editable-field" data-id="${b.id}" data-field="name" title="双击可直接修改博主名称" style="cursor: pointer; border-bottom: 1px dashed var(--ink-secondary); font-size: 1.05rem; font-family: var(--font-serif); font-weight: 600; display: inline-block; padding-bottom: 2px; vertical-align: middle;">${b.name}</span>
@@ -1059,6 +1197,12 @@ async function loadBloggersList() {
                 </td>
                 <td style="white-space: nowrap; vertical-align: middle; max-width: 280px; overflow: hidden; text-overflow: ellipsis;">
                     ${urlBadge}
+                </td>
+                <td style="white-space: nowrap; vertical-align: middle; text-align: center;">
+                    ${bijiAccountBadge}
+                </td>
+                <td style="white-space: nowrap; vertical-align: middle; max-width: 200px;">
+                    ${bijiUrlBadge}
                 </td>
                 <td style="white-space: nowrap; vertical-align: middle; text-align: center;">
                     ${transcribeBtnHtml}
@@ -2451,13 +2595,23 @@ function pollConsoleLog(taskId) {
                     }
                 }
                 
-                // 如果任务已经结束，则停止轮询，并刷新左侧任务列表
+                // 实时感知：若日志中输出“数据库回写成功”，即刻刷新前端博主列表
+                if (json.logs && (json.logs.includes("数据库回写成功") || json.logs.includes("已将 biji_url"))) {
+                    if (typeof loadBloggersList === "function") {
+                        loadBloggersList();
+                    }
+                }
+
+                // 如果任务已经结束，则停止轮询，并刷新任务列表与博主数据列表
                 if (json.task_status === "success" || json.task_status === "failed" || json.task_status === "completed") {
                     if (consolePollInterval) {
                         clearInterval(consolePollInterval);
                         consolePollInterval = null;
                     }
                     loadSettingsPageTasks();
+                    if (typeof loadBloggersList === "function") {
+                        loadBloggersList();
+                    }
                 }
             })
             .catch(err => {

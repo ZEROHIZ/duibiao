@@ -33,11 +33,17 @@ def migrate_database(db_path="data/distiller.db"):
     CREATE TABLE IF NOT EXISTS biji_browser_accounts (
         account_id TEXT PRIMARY KEY,
         nickname TEXT,
+        alias_name TEXT,
         user_id TEXT,
         status TEXT DEFAULT 'LOGGED_IN',
         last_login_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    try:
+        cursor.execute("ALTER TABLE biji_browser_accounts ADD COLUMN alias_name TEXT;")
+    except sqlite3.OperationalError:
+        pass
 
     # 2. 创建得到的独立文案暂存表 (解耦存储层)
     cursor.execute("""

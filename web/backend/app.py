@@ -386,10 +386,26 @@ class BloggerNameUpdate(BaseModel):
 
 
 class BloggerCreate(BaseModel):
-    name: str
+    name: Optional[str] = ""
     home_url: str = ""
     is_transcribe: Optional[int] = 1
     platform: Optional[str] = "douyin"
+    biji_account_id: Optional[str] = "account_01"
+    biji_topic_alias: Optional[str] = None
+    biji_topic_name: Optional[str] = None
+
+
+class BijiAccountCreate(BaseModel):
+    alias_name: Optional[str] = ""
+
+
+class BijiAccountAliasUpdate(BaseModel):
+    alias_name: str
+
+
+class BijiTopicCreate(BaseModel):
+    account_id: Optional[str] = "account_01"
+    topic_name: str
 
 
 class BloggerShortcutCreate(BaseModel):
@@ -529,6 +545,7 @@ def get_bloggers_list():
         SELECT b.id, b.name, b.home_url, b.total_notes, b.video_count, b.normal_count, 
                b.avg_likes, b.avg_collects, b.avg_comments, 
                b.total_likes, b.total_collects, b.total_comments, b.category, b.is_transcribe, b.platform,
+               b.biji_browser_id as biji_account, b.biji_topic_name, b.biji_topic_alias, b.biji_url, b.biji_follow_id,
                n.title as latest_note_title, n.published_at as latest_note_time
         FROM bloggers b
         LEFT JOIN blogger_notes n ON n.blogger_id = b.id AND n.id = (
@@ -655,44 +672,286 @@ def update_blogger_platform(blogger_id: int, body: BloggerPlatformUpdate):
         conn.close()
 
 
-@app.post("/api/bloggers")
-def create_blogger(body: BloggerCreate):
-    """录入新对标博主"""
-    import sqlite3
+@app.get("/api/biji/accounts")
+def get_biji_accounts():
+    """获取所有已配置的得到浏览器账号列表"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT account_id, nickname, alias_name, status, last_login_at FROM biji_browser_accounts ORDER BY account_id ASC;")
+        rows = cursor.fetchall()
+        accounts = [dict(r) for r in rows]
+        if not accounts:
+            cursor.execute("""
+                INSERT INTO biji_browser_accounts (account_id, nickname, alias_name, status)
+                VALUES ('account_01', '默认账号', '得到账号_01', 'LOGGED_IN')
+            """)
+            conn.commit()
+            accounts = [{"account_id": "account_01", "nickname": "默认账号", "alias_name": "得到账号_01", "status": "LOGGED_IN"}]
+        return {"status": "success", "accounts": accounts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/biji/accounts")
+def create_biji_account(body: BijiAccountCreate):
+    """创建新的得到浏览器账号"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT account_id FROM biji_browser_accounts;")
+        rows = cursor.fetchall()
+        existing_ids = [r["account_id"] for r in rows]
+        
+        index = len(existing_ids) + 1
+        new_account_id = f"account_{index:02d}"
+        while new_account_id in existing_ids:
+            index += 1
+            new_account_id = f"account_{index:02d}"
+            
+        alias_name = body.alias_name.strip() if (body.alias_name and body.alias_name.strip()) else f"得到账号_{index:02d}"
+        
+        cursor.execute("""
+            INSERT INTO biji_browser_accounts (account_id, nickname, alias_name, status)
+            VALUES (?, ?, ?, 'NEW');
+        """, (new_account_id, alias_name, alias_name))
+        conn.commit()
+        
+        return {
+            "status": "success",
+            "account": {
+                "account_id": new_account_id,
+                "alias_name": alias_name,
+                "status": "NEW"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/api/biji/accounts/{account_id}/alias")
+def update_biji_account_alias(account_id: str, body: BijiAccountAliasUpdate):
+    """修改指定得到账号的别名"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE biji_browser_accounts SET alias_name = ? WHERE account_id = ?;", (body.alias_name.strip(), account_id))
+        conn.commit()
+        return {"status": "success", "message": "账号别名更新成功"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.get("/api/biji/topics/{account_id}")
+def get_biji_topics(account_id: str):
+    """获取指定得到账号下的知识库列表"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("""
+            SELECT DISTINCT biji_topic_alias, biji_topic_name 
+            FROM bloggers 
+            WHERE biji_browser_id = ? AND biji_topic_alias IS NOT NULL AND biji_topic_alias != '';
+        """, (account_id,))
+        rows = cursor.fetchall()
+        topics = [{"alias": r["biji_topic_alias"], "name": r["biji_topic_name"] or r["biji_topic_alias"]} for r in rows]
+        
+        # 默认示例兜底
+        if not topics:
+            topics = [{"alias": "40Dk9QrY", "name": "默认知识库 (40Dk9QrY)"}]
+        return {"status": "success", "topics": topics}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/biji/topics/create")
+def create_biji_topic_api(body: BijiTopicCreate):
+    """触发后端 Playwright 自动在得到创建知识库"""
+    account_id = body.account_id or "account_01"
+    topic_name = body.topic_name.strip()
+    if not topic_name:
+        raise HTTPException(status_code=400, detail="知识库名称不能为空")
+        
+    try:
+        from biji_browser import BijiBrowserEngine
+        engine = BijiBrowserEngine(account_id=account_id, headless=True)
+        res = engine.create_biji_topic(topic_name)
+        if res and res.get("alias"):
+            return {
+                "status": "success",
+                "topic": {
+                    "alias": res["alias"],
+                    "name": res.get("name") or topic_name
+                }
+            }
+        else:
+            raise HTTPException(status_code=500, detail="得到建库失败，未能从页面获取新知识库的 topic_alias")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"自动建库异常: {str(e)}")
+
+
+def get_headless_setting() -> bool:
+    """从全局系统配置中获取 Playwright 浏览器无头模式开关 (headless/headless_browser)"""
+    config_path = os.path.join(ROOT_DIR, "data", "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                val = cfg.get("headless")
+                if val is None:
+                    val = cfg.get("headless_browser")
+                if val is not None:
+                    if isinstance(val, bool):
+                        return val
+                    if isinstance(val, str):
+                        return val.lower() == "true"
+        except:
+            pass
+    return True
+
+
+@app.post("/api/bloggers")
+def create_blogger(body: BloggerCreate):
+    """录入新对标博主 (先录入数据库，后台注册任务并可视化推流)"""
+    import sqlite3
+    import threading
+    import uuid
+
+    # 允许博主名称空置，后续由爬虫或得到自动提取充实
+    blogger_name = body.name.strip() if (body.name and body.name.strip()) else ""
+    if not blogger_name:
+        blogger_name = f"待爬取博主_{str(uuid.uuid4())[:6]}"
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        b_account = body.biji_account_id or "account_01"
+        b_topic_alias = body.biji_topic_alias or ""
+        b_topic_name = body.biji_topic_name or ""
+
+        cursor.execute("""
         INSERT INTO bloggers (
             name, home_url, total_notes, video_count, normal_count, 
             avg_likes, avg_collects, avg_comments, 
-            total_likes, total_collects, total_comments, is_transcribe, platform
-        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?);
+            total_likes, total_collects, total_comments, is_transcribe, platform,
+            biji_browser_id, biji_topic_alias, biji_topic_name
+        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?);
         """, (
-            body.name, 
+            blogger_name, 
             body.home_url, 
             body.is_transcribe if body.is_transcribe is not None else 1,
-            body.platform if body.platform else "douyin"
+            body.platform if body.platform else "douyin",
+            b_account,
+            b_topic_alias if b_topic_alias != "new" else "",
+            b_topic_name
         ))
         conn.commit()
         
-        cursor.execute("SELECT id, is_transcribe, platform FROM bloggers WHERE name = ?;", (body.name,))
+        cursor.execute("SELECT id, is_transcribe, platform FROM bloggers WHERE name = ?;", (blogger_name,))
         row = cursor.fetchone()
-        new_id = row["id"]
-        is_transcribe_val = row["is_transcribe"]
-        platform_val = row["platform"]
+        new_id = row["id"] if row else None
+        is_transcribe_val = row["is_transcribe"] if row else 1
+        platform_val = row["platform"] if row else "douyin"
+
+        created_task_id = None
+
+        # 先保存数据库，立即响应前端；得到的自动建库与关注作为可视化后台任务呈现
+        if (b_topic_alias or b_topic_name) and body.home_url:
+            task_id = f"biji_add_{uuid.uuid4().hex[:8]}"
+            created_task_id = task_id
+            log_dir = os.path.join(ROOT_DIR, "data", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, f"{task_id}.log")
+            now_iso = datetime.now().isoformat()
+
+            with tasks_lock:
+                active_crawl_tasks[task_id] = {
+                    "id": task_id,
+                    "task_id": task_id,
+                    "blogger": f"⚡ 得到自动建库/关注: {blogger_name}",
+                    "status": "running",
+                    "created_at": now_iso,
+                    "started_at": now_iso,
+                    "finished_at": None,
+                    "log_path": log_path,
+                    "task_type": "biji_add"
+                }
+
+            def log_msg(msg: str):
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                formatted = f"[{ts}] {msg}\n"
+                print(formatted, end="")
+                try:
+                    with open(log_path, "a", encoding="utf-8") as lf:
+                        lf.write(formatted)
+                except:
+                    pass
+
+            def async_biji_pipeline():
+                try:
+                    from biji_browser import BijiBrowserEngine
+                    headless_mode = get_headless_setting()
+                    log_msg(f"🚀 [得到自动化任务启动] TaskID: {task_id} | 账号: {b_account} | 无头模式: {headless_mode}")
+                    log_msg(f"📌 博主名称: {blogger_name} | 主页链接: {body.home_url}")
+                    
+                    engine = BijiBrowserEngine(account_id=b_account, headless=headless_mode, log_func=log_msg)
+                    target_alias = b_topic_alias
+                    
+                    # 1. 若为新建知识库模式
+                    if target_alias == "new" or (not target_alias and b_topic_name):
+                        log_msg(f"📁 [步骤 1/2] 正在为博主『{blogger_name}』在得到自动创建知识库: 『{b_topic_name}』...")
+                        create_res = engine.create_biji_topic(b_topic_name or "默认知识库")
+                        if create_res and create_res.get("alias"):
+                            target_alias = create_res["alias"]
+                            log_msg(f"✅ [得到建库成功] 知识库: 『{b_topic_name}』 | Alias: {target_alias}")
+                            if new_id:
+                                db_conn = get_db_connection()
+                                db_conn.cursor().execute("UPDATE bloggers SET biji_topic_alias = ?, biji_topic_name = ? WHERE id = ?;", (target_alias, b_topic_name, new_id))
+                                db_conn.commit()
+                                db_conn.close()
+                        else:
+                            log_msg(f"⚠️ [建库提示] 抓取完成，尝试继续关联页面...")
+
+                    # 2. 若存在知识库 Alias 且有主页 URL，进行得到关注
+                    if target_alias and target_alias != "new" and body.home_url:
+                        log_msg(f"👤 [步骤 2/2] 正在打开得到知识库 (Alias: {target_alias}) 关注博主...")
+                        engine.add_blogger_to_biji(target_alias, body.home_url, blogger_name=blogger_name)
+                        log_msg(f"🎉 [完成] 博主『{blogger_name}』已成功处理完毕！")
+
+                    with tasks_lock:
+                        if task_id in active_crawl_tasks:
+                            active_crawl_tasks[task_id]["status"] = "success"
+                            active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+                except Exception as err:
+                    log_msg(f"❌ [得到自动化流程异常]: {err}")
+                    with tasks_lock:
+                        if task_id in active_crawl_tasks:
+                            active_crawl_tasks[task_id]["status"] = "failed"
+                            active_crawl_tasks[task_id]["finished_at"] = datetime.now().isoformat()
+            
+            threading.Thread(target=async_biji_pipeline, daemon=True).start()
+
         return {
             "status": "success",
+            "task_id": created_task_id,
             "data": {
                 "id": new_id,
-                "name": body.name,
+                "name": blogger_name,
                 "home_url": body.home_url,
                 "is_transcribe": is_transcribe_val,
                 "platform": platform_val
             }
         }
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail=f"Blogger with name '{body.name}' already exists.")
+        raise HTTPException(status_code=400, detail=f"Blogger with name '{blogger_name}' already exists.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -844,19 +1103,40 @@ def update_blogger_name(blogger_id: int, body: BloggerNameUpdate):
 
 @app.delete("/api/bloggers/{blogger_id}")
 def delete_blogger(blogger_id: int):
-    """删除指定的对标博主及相关全部数据"""
+    """删除指定的对标博主及相关全部数据 (同步清理磁盘本地 JSON 缓存，防止重启恢复)"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, name FROM bloggers WHERE id = ?;", (blogger_id,))
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Blogger not found.")
         
-        # 开启事务，级联删除该博主的其它所有关联数据
+        blogger_name = row["name"]
+        
+        # 1. 开启事务，级联删除该博主的其它所有关联数据
         cursor.execute("DELETE FROM blogger_distilled WHERE blogger_id = ?;", (blogger_id,))
         cursor.execute("DELETE FROM blogger_notes WHERE blogger_id = ?;", (blogger_id,))
         cursor.execute("DELETE FROM bloggers WHERE id = ?;", (blogger_id,))
         conn.commit()
+
+        # 2. 清理磁盘上的本地 JSON 分析缓存文件，彻底防止服务重启时 importer.py 重新恢复该博主
+        data_dir = os.path.join(ROOT_DIR, "data")
+        processed_dir = os.path.join(data_dir, "processed")
+        
+        target_files = [
+            os.path.join(data_dir, f"{blogger_name}_analysis.json"),
+            os.path.join(processed_dir, f"{blogger_name}_notes_details.json"),
+            os.path.join(data_dir, f"{blogger_name}_notes.json")
+        ]
+        for tf in target_files:
+            if os.path.exists(tf):
+                try:
+                    os.remove(tf)
+                    print(f"[Delete Blogger] Successfully removed local file cache: {tf}")
+                except Exception as ef:
+                    print(f"[Delete Blogger] Warning: Failed to remove {tf}: {ef}")
+
         return {"status": "success", "message": "Blogger and all associated data deleted successfully."}
     except Exception as e:
         conn.rollback()
@@ -3749,5 +4029,5 @@ if __name__ == "__main__":
     # 支持从环境变量读取 HOST 和 PORT，方便 Docker 部署时绑定 0.0.0.0
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 8000))
-    # 端口绑定，且仅监控 web 目录，避免数据及缓存写入引发服务异常重启与队列丢失
-    uvicorn.run("app:app", host=host, port=port, reload=True, reload_dirs=["web"])
+    # 端口绑定，同时监控 web 和 scripts 目录，确保修改 biji_browser.py 能自动热重载生效
+    uvicorn.run("app:app", host=host, port=port, reload=True, reload_dirs=["web", "scripts"])

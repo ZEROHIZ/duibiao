@@ -239,20 +239,41 @@
                             <h4 class="aside-title" style="margin-bottom: 0.75rem; font-size: 1.05rem;">录入对标账号</h4>
                             <form id="add-blogger-form" class="editorial-form">
                                 <div class="form-group" style="margin-bottom: 0.75rem;">
-                                    <label for="add-form-name">博主昵称</label>
-                                    <input type="text" id="add-form-name" placeholder="请输入博主名字..." required>
+                                    <label for="add-form-name">博主昵称（可选，留空将自动爬取）</label>
+                                    <input type="text" id="add-form-name" placeholder="博主名称（可选，留空将自动抓取）...">
                                 </div>
                                 <div class="form-group" style="margin-bottom: 0.75rem;">
                                     <label for="add-form-url">主页链接</label>
                                     <input type="text" id="add-form-url" placeholder="配置主页链接（用于后续爬取）...">
                                 </div>
-                                <div class="form-group" style="margin-bottom: 1rem;">
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
                                     <label for="add-form-platform">账号平台</label>
                                     <select id="add-form-platform" style="width: 100%; padding: 0.45rem; border: 1px solid var(--ink-secondary); background: var(--bg-secondary); color: var(--ink-primary); outline: none; font-size: 0.9rem; font-family: var(--font-sans);">
                                         <option value="douyin">抖音</option>
                                         <option value="bilibili">哔哩哔哩 (B站)</option>
                                         <option value="xiaohongshu">小红书</option>
                                     </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0.75rem;">
+                                    <label for="add-form-biji-account">得到浏览器账号</label>
+                                    <select id="add-form-biji-account" style="width: 100%; padding: 0.45rem; border: 1px solid var(--ink-secondary); background: var(--bg-secondary); color: var(--ink-primary); outline: none; font-size: 0.9rem; font-family: var(--font-sans);">
+                                        <option value="account_01">得到账号_01 (默认)</option>
+                                        <option value="new">➕ 新增得到账号...</option>
+                                    </select>
+                                    <div id="new-account-input-box" style="display:none; margin-top:0.4rem;">
+                                        <input type="text" id="add-form-new-account-alias" placeholder="请输入新账号别名（如：主号_01）..." style="width: 100%; padding: 0.35rem 0.5rem; font-size: 0.85rem; border: 1px dashed var(--accent-primary); background: var(--bg-primary);">
+                                    </div>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label for="add-form-biji-topic">得到自动建库/关联知识库</label>
+                                    <select id="add-form-biji-topic" style="width: 100%; padding: 0.45rem; border: 1px solid var(--ink-secondary); background: var(--bg-secondary); color: var(--ink-primary); outline: none; font-size: 0.9rem; font-family: var(--font-sans);">
+                                        <option value="">暂不自动添加至得到</option>
+                                        <option value="40Dk9QrY">默认知识库 (40Dk9QrY)</option>
+                                        <option value="new">➕ 新建得到知识库...</option>
+                                    </select>
+                                    <div id="new-topic-input-box" style="display:none; margin-top:0.4rem;">
+                                        <input type="text" id="add-form-new-topic-name" placeholder="请输入新知识库名称（如：AI卡片库）..." style="width: 100%; padding: 0.35rem 0.5rem; font-size: 0.85rem; border: 1px dashed var(--accent-primary); background: var(--bg-primary);">
+                                    </div>
                                 </div>
                                 <button type="submit" class="btn-primary" style="width: auto; padding: 0.45rem 1.5rem;">保存并录入</button>
                             </form>
@@ -276,6 +297,8 @@
                                     <th>账号平台</th>
                                     <th>主营定位</th>
                                     <th>主页监控链接 (双击编辑)</th>
+                                    <th>浏览器账号</th>
+                                    <th>得到知识库 / biji_url</th>
                                     <th>语音转录</th>
                                     <th>均赞</th>
                                     <th>均收藏/评论</th>
@@ -935,6 +958,23 @@
 
     <!-- Toast Notification Container -->
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- Biji QR Code Modal for Docker/Headless Login -->
+    <div id="biji-qr-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+        <div class="modal-box" style="background: var(--bg-primary); border: 2px solid var(--accent-primary); width: 90%; max-width: 420px; padding: 2rem; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <span class="section-label" style="color: var(--accent-primary);">BIJI LOGIN REQUIRED</span>
+            <h3 style="font-family: var(--font-serif); font-size: 1.3rem; margin-top: 0.5rem; margin-bottom: 0.5rem; font-weight: bold;">📱 请使用微信 / 得到 App 扫码</h3>
+            <p style="font-size: 0.85rem; color: var(--ink-secondary); margin-bottom: 1.2rem; line-height: 1.5;">
+                检测到新账号尚未登录，请使用手机打开 App 扫描下方二维码授权（登录凭据将自动保存至容器）
+            </p>
+            <div style="display: inline-block; background: #fff; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 1.2rem;">
+                <img id="biji-qr-modal-img" src="" alt="得到登录二维码" style="width: 210px; height: 210px; display: block;">
+            </div>
+            <div>
+                <button class="btn-primary" onclick="document.getElementById('biji-qr-modal').style.display='none'" style="padding: 0.45rem 1.5rem;">已完成扫码关闭</button>
+            </div>
+        </div>
+    </div>
 
     <!-- UI Logic Script -->
     <script src="app.js?v=20260727_5"></script>
