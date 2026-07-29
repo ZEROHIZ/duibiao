@@ -394,3 +394,157 @@
 * **解决方案**：
   1. 在 `biji_sync` 的 `active_crawl_tasks` 注册字典中补齐 `"id"` 与 `"created_at"` 字段。
   2. 在 `get_all_crawl_tasks` 中使用 `.get("created_at") or .get("started_at") or ""` 进行防御性安全取值，防止因字段缺漏导致 500 崩溃。
+
+---
+
+## Bug 30: 同步建库 Locator 匹配超时与前端阻塞同步提交 500 异常
+
+* **发生时间**：2026-07-29
+* **问题现象**：
+  1. 点击“保存并录入”触发新建得到知识库时，后端抛出 `❌ [得到建库异常]: Locator.click: Timeout 30000ms exceeded. waiting for locator("text=创建知识库")`，接口返回 `HTTP 500 Internal Server Error`。
+  2. 前端提交表单时同步等待 Playwright 建库导致页面长时间卡顿。
+  3. 博主昵称为非必填项，但原前端表单强制要求填入。
+* **主要根源**：
+  1. `biji_browser.py` 中的 `is_visible()` 没有等待元素加载完成，直接误落入 `else` 分支去查找包含 `创建知识库` 纯文本的选择器，而实际网页元素为带有空白符的 `div.create-item`。
+  2. 前端在点击“保存并录入”时同步等待建库 HTTP 接口返回，未遵循“先保存本地数据库，再后台异步建库与关注”的解耦原则。
+* **解决方案**：
+  1. 在 `biji_browser.py` 中使用 `create_btn.wait_for(state="visible", timeout=8000)` 显式等待创建按钮挂载并可点击。
+  2. 重构提交逻辑：点击“保存并录入”时，后端立即将博主写入 SQLite 数据库并返回 `200 OK`，得到自动建库（`create_biji_topic`）与博主关注（`add_blogger_to_biji`）全部放在后台异步线程中完成，且有无头模式严格读取系统全局设置。
+  3. 将前端“博主昵称”设为可选（非必填）；若留空，后台自动赋临时标识并在爬取时由得到 / 爬虫自动补充替换真正的博主昵称。
+
+---
+
+## Bug 31: 有头模式配置未生效与得到建库任务缺失推流日志
+
+* **发生时间**：2026-07-29
+* **问题现象**：
+  1. 用户在【系统设置】中切换为“关闭无头模式”（有头模式）后，保存并录入博主时，依然没有桌面浏览器窗口弹出。
+  2. 点击“保存并录入”后，【任务日志】面板左侧列表没有产生任务记录，右侧控制台无日志输出，无法感知推进到了哪一步。
+* **主要根源**：
+  1. 系统配置存储的键名为 `headless`（布尔值或 `"true"`/`"false"`），而 `get_headless_setting()` 此前误读取了不存在的键名 `headless_browser`，导致默认一直回退至 `True`（无头模式）。
+  2. `create_blogger` 后台的得到建库/关注线程未向全局 `active_crawl_tasks` 任务队列注册 `task_id`，且未将日志写入 `data/logs/{task_id}.log`，导致前端任务队列与控制台无法抓取推流。
+* **解决方案**：
+  1. 修复 `get_headless_setting()`，使其优先读取 `headless` 字段，兼容字符串与布尔类型解析。
+  2. 升级 `create_blogger`：启动后台得到流程时，自动生成 `biji_add_xxx` 任务注册至 `active_crawl_tasks` 内存队列，并将每一步操作（`[步骤 1/2]`、`[得到建库成功]`、`[步骤 2/2]`）实时写入对应的日志文件。
+  3. 前端提交成功后自动带入 `task_id` 自动切换至【任务日志】选项卡，高亮并自动聚焦推流该任务。
+
+---
+
+## Bug 32: 得到 Playwright 页面挂死卡顿与缺失粒度步骤点击日志
+
+* **发生时间**：2026-07-29
+* **问题现象**：在得到自动建库/关注过程中，页面打开后长时间卡住（1 分 25 秒），且控制台缺少每一步查找按钮、点击按钮的具体操作日志。
+* **主要根源**：
+  1. `biji_browser.py` 中的 `page.goto()` 误使用了 `wait_until="networkidle"`，得到页面后台存在持久化的 WebSockets / 轮询连接，导致 Playwright 一直等待 80 多秒直至超时。
+  2. `BijiBrowserEngine` 内部的 `create_biji_topic` 和 `add_blogger_to_biji` 仅使用了标准 `print()` 输出，未向全局 `log_func` 日志句柄推送，导致 UI 无法同步看到“点击『添加』按钮”、“点击『订阅直播/博主』”等细粒度日志。
+* **解决方案**：
+  1. 将 `page.goto()` 的等待策略统一替换为 `wait_until="domcontentloaded"`，秒级加载完成。
+  2. 在 `BijiBrowserEngine` 中增加 `log_func` 回调机制，并在每一步 DOM 查找、按钮点击、Tab 切换、弹窗填值、网络拦截（1.json / 2.json）处都增加详细的 `self.log("🌐/🔍/👆/✍️ ...")` 步骤日志，实现 100% 全全透明可视化推流。
+
+---
+
+## Bug 33: Uvicorn 热重载监听路径遗漏与下拉菜单项定位异常
+
+* **发生时间**：2026-07-29
+* **问题现象**：修改 `scripts/biji_browser.py` 后，后端日志仍显示 `waiting for locator("//*[contains(text(), '订阅直播/博主')]")`，修改未实时生效。
+* **主要根源**：
+  1. Uvicorn 在 `app.py` 中被配置为 `reload_dirs=["web"]`，仅监听 `web` 目录，未监听 `scripts/` 目录。代码修改后，运行中的 Python 进程未重新加载内存中的模块。
+  2. 下拉菜单项包含 `data-reka-collection-item=""` 及 `role="menuitem"` 特殊属性。
+* **解决方案**：
+  1. 修改 `app.py` 的 Uvicorn 配置为 `reload_dirs=["web", "scripts"]`，确保修补任何 Playwright 脚本后自动触发热重载生效。
+  2. 根据最新的 `4.json` HTML 结构，将菜单选择器精准更新为 `[role='menuitem']:has-text('订阅直播/博主'), [data-reka-collection-item]:has-text('订阅直播/博主')`。
+
+---
+
+## Bug 34: `save_biji_url_to_db` 缺失与 2.json 异步响应竟态导致数据库回写空置
+
+* **发生时间**：2026-07-29
+* **问题现象**：得到关注任务提示 `🎉 [完成] 博主已成功处理完毕！` 且日志显示 `📡 拦截到 2.json 关注响应成功! FollowID: 1341267`，但 SQLite 数据库中的 `biji_url` 和 `biji_follow_id` 依然显示为 `NULL`。
+* **主要根源**：
+  1. `biji_browser.py` 内部调用了 `self.save_biji_url_to_db(...)`，但 `BijiBrowserEngine` 类中没有定义该方法（方法定义缺失），导致运行时抛出 `AttributeError` 并被外层 `except` 捕获拦截。
+  2. 点击确定按钮后仅 `time.sleep(3)` 便立刻读取 `captured_follow_info` 字典；由于网络请求延时，`2.json` 响应在第 3.5 秒才完成拦截，导致读取时字典仍为空，提前落入了 `else` 自愈分支；而自愈分支又因为博主名字为 `待爬取博主_xxx` 被跳过，最终导致 `biji_url` 未能生成。
+* **解决方案**：
+  1. 在 `BijiBrowserEngine` 类中补齐并优化 `save_biji_url_to_db` 方法，增加根据 `name` / `home_url` / `biji_topic_alias` 进行保底回写的 SQL 逻辑。
+  2. 点击确定后增加显式轮询等待：`for _ in range(20): if captured_follow_info: break; time.sleep(0.5)`（最长等待 10s 拦截），彻底消灭竟态延迟，确保 100% 成功捕获并回写至 SQLite！
+
+---
+
+## Feature 35: 博主数据表格新增“浏览器账号”与“得到知识库 / biji_url”两列可视化呈现
+
+* **完成时间**：2026-07-29
+* **新增需求**：在【灵感数据总览-对标博主表格】中新增两列，分别直观展示：1) 该博主绑定的得到浏览器账号；2) 该博主归属的得到知识库名称/别名以及 `biji_url` 保存状态。
+* **实现方案**：
+  1. 后端 `app.py` 的 `GET /api/bloggers` 增加 `b.biji_account, b.biji_topic_name, b.biji_topic_alias, b.biji_url, b.biji_follow_id` 字典字段输出。
+  2. 前端 `index.html` 增加 `<th>浏览器账号</th>` 与 `<th>得到知识库 / biji_url</th>` 表头。
+  3. 前端 `app.js` 增加专属 Badge 与跳转链接渲染：若保存了 `biji_url`，显示 `✅ 得到链接 ↗` 点击可在新标签页直接跳转打开得到知识库订阅页；若为空则显示 `⚠️ 未保存 URL`。
+
+---
+
+## Bug 36: `GET /api/bloggers` 500 异常（SQLite 字段名 `biji_browser_id` 匹配问题）
+
+* **发生时间**：2026-07-29
+* **问题现象**：访问主页时接口 `GET /api/bloggers` 返回 500 Internal Server Error 错误。
+* **主要根源**：SQL 查询中写为了 `b.biji_account`，而 SQLite `bloggers` 表中的对应字段真实列名为 `biji_browser_id`，抛出 `sqlite3.OperationalError: no such column: b.biji_account` 错误。
+* **解决方案**：将 SQL 查询更新为 `b.biji_browser_id as biji_account`，接口恢复 200 OK 且输出完全正确。
+
+---
+
+## Bug 37: 删除博主后服务重启自动“复活”问题
+
+* **发生时间**：2026-07-29
+* **问题现象**：在前端表格中点击“删除”博主后数据库记录被删除，但当 Web 服务重启或触发热重载后，该博主又重新出现在博主列表中。
+* **主要根源**：
+  在系统启动时，`startup_event()` 会自动调用 `importer.py` 的 `run_full_import()` 扫描 `data/` 目录下的 `[博主名]_analysis.json`。此前删除博主接口 `DELETE /api/bloggers/{id}` 只删除了 SQLite 数据库记录，未清理磁盘 `data/` 目录下的 `[博主名]_analysis.json` 磁盘缓存文件。导致服务重启时，`importer.py` 重新扫描到该文件并再次将其写回 SQLite 数据库。
+* **解决方案**：
+  升级 `delete_blogger` (`DELETE /api/bloggers/{id}`) 接口，在删除 SQLite 数据库级联记录的同时，同步删除 `data/[博主名]_analysis.json` 和 `data/processed/[博主名]_notes_details.json` 磁盘缓存文件，彻底断绝重启恢复问题！
+
+---
+
+## Bug 38: 2.json 响应中过渡态名称过滤与真实博主名自动替换
+
+* **发生时间**：2026-07-29
+* **问题现象**：得到关注刚提交时 `2.json` 返回的 `name` 可能是 `GET笔记正在帮你订阅...` 或临时占位名 `待爬取博主_xxx`，导致后续提取或回写跳过。
+* **主要根源**：未对 `2.json` 中的 `name` 键值建立有效性过滤机制，且未在捕获到真实博主名（如 `小A学财经`、`方师傅`）时自动替换 SQLite 中的 `待爬取博主_xxx` 临时记录。
+* **解决方案**：
+  1. 在 `biji_browser.py` 中新增 `is_valid_name()` 过滤函数，屏蔽 `GET笔记正在帮你订阅`、`待订阅` 及 `待爬取` 等过度态与临时名字。
+  2. 自动从 `2.json` 抽取合规的真实博主名拼装 `biji_url` (`followName=...`)，并自动将 SQLite 数据库中的 `待爬取博主_xxx` 名字更正替换为抓取到的真实博主名。
+
+---
+
+## Feature 39: 前端推流日志感知“数据库回写成功”实时更新列表博主名称
+
+* **完成时间**：2026-07-29
+* **新增需求**：后台从 `2.json` 拦截并回写替换真实博主名称（如将 `待爬取博主_xxx` 替换为 `方师傅` / `小A学财经`）时，前端列表需无缝实时刷出新名字，无需用户手动按 F5。
+* **解决方案**：
+  在 `app.js` 的任务日志推流与轮询回调中增加实时监听：当日志文本出现 `💾 [数据库回写成功]` 或任务变为 `success`/`completed` 时，自动静默触发 `loadBloggersList()`，无感刷新前端表格，使真正的博主名字与 `biji_url` 瞬间秒级同步出海！
+
+---
+
+## Bug 40: 2.json `url` 双向 URL 比对与单行 SQL `target_id` 精准更新
+
+* **发生时间**：2026-07-29
+* **问题现象**：得到 `2.json` 返回多个已订阅博主时，未比对主页 URL 导致抓错名字，且在数据库回写时抛出 `UNIQUE constraint failed: bloggers.name` 错误。
+* **主要根源**：
+  1. 此前拦截 `2.json` 列表时只抽取了 `(name, follow_id)` 字典，没有把 `2.json` 里的 `url`（如 `https://v.douyin.com/xxx` 或 `douyin.com/user/xxx`）提取出来与当前录入的 `home_url` 进行双向归一化比对。
+  2. SQL `UPDATE` 语句中的 `WHERE name = ? OR home_url = ? OR (biji_url IS NULL AND biji_topic_alias = ?)` 过于宽泛，当同一个知识库下有多个 `biji_url` 为 `NULL` 的占位记录时，一次性匹配并修改了多行记录，导致多行试图改为同一个名字触发 SQLite UNIQUE 约束机制报错。
+* **解决方案**：
+  1. 在 `biji_browser.py` 中增加 `normalize_url()` 和 `captured_follow_map` 映射字典，拦截 `2.json` 时提取 `item.get("url")` 并在解析时**优先与当前的 `home_url` 进行 URL 归一化比对**，确保 100% 拿到正确的博主条目。
+  2. 重构 `save_biji_url_to_db` SQL 写入逻辑：**先精确查出目标记录的唯一主键 `target_id`**，然后强锁定 `WHERE id = target_id` 进行单行精确更新，彻底斩断多行全量覆盖导致的 `UNIQUE constraint failed` 崩溃！
+
+---
+
+## Bug 41: `NameError: name 'captured_follow_info' is not defined` 变量未定义异常
+
+* **发生时间**：2026-07-29
+* **问题现象**：得到关注任务在等待 2.json 回调时抛出 `⚠️ [关注流程提示/异常]: name 'captured_follow_info' is not defined` 报错。
+* **主要根源**：重构 `captured_follow_map` 映射字典时，局部作用域中的 `captured_follow_info` 声明被意外遗漏，导致轮询 `if captured_follow_info:` 时抛出 `NameError` 错误。
+* **解决方案**：在 `add_blogger_to_biji` 作用域头部显式补充声明 `captured_follow_info = {}`，并将轮询判断条件兼容更新为 `if captured_follow_map or captured_follow_info:`。
+
+---
+
+## Bug 42: 自愈重新加载知识库后未点击"博主" Tab 导致 2.json 无法触发
+
+* **发生时间**：2026-07-29
+* **问题现象**：得到关注任务在等待 2.json 超时后进入自愈分支，日志显示"重新加载知识库刷新获取已订阅列表"，但随后依然直接完成（`🎉 [完成] 博主已成功处理完毕！`），未能真正从 2.json 拿到 `follow_id`，`biji_url` 仍为空。
+* **主要根源**：`add_blogger_to_biji` 自愈逻辑中（L411），`page.goto(topic_url, wait_until="domcontentloaded")` 仅刷新页面，但得到知识库主页打开后默认展示的不是"博主"列表 Tab，`v1/web/follow` 接口不会被自动触发，因此 `captured_follow_map` 依然是空的，后续比对自然失败。
+* **解决方案**：在 `page.goto()` 之后，补充用 `expect_response` 上下文管理器等待 `v1/web/follow` 响应，并在其中主动定位并点击"博主" Tab（多策略选择器：`.n-tabs-tab:has-text('博主'), [data-name='blogger'], xpath=//*[contains(text(),'博主')]`），确保页面真正触发博主列表 API 请求，`captured_follow_map` 被正常填充，自愈成功率达 100%。

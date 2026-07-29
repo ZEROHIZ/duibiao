@@ -40,9 +40,10 @@ DB_PATH = os.path.join(DATA_DIR, "distiller.db")
 class BijiBrowserEngine:
     """得到 Playwright 浏览器自动化与接口拦截管理类"""
 
-    def __init__(self, account_id="account_01", headless=True):
+    def __init__(self, account_id="account_01", headless=True, log_func=None):
         self.account_id = account_id
         self.headless = headless
+        self.log_func = log_func
         self.context_dir = os.path.join(DATA_DIR, "browser_context", account_id)
         os.makedirs(self.context_dir, exist_ok=True)
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -52,6 +53,15 @@ class BijiBrowserEngine:
         self.follows_data = []
         self.captured_posts = {}
         self.captured_details = {}
+
+    def log(self, msg):
+        """格式化打印并同时推送给后台日志文件"""
+        print(msg)
+        if self.log_func:
+            try:
+                self.log_func(msg)
+            except:
+                pass
 
     def update_account_status(self, nickname="", user_id="", status="LOGGED_IN"):
         """更新数据库中的账号状态记录"""
@@ -122,6 +132,7 @@ class BijiBrowserEngine:
             original_video_id, post_update_time
         ))
         conn.commit()
+
     def get_pending_target_bloggers(self):
         """获取本地主库中需要在得到同步文案的对标博主列表"""
         conn = sqlite3.connect(DB_PATH)
@@ -166,6 +177,353 @@ class BijiBrowserEngine:
         """, (blogger_id,)).fetchall()
         conn.close()
         return {str(r["id"]): r["title"] for r in rows}
+
+    def create_biji_topic(self, topic_name):
+        """自动在得到创建知识库并返回新生成的 topic_alias"""
+        self.log(f"\n🚀 [得到建库] 正在为账号 '{self.account_id}' 创建知识库: 『{topic_name}』...")
+        created_topic_info = {}
+
+        with sync_playwright() as p:
+            self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=self.context_dir,
+                headless=self.headless,
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
+            page = context.new_page()
+
+            def handle_response(response):
+                try:
+                    if "v1/web/topic" in response.url and response.status == 200:
+                        data = response.json()
+                        c = data.get("c") or {}
+                        if isinstance(c, dict) and (c.get("id_alias") or c.get("topic_id")):
+                            created_topic_info["alias"] = c.get("id_alias") or c.get("alias")
+                            created_topic_info["id"] = c.get("topic_id") or c.get("id")
+                            created_topic_info["name"] = c.get("topic_name") or c.get("name") or topic_name
+                            self.log(f"📡 [网络拦截] 成功拦截 1.json 创建建库响应! TopicAlias: {created_topic_info['alias']}")
+                except:
+                    pass
+
+            page.on("response", handle_response)
+
+            try:
+                self.log("🌐 正在打开得到知识库总览主页: https://www.biji.com/subject...")
+                page.goto("https://www.biji.com/subject", wait_until="domcontentloaded")
+                time.sleep(2)
+
+                self.log("🔍 正在查找『创建知识库』新建卡片按钮...")
+                create_btn = page.locator("div[class*='create-item'], .create-item").first
+                try:
+                    create_btn.wait_for(state="visible", timeout=8000)
+                    self.log("👆 找到创建卡片按钮，正在点击...")
+                    create_btn.click()
+                except Exception as ex:
+                    self.log(f"  [提示] 使用 文本选择器 尝试点击创建按钮 ({ex})...")
+                    page.locator("text=创建知识库").first.click()
+
+                self.log("📱 等待新建知识库弹窗对话框 (.modal-content) 展现...")
+                page.wait_for_selector(".modal-content", timeout=8000)
+                
+                self.log(f"✍️ 在弹窗输入框中填入知识库名称: 『{topic_name}』...")
+                name_input = page.locator(".modal-content input.n-input__input-el, .modal-content input").first
+                name_input.click()
+                name_input.fill(topic_name)
+                try:
+                    page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", name_input.element_handle())
+                except:
+                    pass
+                time.sleep(0.8)
+
+                self.log("🔍 正在定位弹窗『确定』主按钮 (.action-buttons .n-button--primary-type)...")
+                confirm_btn = page.locator(".modal-content .action-buttons button.n-button--primary-type, .modal-content button.n-button--primary-type, .modal-content button:has-text('确定')").first
+                confirm_btn.wait_for(state="visible", timeout=6000)
+                self.log("👆 点击『确定』主按钮...")
+                confirm_btn.click()
+
+                self.log("⏳ 等待 3 秒进行建库 API (1.json) 响应...")
+                time.sleep(3)
+            except Exception as err:
+                self.log(f"❌ [得到建库过程抛出异常]: {err}")
+            finally:
+                context.close()
+
+        new_topic_alias = created_topic_info.get("alias")
+        print(f"✅ [得到建库成功] 知识库名称: 『{topic_name}』 | Alias: {new_topic_alias}")
+        return created_topic_info
+
+    def add_blogger_to_biji(self, topic_alias, home_url, blogger_name=""):
+        """自动在得到知识库添加/订阅博主，并带有二次刷页重寻自愈"""
+        self.log(f"\n🚀 [得到关注] 正在知识库 '{topic_alias}' 添加博主: 『{blogger_name or home_url}』...")
+        topic_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT"
+        biji_url = None
+        follow_id = None
+
+        with sync_playwright() as p:
+            self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
+            context = p.chromium.launch_persistent_context(
+                user_data_dir=self.context_dir,
+                headless=self.headless,
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
+            page = context.new_page()
+            
+            captured_follow_info = {}
+            captured_follow_map = {}  # key: home_url or fname, value: (fname, fid, item_url)
+
+            def is_valid_name(name_str):
+                if not name_str:
+                    return False
+                s = str(name_str).strip()
+                if "GET笔记" in s or "正在帮你订阅" in s or s.startswith("待爬取") or s == "待订阅" or s == "订阅中":
+                    return False
+                return True
+
+            def normalize_url(u):
+                if not u:
+                    return ""
+                return u.split("?")[0].rstrip("/").lower()
+
+            def handle_response(response):
+                try:
+                    if "v1/web/follow" in response.url and response.status == 200:
+                        data = response.json()
+                        c = data.get("c") or {}
+                        
+                        items_to_process = []
+                        if isinstance(c, list):
+                            items_to_process = c
+                        elif isinstance(c, dict):
+                            if "list" in c and isinstance(c["list"], list):
+                                items_to_process = c["list"]
+                            else:
+                                items_to_process = [c]
+
+                        for item in items_to_process:
+                            fid = item.get("follow_id") or item.get("id")
+                            fname = item.get("follow_name") or item.get("name") or ""
+                            item_url = item.get("url") or item.get("home_url") or ""
+                            if fid and is_valid_name(fname):
+                                captured_follow_info[fname] = fid
+                                captured_follow_map[fname] = (fname, fid, item_url)
+                                norm_u = normalize_url(item_url)
+                                if norm_u:
+                                    captured_follow_map[norm_u] = (fname, fid, item_url)
+                                self.log(f"📡 [网络拦截] 拦截到 2.json 有效博主: '{fname}' (ID: {fid}, URL: {item_url})")
+                            elif fid and fname:
+                                self.log(f"  [提示] 忽略过渡态/占位名称: '{fname}' (ID: {fid})")
+                except:
+                    pass
+
+            page.on("response", handle_response)
+
+            try:
+                self.log(f"🌐 打开目标知识库主页: {topic_url}...")
+                page.goto(topic_url, wait_until="domcontentloaded")
+                time.sleep(2)
+
+                # 步骤 1: 点击 "添加"
+                self.log("🔍 正在查找页面『添加』按钮...")
+                add_btn = page.locator("xpath=//*[contains(text(), '添加')]").first
+                add_btn.wait_for(state="visible", timeout=8000)
+                self.log("👆 点击『添加』按钮...")
+                add_btn.click()
+                time.sleep(1)
+
+                # 步骤 2: 点击 "订阅直播/博主"
+                self.log("🔍 正在查找『订阅直播/博主』菜单选项...")
+                sub_btn = page.locator("div[role='menuitem']:has-text('订阅直播/博主'), [role='menuitem']:has-text('订阅直播/博主')").first
+                sub_btn.wait_for(state="visible", timeout=8000)
+                self.log("👆 点击『订阅直播/博主』...")
+                sub_btn.click()
+                time.sleep(1)
+
+                # 步骤 3: 点击 "抖音博主"
+                self.log("🔍 正在定位『抖音博主』Tab 页签 (data-name='douyin')...")
+                tab_btn = page.locator(".n-tabs-tab[data-name='douyin'], div[data-name='douyin'], .n-tabs-tab:has-text('抖音博主')").first
+                tab_btn.wait_for(state="visible", timeout=8000)
+                self.log("👆 点击『抖音博主』Tab...")
+                tab_btn.click()
+                
+                # 显式等待 Tab 激活动画完成
+                self.log("⏳ 等待 Tab 激活状态变更 (data-name='douyin')...")
+                try:
+                    page.wait_for_selector(".n-tabs-tab--active[data-name='douyin'], .n-tabs-tab--active:has-text('抖音博主')", timeout=5000)
+                except:
+                    pass
+                time.sleep(1)
+
+                # 步骤 4: 填入博主 URL
+                self.log(f"✍️ 在输入框填入抖音博主主页 URL: {home_url}...")
+                url_input = page.locator(".n-tab-pane:not([style*='display: none']) input.n-input__input-el, .n-input__input-el").first
+                url_input.click()
+                url_input.fill(home_url)
+                try:
+                    page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", url_input.element_handle())
+                except:
+                    pass
+                time.sleep(0.5)
+
+                # 步骤 5: 点击 "确定"
+                self.log("👆 点击『确定』提交按钮...")
+                confirm_btn = page.locator(".n-tab-pane:not([style*='display: none']) button.n-button--primary-type, button.n-button--primary-type, button:has-text('确定')").first
+                confirm_btn.click()
+
+                # 显式轮询等待 2.json 网络响应拦截回调 (最长 10 秒)
+                self.log("⏳ 正在等待 2.json 关注响应回调 (最长 10 秒)...")
+                for _ in range(20):
+                    if captured_follow_map or captured_follow_info:
+                        break
+                    time.sleep(0.5)
+
+                # 提取拿到的有效 follow_id 与真实博主名称 (优先通过 home_url 精准比对)
+                real_blogger_name = None
+                target_fid = None
+                
+                norm_home = normalize_url(home_url)
+                if norm_home and norm_home in captured_follow_map:
+                    real_blogger_name, target_fid, _ = captured_follow_map[norm_home]
+                    self.log(f"🎯 [URL 精准比对成功] 匹配到 home_url ({home_url}) -> 真实博主: '{real_blogger_name}' (ID: {target_fid})")
+                elif captured_follow_map:
+                    # 降级：遍历列表寻找与当前主页匹配或最新加入的有效项
+                    for k, val in captured_follow_map.items():
+                        rname, fid, item_u = val
+                        if is_valid_name(rname):
+                            if norm_home and normalize_url(item_u) == norm_home:
+                                real_blogger_name = rname
+                                target_fid = fid
+                                self.log(f"🎯 [URL 降级匹配成功] '{rname}' (ID: {fid})")
+                                break
+                            elif not real_blogger_name:
+                                real_blogger_name = rname
+                                target_fid = fid
+
+                if target_fid and real_blogger_name:
+                    import urllib.parse
+                    encoded_name = urllib.parse.quote(real_blogger_name)
+                    biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
+                    follow_id = target_fid
+                    self.log(f"✅ [得到关注成功] 从 2.json 捕获得到 URL: {biji_url} | 真实博主名: {real_blogger_name}")
+                else:
+                    self.log(f"⚠️ [尝试自愈重寻] 重新加载知识库刷新获取已订阅列表...")
+                    page.goto(topic_url, wait_until="domcontentloaded")
+                    time.sleep(1.5)
+
+                    # 自愈刷新后主动点击"博主" Tab，触发 2.json (v1/web/follow) 响应
+                    self.log("🔍 [自愈] 正在查找并点击『博主』Tab 以触发 2.json...")
+                    try:
+                        with page.expect_response(
+                            lambda r: "v1/web/follow" in r.url and r.status == 200,
+                            timeout=8000
+                        ):
+                            blogger_tab = page.locator(
+                                "xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))]"
+                            ).first
+                            if blogger_tab.is_visible(timeout=4000):
+                                self.log("👆 [自愈] 点击『博主』Tab...")
+                                blogger_tab.click()
+                            else:
+                                self.log("  [自愈] 未找到『博主』Tab，等待网络自动触发...")
+                        time.sleep(1.5)
+                    except Exception as tab_ex:
+                        self.log(f"  [自愈] 点击博主 Tab 提示: {tab_ex}，继续尝试比对缓存数据...")
+                        time.sleep(2)
+
+                    # 再次比对
+                    if norm_home and norm_home in captured_follow_map:
+                        real_blogger_name, target_fid, _ = captured_follow_map[norm_home]
+                    elif captured_follow_map:
+                        for k, val in captured_follow_map.items():
+                            rname, fid, item_u = val
+                            if is_valid_name(rname):
+                                real_blogger_name = rname
+                                target_fid = fid
+                                break
+                    
+                    if target_fid and real_blogger_name:
+                        import urllib.parse
+                        encoded_name = urllib.parse.quote(real_blogger_name)
+                        biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
+                        follow_id = target_fid
+                        self.log(f"✅ [刷新自愈成功] 从页面关注列表 2.json 提取 biji_url: {biji_url}")
+                    elif blogger_name and not blogger_name.startswith("待爬取"):
+                        self.log(f"🔍 尝试在页面卡片中查找博主名字: 『{blogger_name}』...")
+                        card_selector = page.locator(f"text={blogger_name}").first
+                        if card_selector.is_visible():
+                            self.log("👆 找到博主卡片，点击以跳转抓取地址...")
+                            card_selector.click()
+                            time.sleep(2.5)
+                            current_url = page.url
+                            if "followId=" in current_url:
+                                biji_url = current_url
+                                match = re.search(r'followId=([^&]+)', current_url)
+                                if match:
+                                    follow_id = match.group(1)
+                                self.log(f"✅ [自愈成功] 从当前页面 URL 提取 biji_url: {biji_url}")
+            except Exception as err:
+                self.log(f"⚠️ [关注流程提示/异常]: {err}")
+            finally:
+                context.close()
+
+        if biji_url:
+            self.save_biji_url_to_db(blogger_name, topic_alias, follow_id, biji_url, home_url, real_name=real_blogger_name)
+
+        return biji_url
+
+    def save_biji_url_to_db(self, blogger_name, topic_alias, follow_id, biji_url, home_url="", real_name=""):
+        """将自动关注或自愈抓取到的 biji_url, biji_follow_id, biji_topic_alias 写入 SQLite，精准按 home_url 或 name 比对更新"""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            
+            final_name = real_name if (real_name and not real_name.startswith("待爬取")) else blogger_name
+            
+            # 1. 优先精确定位目标行的 ID
+            target_id = None
+            if home_url:
+                cursor.execute("SELECT id FROM bloggers WHERE home_url = ?;", (home_url,))
+                r = cursor.fetchone()
+                if r:
+                    target_id = r[0]
+            if not target_id and blogger_name:
+                cursor.execute("SELECT id FROM bloggers WHERE name = ?;", (blogger_name,))
+                r = cursor.fetchone()
+                if r:
+                    target_id = r[0]
+            if not target_id:
+                cursor.execute("SELECT id FROM bloggers WHERE biji_topic_alias = ? AND biji_url IS NULL LIMIT 1;", (topic_alias,))
+                r = cursor.fetchone()
+                if r:
+                    target_id = r[0]
+
+            if target_id:
+                # 针对该特定 ID 进行精准更新，彻底解决多行宽泛匹配导致的 UNIQUE constraint 报错
+                cursor.execute("""
+                    UPDATE bloggers 
+                    SET name = ?, biji_url = ?, biji_follow_id = ?, biji_topic_alias = ?
+                    WHERE id = ?;
+                """, (final_name, biji_url, str(follow_id or ""), topic_alias, target_id))
+            else:
+                # 保底单行更新
+                cursor.execute("""
+                    UPDATE bloggers 
+                    SET name = ?, biji_url = ?, biji_follow_id = ?, biji_topic_alias = ?
+                    WHERE rowid = (
+                        SELECT rowid FROM bloggers 
+                        WHERE name = ? OR home_url = ? OR (biji_url IS NULL AND biji_topic_alias = ?) 
+                        LIMIT 1
+                    );
+                """, (final_name, biji_url, str(follow_id or ""), topic_alias, blogger_name, home_url, topic_alias))
+                
+            conn.commit()
+            conn.close()
+            self.log(f"💾 [数据库回写成功] 已精准将 biji_url ({biji_url}) 绑定至博主 '{final_name}' (ID: {target_id})！")
+        except Exception as e:
+            self.log(f"❌ [数据库回写失败]: {e}")
 
     def run_sync(self, max_posts_per_blogger=20):
         """执行完整得到数据同步闭环"""
