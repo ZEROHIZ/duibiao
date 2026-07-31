@@ -561,9 +561,7 @@ def get_bloggers_list():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    try:
-        # 联合子查询抓取该博主时间戳最大的笔记作为最新动态
-        cursor.execute("""
+    sql = """
         SELECT b.id, b.name, b.home_url, b.total_notes, b.video_count, b.normal_count, 
                b.avg_likes, b.avg_collects, b.avg_comments, 
                b.total_likes, b.total_collects, b.total_comments, b.category, b.is_transcribe, b.platform,
@@ -577,7 +575,20 @@ def get_bloggers_list():
             LIMIT 1
         )
         ORDER BY b.total_likes DESC;
-        """)
+    """
+    try:
+        try:
+            cursor.execute(sql)
+        except sqlite3.OperationalError:
+            # 捕获因老旧数据库缺少 biji_* 字段引发的异常，自动补全表结构
+            try:
+                from biji_migrator import migrate_database
+                db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+                migrate_database(db_path)
+            except:
+                pass
+            cursor.execute(sql)
+
         rows = cursor.fetchall()
         bloggers = []
         for row in rows:
@@ -699,8 +710,19 @@ def get_biji_accounts():
     """获取所有已配置的得到浏览器账号列表"""
     conn = get_db_connection()
     cursor = conn.cursor()
+    sql = "SELECT account_id, nickname, alias_name, status, last_login_at FROM biji_browser_accounts ORDER BY account_id ASC;"
     try:
-        cursor.execute("SELECT account_id, nickname, alias_name, status, last_login_at FROM biji_browser_accounts ORDER BY account_id ASC;")
+        try:
+            cursor.execute(sql)
+        except sqlite3.OperationalError:
+            try:
+                from biji_migrator import migrate_database
+                db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+                migrate_database(db_path)
+            except:
+                pass
+            cursor.execute(sql)
+
         rows = cursor.fetchall()
         accounts = [dict(r) for r in rows]
         if not accounts:
