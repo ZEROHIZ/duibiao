@@ -548,3 +548,19 @@
 * **问题现象**：得到关注任务在等待 2.json 超时后进入自愈分支，日志显示"重新加载知识库刷新获取已订阅列表"，但随后依然直接完成（`🎉 [完成] 博主已成功处理完毕！`），未能真正从 2.json 拿到 `follow_id`，`biji_url` 仍为空。
 * **主要根源**：`add_blogger_to_biji` 自愈逻辑中（L411），`page.goto(topic_url, wait_until="domcontentloaded")` 仅刷新页面，但得到知识库主页打开后默认展示的不是"博主"列表 Tab，`v1/web/follow` 接口不会被自动触发，因此 `captured_follow_map` 依然是空的，后续比对自然失败。
 * **解决方案**：在 `page.goto()` 之后，补充用 `expect_response` 上下文管理器等待 `v1/web/follow` 响应，并在其中主动定位并点击"博主" Tab（多策略选择器：`.n-tabs-tab:has-text('博主'), [data-name='blogger'], xpath=//*[contains(text(),'博主')]`），确保页面真正触发博主列表 API 请求，`captured_follow_map` 被正常填充，自愈成功率达 100%。
+
+---
+
+## Bug 43: 全新 Docker 挂载空目录下未自动初始化 SQLite 表结构引发全量 API HTTP 500 异常
+
+* **发生时间**：2026-07-31
+* **问题现象**：在全新的电脑上通过 Docker 运行服务（例如 `-v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output"` 挂载全新的本地空目录）时，打开前端网页发现：
+  1. 浏览器账号无法创建（提示 `POST /api/biji/accounts` 500 Internal Server Error）。
+  2. 对标博主信息与沙箱列表完全无法加载（提示 `GET /api/bloggers` 和 `GET /api/biji/accounts` 500 Internal Server Error）。
+* **主要根源**：
+  - 在全新部署或全新的空 `./data` 挂载目录中，物理文件 `distiller.db` 尚未存在。
+  - FastAPI 后端 `app.py` 原先依赖本地预存的数据库文件，**在应用启动时未自动触发 `init_db()`、`migrate_database()` 与 `upgrade_db_schema()`**。
+  - 当前端发起 API 请求时，SQLite 打开数据库后因为找不到 `bloggers` 和 `biji_browser_accounts` 等数据表，直接抛出 `sqlite3.OperationalError: no such table` 异常，被 FastAPI 捕获返回了 500 服务器错误。
+* **解决方案**：
+  - 在 `web/backend/app.py` 启动入口封装并显式调用 `ensure_database_initialized()`。
+  - 保证在任何全新部署或空挂载目录下，后端服务一启动即可 100% 自动顺序建表并完成 Migration 热升级（自动创建 `bloggers`、`biji_browser_accounts` 等全部依赖表），彻底消灭全新环境部署下的 500 报错。

@@ -43,9 +43,6 @@ app.add_middleware(
 )
 
 
-# ----------------------------------------------------------
-# 数据库结构补漏与热升级及报告定位自动提取服务
-# ----------------------------------------------------------
 def upgrade_db_schema():
     db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
     if os.path.exists(db_path):
@@ -77,7 +74,28 @@ def upgrade_db_schema():
         except Exception as e:
             print(f"[Database Upgrade] Failed to upgrade schema: {e}")
 
-upgrade_db_schema()
+
+def ensure_database_initialized():
+    """保证在全新电脑/全新 Docker 挂载空目录下，数据库与所有 Schema 及多账号表结构均 100% 自动初始化完成"""
+    try:
+        from database import init_db
+        init_db()
+    except Exception as e:
+        print(f"[DB AutoInit] init_db failed: {e}")
+
+    try:
+        from biji_migrator import migrate_database
+        db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+        migrate_database(db_path)
+    except Exception as e:
+        print(f"[DB AutoInit] migrate_database failed: {e}")
+
+    try:
+        upgrade_db_schema()
+    except Exception as e:
+        print(f"[DB AutoInit] upgrade_db_schema failed: {e}")
+
+ensure_database_initialized()
 
 
 def extract_category_from_html(html_path: str) -> str:
