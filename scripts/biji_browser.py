@@ -15,6 +15,7 @@ import time
 import re
 import argparse
 import sqlite3
+import threading
 from pathlib import Path
 
 # 尝试导入 playwright
@@ -40,13 +41,32 @@ DB_PATH = os.path.join(DATA_DIR, "distiller.db")
 class BijiBrowserEngine:
     """得到 Playwright 浏览器自动化与接口拦截管理类"""
 
-    def __init__(self, account_id="account_01", headless=True, log_func=None):
+    def __init__(self, account_id="account_01", headless=None, log_func=None):
         self.account_id = account_id
-        self.headless = headless
         self.log_func = log_func
         self.context_dir = os.path.join(DATA_DIR, "browser_context", account_id)
         os.makedirs(self.context_dir, exist_ok=True)
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+        # 若未指定 headless，优先从 config.json 读取配置（默认无头）
+        if headless is None:
+            headless = True
+            config_path = os.path.join(DATA_DIR, "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                        val = cfg.get("headless")
+                        if val is None:
+                            val = cfg.get("headless_browser")
+                        if val is not None:
+                            if isinstance(val, bool):
+                                headless = val
+                            elif isinstance(val, str):
+                                headless = (val.lower() == "true")
+                except:
+                    pass
+        self.headless = headless
 
         # 缓存拦截到的数据
         self.topics_data = []
@@ -647,6 +667,9 @@ class BijiBrowserEngine:
                 print("=" * 60)
                 print(f"📸 登录二维码已截取并保存至：")
                 print(f"   {qr_path}")
+                print("🖥️ 远程桌面操作提示：")
+                print("   若需手动在浏览器中交互、输入手机号或处理验证码，请在浏览器中打开：")
+                print("   👉 http://localhost:6080 (或在 Web 看板页面右上角点击『🖥️ 远程桌面』)")
                 print("💡 提示：若微信没有绑定得到账号，请先在手机/网页端自行登录绑定后再扫码。")
                 print("=" * 60)
                 print()
@@ -880,6 +903,118 @@ class BijiBrowserEngine:
         # ----------------------------------------------------
         print("\n🔄 正在触发得到文案向主数据库的回写匹配...")
         backfill_transcripts(DB_PATH)
+
+
+class ManualBrowserManager:
+    """管理用户从 Web 界面手动拉起的 Playwright Chromium 实例 (支持多平台: 得到、抖音、小红书、B站等)"""
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(ManualBrowserManager, cls).__new__(cls)
+                cls._instance.active_sessions = {}
+            return cls._instance
+
+    def launch_session(self, account_id="account_01", target_url="https://www.biji.com/subject"):
+        """手动拉起指定账号环境的 Playwright Chromium 页面"""
+        import threading
+        with self._lock:
+            # 若已有在运行的同账号线程，发送停止信号
+            if account_id in self.active_sessions:
+                old_info = self.active_sessions[account_id]
+                old_evt = old_info.get("stop_event")
+                if old_evt:
+                    old_evt.set()
+                time.sleep(0.3)
+
+            stop_evt = threading.Event()
+            session_info = {
+                "account_id": account_id,
+                "target_url": target_url,
+                "stop_event": stop_evt,
+                "started_at": time.time(),
+                "status": "running"
+            }
+
+            def run_browser():
+                context_dir = os.path.join(DATA_DIR, "browser_context", account_id)
+                os.makedirs(context_dir, exist_ok=True)
+                try:
+                    with sync_playwright() as p:
+                        print(f"🌐 [手动浏览器] 正在为账号 '{account_id}' 启动 Chromium 有头窗口 (URL: {target_url})...")
+                        context = p.chromium.launch_persistent_context(
+                            user_data_dir=context_dir,
+                            headless=False,
+                            viewport={"width": 1280, "height": 800},
+                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            args=["--no-sandbox", "--disable-setuid-sandbox"]
+                        )
+                        page = context.new_page()
+                        page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
+
+                        start_t = time.time()
+                        while not stop_evt.is_set():
+                            if time.time() - start_t > 900:  # 15 分钟超时自动关闭
+                                print(f"⏳ [手动浏览器] 账号 '{account_id}' 会话已达到 15 分钟无操作超时，自动安全关闭。")
+                                break
+
+                            # 尝试自动监控得到登录标志
+                            try:
+                                if "biji.com" in page.url:
+                                    nickname_elem = page.locator(".nickname-row").first
+                                    if nickname_elem.is_visible(timeout=300):
+                                        nickname = nickname_elem.inner_text().strip()
+                                        engine = BijiBrowserEngine(account_id=account_id)
+                                        engine.update_account_status(nickname=nickname, status="LOGGED_IN")
+                            except:
+                                pass
+
+                            time.sleep(1)
+
+                        print(f"🛑 [手动浏览器] 关闭账号 '{account_id}' 的 Chromium 会话...")
+                        context.close()
+                except Exception as ex:
+                    print(f"⚠️ [手动浏览器提示/退出] 账号 '{account_id}': {ex}")
+                finally:
+                    with self._lock:
+                        if account_id in self.active_sessions and self.active_sessions[account_id].get("stop_event") == stop_evt:
+                            del self.active_sessions[account_id]
+
+            t = threading.Thread(target=run_browser, daemon=True)
+            session_info["thread"] = t
+            self.active_sessions[account_id] = session_info
+            t.start()
+            return session_info
+
+    def close_session(self, account_id="account_01"):
+        """安全关闭指定账号的手动浏览器会话"""
+        with self._lock:
+            if account_id in self.active_sessions:
+                session_info = self.active_sessions[account_id]
+                evt = session_info.get("stop_event")
+                if evt:
+                    evt.set()
+                return True
+            return False
+
+    def get_active_sessions(self):
+        """获取当前正在运行的手动浏览器会话字典"""
+        with self._lock:
+            res = {}
+            for acc_id, info in self.active_sessions.items():
+                res[acc_id] = {
+                    "account_id": acc_id,
+                    "target_url": info.get("target_url"),
+                    "started_at": info.get("started_at"),
+                    "running_seconds": int(time.time() - info.get("started_at", time.time()))
+                }
+            return res
+
+
+manual_browser_mgr = ManualBrowserManager()
 
 
 def main():

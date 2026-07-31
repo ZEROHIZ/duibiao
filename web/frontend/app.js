@@ -52,6 +52,33 @@ function toggleTheme() {
     }
 }
 
+// 远程桌面 (noVNC) 弹窗控制逻辑 (全局函数，便于从 HTML 或扫码弹窗唤起)
+function openNoVncModal() {
+    const modal = document.getElementById("novnc-modal");
+    const iframe = document.getElementById("novnc-iframe");
+    const urlLabel = document.getElementById("novnc-url-label");
+    const extLink = document.getElementById("novnc-external-link");
+    if (!modal || !iframe) return;
+
+    // 动态确定当前 Host 与 6080 端口 (适配本地与远程 Docker 部署)
+    const host = window.location.hostname || "localhost";
+    const vncPort = 6080;
+    const vncUrl = `http://${host}:${vncPort}/vnc.html?autoconnect=true&resize=remote`;
+
+    iframe.src = vncUrl;
+    if (urlLabel) urlLabel.textContent = `http://${host}:${vncPort}`;
+    if (extLink) extLink.href = vncUrl;
+
+    modal.style.display = "flex";
+}
+
+function closeNoVncModal() {
+    const modal = document.getElementById("novnc-modal");
+    const iframe = document.getElementById("novnc-iframe");
+    if (modal) modal.style.display = "none";
+    if (iframe) iframe.src = "";
+}
+
 // 4. 事件监听器配置
 function setupEventListeners() {
     // 顶栏 Tab 导航点击事件
@@ -72,6 +99,185 @@ function setupEventListeners() {
 
     // 主题切换按钮
     document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
+
+    // 远程桌面 (noVNC) 弹窗按钮绑定
+    const btnOpenNovnc = document.getElementById("btn-open-novnc");
+    if (btnOpenNovnc) {
+        btnOpenNovnc.addEventListener("click", openNoVncModal);
+    }
+    const btnCloseNovnc = document.getElementById("btn-close-novnc");
+    if (btnCloseNovnc) {
+        btnCloseNovnc.addEventListener("click", closeNoVncModal);
+    }
+    const btnRefreshTabNovnc = document.getElementById("btn-refresh-tab-novnc");
+    if (btnRefreshTabNovnc) {
+        btnRefreshTabNovnc.addEventListener("click", () => {
+            const iframe = document.getElementById("tab-novnc-iframe");
+            if (iframe) {
+                const currentSrc = iframe.src;
+                iframe.src = "about:blank";
+                setTimeout(() => { iframe.src = currentSrc; }, 100);
+            }
+        });
+    }
+
+    // 远程桌面左侧边栏控制事件
+    const platformSelect = document.getElementById("sidebar-select-platform");
+    const customUrlInput = document.getElementById("sidebar-input-custom-url");
+    if (platformSelect && customUrlInput) {
+        platformSelect.addEventListener("change", (e) => {
+            customUrlInput.style.display = e.target.value === "custom" ? "block" : "none";
+        });
+    }
+
+    const btnSidebarLaunch = document.getElementById("btn-sidebar-launch-browser");
+    if (btnSidebarLaunch) {
+        btnSidebarLaunch.addEventListener("click", async () => {
+            if (!selectedSidebarAccountId) {
+                showToast("请先在左侧选择一个账号沙箱！", "error");
+                return;
+            }
+            const plat = platformSelect ? platformSelect.value : "biji";
+            let customUrl = customUrlInput ? customUrlInput.value.trim() : "";
+
+            showToast(`正在发送指令拉起账号 [${selectedSidebarAccountId}] 的浏览器...`, "info");
+
+            try {
+                const res = await fetch(`${API_BASE}/api/biji/browser/launch`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        account_id: selectedSidebarAccountId,
+                        platform: plat,
+                        target_url: customUrl
+                    })
+                });
+                const data = await res.json();
+                if (data.status === "success") {
+                    showToast(`⚡ 成功手动启动浏览器进程！画面已渲染至右侧 VNC 桌面。`, "success");
+                    loadSidebarAccounts();
+
+                    const iframe = document.getElementById("tab-novnc-iframe");
+                    if (iframe && (!iframe.src || iframe.src.includes("about:blank"))) {
+                        const host = window.location.hostname || "localhost";
+                        iframe.src = `http://${host}:6080/vnc.html?autoconnect=true&resize=remote`;
+                    }
+                } else {
+                    showToast(data.message || "拉起浏览器失败", "error");
+                }
+            } catch (err) {
+                showToast(`请求失败: ${err.message}`, "error");
+            }
+        });
+    }
+
+    const btnSidebarClose = document.getElementById("btn-sidebar-close-browser");
+    if (btnSidebarClose) {
+        btnSidebarClose.addEventListener("click", async () => {
+            if (!selectedSidebarAccountId) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/biji/browser/close`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ account_id: selectedSidebarAccountId })
+                });
+                const data = await res.json();
+                showToast(data.message || "已关闭浏览器会话", "info");
+                setTimeout(loadSidebarAccounts, 500);
+            } catch (err) {
+                showToast(`关闭请求失败: ${err.message}`, "error");
+            }
+        });
+    }
+
+    const btnSidebarSaveAlias = document.getElementById("btn-sidebar-save-alias");
+    if (btnSidebarSaveAlias) {
+        btnSidebarSaveAlias.addEventListener("click", async () => {
+            if (!selectedSidebarAccountId) return;
+            const aliasInput = document.getElementById("sidebar-input-alias");
+            const newAlias = aliasInput ? aliasInput.value.trim() : "";
+            if (!newAlias) {
+                showToast("账号别名不能为空！", "error");
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/api/biji/accounts/${selectedSidebarAccountId}/alias`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ alias_name: newAlias })
+                });
+                const data = await res.json();
+                if (data.status === "success") {
+                    showToast(`✓ 账号别名已更新为“${newAlias}”，且已全站广播同步！`, "success");
+                    loadSidebarAccounts();
+                    refreshAllAccountDropdowns();
+                } else {
+                    showToast(data.message || "保存别名失败", "error");
+                }
+            } catch (err) {
+                showToast(`保存别名请求错误: ${err.message}`, "error");
+            }
+        });
+    }
+
+    const btnSidebarAddAcc = document.getElementById("btn-sidebar-add-account");
+    if (btnSidebarAddAcc) {
+        btnSidebarAddAcc.addEventListener("click", async () => {
+            const aliasName = prompt("请输入新账号沙箱的别名（例如：账号_03）：");
+            if (aliasName === null) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/biji/accounts`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ alias_name: aliasName.trim() })
+                });
+                const data = await res.json();
+                if (data.status === "success") {
+                    showToast(`✓ 成功创建新账号沙箱 [${data.account.account_id}]！`, "success");
+                    selectedSidebarAccountId = data.account.account_id;
+                    loadSidebarAccounts();
+                    refreshAllAccountDropdowns();
+                } else {
+                    showToast(data.message || "创建账号失败", "error");
+                }
+            } catch (err) {
+                showToast(`创建失败: ${err.message}`, "error");
+            }
+        });
+    }
+
+    const btnSidebarDeleteAcc = document.getElementById("btn-sidebar-delete-account");
+    if (btnSidebarDeleteAcc) {
+        btnSidebarDeleteAcc.addEventListener("click", async () => {
+            if (!selectedSidebarAccountId) {
+                showToast("请先在左侧选择要删除的沙箱！", "error");
+                return;
+            }
+            if (selectedSidebarAccountId === "account_01") {
+                showToast("默认基础账号 (account_01) 无法删除！", "error");
+                return;
+            }
+            if (!confirm(`确定要删除浏览器沙箱 [${selectedSidebarAccountId}] 吗？\n此操作将清除其本地登录 Session！`)) {
+                return;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/api/biji/accounts/${selectedSidebarAccountId}`, {
+                    method: "DELETE"
+                });
+                const data = await res.json();
+                if (res.ok && data.status === "success") {
+                    showToast(`✓ 已成功删除账号沙箱 [${selectedSidebarAccountId}]！`, "success");
+                    selectedSidebarAccountId = "account_01";
+                    loadSidebarAccounts();
+                    refreshAllAccountDropdowns();
+                } else {
+                    showToast(data.detail || data.message || "删除账号失败", "error");
+                }
+            } catch (err) {
+                showToast(`删除失败: ${err.message}`, "error");
+            }
+        });
+    }
 
     // 思维模型快速添加表单提交
     const quickForm = document.getElementById("quick-knowledge-form");
@@ -361,7 +567,7 @@ function setupEventListeners() {
             try {
                 const res = await fetch(`${API_BASE}/api/auth/cli/models?provider=google`);
                 const data = await res.json();
-                if (data.status === "success" && data.models) {
+                if (data.status === "success" && data.models && data.models.length > 0) {
                     selectGoogleModel.innerHTML = "";
                     data.models.forEach(model => {
                         const opt = document.createElement("option");
@@ -381,10 +587,13 @@ function setupEventListeners() {
                     
                     showToast("Google 可用模型列表拉取成功！", "success");
                 } else {
-                    showToast("获取模型列表失败，请检查登录态或网络代理", "error");
+                    const failMsg = data.message || "获取模型列表失败，请检查登录态或网络代理";
+                    selectGoogleModel.innerHTML = `<option value="" disabled selected>❌ ${failMsg}</option><option value="custom">-- 自定义模型名称 --</option>`;
+                    showToast(`❌ ${failMsg}`, "error");
                 }
             } catch (err) {
-                showToast("网络请求出错", "error");
+                selectGoogleModel.innerHTML = `<option value="" disabled selected>❌ 网络请求错误: ${err.message}</option><option value="custom">-- 自定义模型名称 --</option>`;
+                showToast(`网络请求出错: ${err.message}`, "error");
             } finally {
                 btnFetchGoogleModels.disabled = false;
                 btnFetchGoogleModels.textContent = "获取模型";
@@ -404,7 +613,7 @@ function setupEventListeners() {
             try {
                 const res = await fetch(`${API_BASE}/api/auth/cli/models?provider=openai`);
                 const data = await res.json();
-                if (data.status === "success" && data.models) {
+                if (data.status === "success" && data.models && data.models.length > 0) {
                     selectOpenaiModel.innerHTML = "";
                     data.models.forEach(model => {
                         const opt = document.createElement("option");
@@ -424,10 +633,13 @@ function setupEventListeners() {
                     
                     showToast("OpenAI 可用模型列表拉取成功！", "success");
                 } else {
-                    showToast("获取模型列表失败，请检查 API Key 与 Base URL 配置", "error");
+                    const failMsg = data.message || "获取模型列表失败，请检查 API Key 与 Base URL 配置";
+                    selectOpenaiModel.innerHTML = `<option value="" disabled selected>❌ ${failMsg}</option><option value="custom">-- 自定义模型名称 --</option>`;
+                    showToast(`❌ ${failMsg}`, "error");
                 }
             } catch (err) {
-                showToast("网络请求出错", "error");
+                selectOpenaiModel.innerHTML = `<option value="" disabled selected>❌ 网络请求错误: ${err.message}</option><option value="custom">-- 自定义模型名称 --</option>`;
+                showToast(`网络请求出错: ${err.message}`, "error");
             } finally {
                 btnFetchOpenaiModels.disabled = false;
                 btnFetchOpenaiModels.textContent = "获取模型";
@@ -761,6 +973,119 @@ function loadTabData(tabId) {
         case "oauth":
             loadOAuthPageData();
             break;
+        case "novnc":
+            loadTabNoVncData();
+            break;
+    }
+}
+
+let selectedSidebarAccountId = "account_01";
+
+function loadTabNoVncData() {
+    const iframe = document.getElementById("tab-novnc-iframe");
+    const extLink = document.getElementById("tab-novnc-external-link");
+    if (!iframe) return;
+
+    const host = window.location.hostname || "localhost";
+    const vncPort = 6080;
+    const vncUrl = `http://${host}:${vncPort}/vnc.html?autoconnect=true&resize=remote`;
+
+    if (!iframe.src || iframe.src.includes("about:blank") || iframe.src.includes(":8000")) {
+        iframe.src = vncUrl;
+    }
+    if (extLink) {
+        extLink.href = vncUrl;
+    }
+
+    // 每次进入远程桌面 TAB，刷取左侧账号列表
+    loadSidebarAccounts();
+}
+
+async function loadSidebarAccounts() {
+    const container = document.getElementById("sidebar-account-list");
+    if (!container) return;
+
+    try {
+        const [accRes, sessRes] = await Promise.all([
+            fetch(`${API_BASE}/api/biji/accounts`).then(r => r.json()),
+            fetch(`${API_BASE}/api/biji/browser/active_sessions`).then(r => r.json())
+        ]);
+
+        const accounts = accRes.accounts || [];
+        const activeSessions = sessRes.sessions || {};
+
+        container.innerHTML = "";
+
+        if (accounts.length === 0) {
+            container.innerHTML = `<div style="font-size: 0.8rem; color: var(--ink-tertiary); text-align: center; padding: 1rem 0;">暂无账号沙箱</div>`;
+            return;
+        }
+
+        accounts.forEach(acc => {
+            const accId = acc.account_id;
+            const alias = acc.alias_name || acc.nickname || accId;
+            const isRunning = !!activeSessions[accId];
+            const isSelected = accId === selectedSidebarAccountId;
+
+            const card = document.createElement("div");
+            card.className = "sidebar-account-card";
+            card.style.border = isSelected ? "2px solid var(--accent-primary)" : "1px solid var(--border-primary)";
+            card.style.background = isSelected ? "var(--bg-primary)" : "transparent";
+            card.style.padding = "0.65rem 0.75rem";
+            card.style.borderRadius = "3px";
+            card.style.cursor = "pointer";
+            card.style.transition = "all 0.2s ease";
+
+            let badgeHtml = "";
+            if (isRunning) {
+                badgeHtml = `<span style="font-size: 0.7rem; background: rgba(74, 138, 95, 0.15); color: #4a8a5f; border: 1px solid #4a8a5f; padding: 0.1rem 0.4rem; font-weight: bold;">🟢 运行中</span>`;
+            } else if (acc.status === "LOGGED_IN") {
+                badgeHtml = `<span style="font-size: 0.7rem; color: var(--ink-tertiary);">🟢 已登录</span>`;
+            } else {
+                badgeHtml = `<span style="font-size: 0.7rem; color: #c94f3b;">🔴 需登录</span>`;
+            }
+
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                    <span style="font-weight: bold; font-size: 0.88rem; color: var(--ink-primary);">${alias}</span>
+                    ${badgeHtml}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: var(--ink-tertiary); font-family: var(--font-mono);">
+                    <span>ID: ${accId}</span>
+                    <span>${acc.nickname || ''}</span>
+                </div>
+            `;
+
+            card.addEventListener("click", () => {
+                selectedSidebarAccountId = accId;
+                const aliasInput = document.getElementById("sidebar-input-alias");
+                if (aliasInput) aliasInput.value = alias;
+                loadSidebarAccounts();
+            });
+
+            container.appendChild(card);
+        });
+
+        // 默认匹配更新输入框
+        const selectedAcc = accounts.find(a => a.account_id === selectedSidebarAccountId) || accounts[0];
+        if (selectedAcc) {
+            selectedSidebarAccountId = selectedAcc.account_id;
+            const aliasInput = document.getElementById("sidebar-input-alias");
+            if (aliasInput) {
+                aliasInput.value = selectedAcc.alias_name || selectedAcc.nickname || selectedAcc.account_id;
+            }
+        }
+    } catch (err) {
+        console.error("加载侧边栏账号失败:", err);
+    }
+}
+
+function refreshAllAccountDropdowns() {
+    if (typeof loadBijiAccountsList === "function") {
+        loadBijiAccountsList();
+    }
+    if (typeof loadBloggersData === "function") {
+        loadBloggersData();
     }
 }
 
@@ -3157,6 +3482,47 @@ async function loadOAuthPageData() {
 let googleTerminalPollTimer = null;
 let activeTerminals = {}; // provider -> { term, ws }
 
+function extractCleanAuthUrl(streamText, provider) {
+    if (!streamText) return null;
+
+    // 1. 彻底清空所有 ANSI 色彩与控制字符
+    let text = streamText.replace(/[\u001b\u009b][\[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+    text = text.replace(/\x1b[^\m]*m/g, '');
+
+    // 2. 匹配 Google OAuth / OpenAI 授权网址的起始位置
+    let startIdx = -1;
+    if (provider === "google" || text.includes("accounts.google.com")) {
+        startIdx = text.indexOf("https://accounts.google.com/o/oauth2/auth?");
+    } else {
+        startIdx = text.indexOf("https://");
+    }
+
+    if (startIdx === -1) return null;
+
+    let sub = text.substring(startIdx);
+
+    // 3. 截取到提示结束语位置 (例如 "If you aren't automatically redirected", "If not:", "Enter code:")
+    const endKeywords = ["If you aren't", "authorization code", "If not:", "Shift+up", "paste the", "Enter code"];
+    let endIdx = sub.length;
+    for (let kw of endKeywords) {
+        let pos = sub.indexOf(kw);
+        if (pos !== -1 && pos < endIdx) {
+            endIdx = pos;
+        }
+    }
+    sub = sub.substring(0, endIdx);
+
+    // 4. 【核心精髓】彻底把这个 URL 中所有的 \r, \n, \t, 空格、双引号、单引号全部删除抹平！
+    let cleanUrl = sub.replace(/[\r\n\t\s"'>]+/g, '');
+
+    // 5. 校验：如果是 Google 链接，必须等到 state= 接收完整，避免捕获半截
+    if (provider === "google" && !cleanUrl.includes("state=") && cleanUrl.length < 280) {
+        return null;
+    }
+
+    return cleanUrl;
+}
+
 // 3. 开启网页交互式终端登录 (通过 xterm.js + PTY WebSocket 双向传输)
 async function startTerminalAuth(provider) {
     const container = document.getElementById(`${provider}-terminal-container`);
@@ -3166,6 +3532,9 @@ async function startTerminalAuth(provider) {
     container.style.display = "block";
     container.innerHTML = ""; // 清空之前的内容
     killBtn.style.display = "inline-block";
+
+    const initialUrlBanner = document.getElementById(`${provider}-terminal-url-banner`);
+    if (initialUrlBanner) initialUrlBanner.style.display = "none";
     
     // 初始化 xterm.js
     const term = new Terminal({
@@ -3209,18 +3578,73 @@ async function startTerminalAuth(provider) {
     
     activeTerminals[provider] = { term, ws };
 
-    // 兜底粘贴逻辑：如果通过浏览器右键或快捷键向容器粘贴，自动捕获并发送给终端
+    const codeRow = document.getElementById(`${provider}-terminal-code-row`);
+    const codeInput = document.getElementById(`input-${provider}-terminal-code`);
+    const codeBtn = document.getElementById(`btn-${provider}-submit-code`);
+    
+    if (codeRow) codeRow.style.display = "flex";
+    if (codeInput) codeInput.value = "";
+    
+    const sendCodeToTerminal = () => {
+        if (!codeInput) return;
+        const code = codeInput.value.trim();
+        if (!code) {
+            showToast("请先粘贴或输入 Authorization Code", "warning");
+            return;
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(code + "\r");
+            showToast("✅ 已成功回传 Authorization Code 到终端！", "success");
+            codeInput.value = "";
+        } else {
+            showToast("终端会话已断开，无法发送", "error");
+        }
+    };
+    
+    if (codeBtn) {
+        codeBtn.onclick = sendCodeToTerminal;
+    }
+    if (codeInput) {
+        codeInput.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                sendCodeToTerminal();
+            }
+        };
+    }
+
+    // 兜底粘贴逻辑：如果通过键盘 Ctrl+V 或右键向黑框容器粘贴，自动捕获并加上回车发送
     container.addEventListener("paste", (e) => {
         e.preventDefault();
         const clipboardData = e.clipboardData || window.clipboardData;
-        const text = clipboardData.getData("text");
+        const text = clipboardData ? clipboardData.getData("text") : "";
         if (text && ws.readyState === WebSocket.OPEN) {
-            ws.send(text);
+            const cleanText = text.trim();
+            ws.send(cleanText + "\r");
+            showToast("已自动将剪贴板内容回传至终端", "info");
         }
     });
     
+    let rawAccumulatedStream = "";
+    const urlBanner = document.getElementById(`${provider}-terminal-url-banner`);
+    const urlLink = document.getElementById(`${provider}-terminal-url-link`);
+
     ws.onmessage = (event) => {
         term.write(event.data);
+
+        // 积累流式文本并去除 ANSI 转义序列
+        rawAccumulatedStream += event.data;
+        
+        // 使用多行精确实时提取函数
+        const cleanUrl = extractCleanAuthUrl(rawAccumulatedStream, provider);
+
+        if (cleanUrl) {
+            if (urlBanner && urlLink && urlLink.href !== cleanUrl) {
+                urlLink.href = cleanUrl;
+                urlBanner.style.display = "block";
+                showToast("🔗 成功捕捉 100% 完整无损授权 URL！点击按钮直接跳转", "success");
+            }
+        }
     };
     
     term.onData((data) => {
@@ -3232,6 +3656,7 @@ async function startTerminalAuth(provider) {
     ws.onclose = () => {
         term.write("\r\n[System] 终端会话已断开连接。\r\n");
         killBtn.style.display = "none";
+        if (codeRow) codeRow.style.display = "none";
         delete activeTerminals[provider];
         // 探测进程结束 2 秒后刷新绑定状态
         setTimeout(loadOAuthPageData, 2000);

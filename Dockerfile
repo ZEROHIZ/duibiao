@@ -9,34 +9,46 @@ ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV DISPLAY=:99
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
 
 # 复制依赖描述文件并安装 Python 包
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# === 安装智能体 CLI 工具 ===
-# 1. 安装 Node.js 18（用于 opencode CLI 和 codex CLI 的 npm 依赖）
-RUN apt-get update && apt-get install -y curl gnupg \
+# === 安装虚拟屏与远程桌面 (Xvfb / x11vnc / noVNC) 及智能体 CLI 工具 ===
+# 1. 安装图形渲染与 VNC/noVNC Web 远程桌面依赖，Node.js 18
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    fluxbox \
+    curl gnupg tzdata \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. 安装 opencode CLI（管理 Google Antigravity 渠道 OAuth 登录，即 opencode auth login）
+# 2. 安装 opencode CLI
 RUN npm install -g opencode-ai
 
-# 3. 安装 OpenAI Codex CLI（codex login --device-auth）
+# 3. 安装 OpenAI Codex CLI
 RUN npm install -g @openai/codex
 
-# 4. 安装 Antigravity agy CLI（Google Antigravity AI 智能体，用于调用 AI 模型）
-RUN curl -fsSL https://antigravity.google/cli/install.sh | bash \
+# 4. 安装 Antigravity agy CLI (增加重试机制防止网络波动)
+RUN (for i in 1 2 3 4 5; do curl -fsSL https://antigravity.google/cli/install.sh | bash && break || sleep 3; done) \
     && echo 'export PATH="$HOME/.local/bin:$PATH"' >> /etc/environment
 ENV PATH="/root/.local/bin:${PATH}"
 
 # 复制整个项目到容器中
 COPY . .
 
-# 暴露后端服务端口
-EXPOSE 8000
+# 赋予入口引导脚本可执行权限
+RUN chmod +x /app/entrypoint.sh
 
-# 启动 FastAPI 服务
-CMD ["python", "web/backend/app.py"]
+# 暴露后端 API 端口 (8000) 与 noVNC 网页远程桌面端口 (6080)
+EXPOSE 8000 6080
+
+# 启动服务引导脚本
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]

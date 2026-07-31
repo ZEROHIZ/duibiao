@@ -23,6 +23,10 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 # 引入本级数据库及导入模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS_DIR = os.path.join(ROOT_DIR, "scripts")
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
 from database import get_db_connection, init_db
 from seed import seed_all
 from importer import run_full_import
@@ -735,17 +739,125 @@ def create_biji_account(body: BijiAccountCreate):
 
 @app.put("/api/biji/accounts/{account_id}/alias")
 def update_biji_account_alias(account_id: str, body: BijiAccountAliasUpdate):
-    """修改指定得到账号的别名"""
+    """修改指定得到/通用浏览器账号的别名"""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute("UPDATE biji_browser_accounts SET alias_name = ? WHERE account_id = ?;", (body.alias_name.strip(), account_id))
         conn.commit()
-        return {"status": "success", "message": "账号别名更新成功"}
+        return {"status": "success", "message": "账号别名更新成功", "alias_name": body.alias_name.strip()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+@app.delete("/api/biji/accounts/{account_id}")
+def delete_biji_account(account_id: str):
+    """删除指定的浏览器账号沙箱"""
+    if account_id == "account_01":
+        raise HTTPException(status_code=400, detail="默认基础账号 (account_01) 不能删除！")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT account_id FROM biji_browser_accounts WHERE account_id = ?;", (account_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="未找到该账号沙箱")
+
+        try:
+            from biji_browser import manual_browser_mgr
+            manual_browser_mgr.close_session(account_id)
+        except:
+            pass
+
+        cursor.execute("DELETE FROM biji_browser_accounts WHERE account_id = ?;", (account_id,))
+        cursor.execute("UPDATE bloggers SET biji_browser_id = 'account_01' WHERE biji_browser_id = ?;", (account_id,))
+        conn.commit()
+
+        context_dir = os.path.join(ROOT_DIR, "data", "browser_context", account_id)
+        if os.path.exists(context_dir):
+            import shutil
+            try:
+                shutil.rmtree(context_dir, ignore_errors=True)
+            except:
+                pass
+
+        return {"status": "success", "message": f"成功删除账号沙箱 [{account_id}]"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+class BrowserLaunchRequest(BaseModel):
+    account_id: str = "account_01"
+    platform: Optional[str] = "biji"
+    target_url: Optional[str] = None
+
+
+class BrowserCloseRequest(BaseModel):
+    account_id: str = "account_01"
+
+
+@app.post("/api/biji/browser/launch")
+def launch_manual_browser_api(body: BrowserLaunchRequest):
+    """手动拉起指定账号环境的 Playwright Chromium 实例 (支持多平台: 得到, 抖音, 小红书, B站, 自定义)"""
+    account_id = body.account_id or "account_01"
+    platform = body.platform or "biji"
+
+    url_map = {
+        "biji": "https://www.biji.com/subject",
+        "douyin": "https://www.douyin.com",
+        "xiaohongshu": "https://www.xiaohongshu.com",
+        "bilibili": "https://www.bilibili.com"
+    }
+    target_url = body.target_url
+    if not target_url or not target_url.strip():
+        target_url = url_map.get(platform, "https://www.biji.com/subject")
+
+    try:
+        from biji_browser import manual_browser_mgr
+        res = manual_browser_mgr.launch_session(account_id=account_id, target_url=target_url)
+        return {
+            "status": "success",
+            "message": f"成功拉起账号 '{account_id}' 的浏览器实例 (目标: {target_url})",
+            "session": {
+                "account_id": account_id,
+                "target_url": target_url,
+                "started_at": res.get("started_at")
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"拉起浏览器过程发生异常: {str(e)}")
+
+
+@app.post("/api/biji/browser/close")
+def close_manual_browser_api(body: BrowserCloseRequest):
+    """手动关闭指定账号当前运行中的 Playwright Chromium 会话"""
+    account_id = body.account_id or "account_01"
+    try:
+        from biji_browser import manual_browser_mgr
+        closed = manual_browser_mgr.close_session(account_id=account_id)
+        if closed:
+            return {"status": "success", "message": f"账号 '{account_id}' 的浏览器会话已发送关闭指令"}
+        else:
+            return {"status": "info", "message": f"账号 '{account_id}' 当前没有正在运行的手动浏览器会话"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"关闭浏览器发生异常: {str(e)}")
+
+
+@app.get("/api/biji/browser/active_sessions")
+def get_active_browser_sessions_api():
+    """获取所有后台正在运行的手动浏览器会话集合"""
+    try:
+        from biji_browser import manual_browser_mgr
+        sessions = manual_browser_mgr.get_active_sessions()
+        return {"status": "success", "sessions": sessions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取活跃会话失败: {str(e)}")
 
 
 @app.get("/api/biji/topics/{account_id}")
@@ -816,6 +928,55 @@ def get_headless_setting() -> bool:
         except:
             pass
     return True
+
+
+class HeadlessConfigUpdate(BaseModel):
+    headless: bool
+
+
+@app.get("/api/config/headless")
+def get_headless_config_api():
+    """获取当前系统的 Playwright 浏览器无头模式设置"""
+    return {
+        "status": "success",
+        "headless": get_headless_setting()
+    }
+
+
+@app.put("/api/config/headless")
+def update_headless_config_api(body: HeadlessConfigUpdate):
+    """更新系统的 Playwright 浏览器无头模式设置"""
+    config_path = os.path.join(ROOT_DIR, "data", "config.json")
+    cfg = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            cfg = {}
+    cfg["headless"] = body.headless
+    cfg["headless_browser"] = body.headless
+    try:
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return {
+            "status": "success",
+            "message": f"成功将浏览器模式切换为 {'无头模式 (Headless)' if body.headless else '有头模式 (Headful)'}",
+            "headless": body.headless
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存配置文件失败: {str(e)}")
+
+
+@app.get("/api/novnc/info")
+def get_novnc_info_api():
+    """获取远程桌面 (noVNC) 连接端口与链接地址"""
+    return {
+        "status": "success",
+        "novnc_port": 6080,
+        "path": "/vnc.html?autoconnect=true&resize=remote"
+    }
 
 
 @app.post("/api/bloggers")
@@ -2363,6 +2524,80 @@ def auth_disconnect_endpoint(body: DisconnectRequest):
     save_settings(settings)
     return {"status": "success"}
 
+@app.get("/api/auth/cli/models")
+def get_cli_models_endpoint(provider: str = Query("google")):
+    """获取指定 CLI (google 或 openai) 底层返回的真实可用模型列表"""
+    provider = provider.lower()
+    settings = load_settings()
+    import shutil
+    import subprocess
+    import requests
+
+    if provider == "google":
+        agy_path = shutil.which("agy")
+        if not agy_path and os.name == "nt":
+            default_win = os.path.expandvars(r"%USERPROFILE%\AppData\Local\agy\bin\agy.exe")
+            if os.path.exists(default_win):
+                agy_path = default_win
+
+        if not agy_path:
+            return {"status": "failed", "message": "未找到 agy CLI 命令，请确认系统已安装", "models": []}
+
+        try:
+            env = os.environ.copy()
+            env["BROWSER"] = "false"
+            env.pop("DISPLAY", None)
+
+            res = subprocess.run([agy_path, "models"], capture_output=True, text=True, env=env, timeout=5)
+            stdout = (res.stdout or "").strip()
+            stderr = (res.stderr or "").strip()
+            output = stdout + "\n" + stderr
+
+            if res.returncode != 0 or "Please sign in" in output or "Error" in output:
+                errMsg = "尚未完成 Google 账号登录认证，请先点击下方「开启终端登录」进行授权" if "Please sign in" in output else (stderr or stdout or "获取模型失败")
+                return {"status": "failed", "message": errMsg, "models": []}
+
+            lines = [l.strip() for l in stdout.splitlines() if l.strip()]
+            models = []
+            for l in lines:
+                parts = l.split()
+                if parts:
+                    first = parts[0]
+                    if ("gemini" in first.lower() or "claude" in first.lower() or "gpt" in first.lower()) and first not in models:
+                        models.append(first)
+
+            if not models:
+                models = [l.split()[0] for l in lines if l.split() and not l.startswith("Available")]
+
+            if models:
+                return {"status": "success", "models": models}
+            else:
+                return {"status": "failed", "message": f"解析模型列表为空，绝不使用假默认数据。原生日志:\n{stdout}", "models": []}
+        except Exception as e:
+            return {"status": "failed", "message": f"请求模型进程超时或发生异常: {e}", "models": []}
+
+    elif provider == "openai":
+        openai_key = settings.get("openai_api_key", "")
+        base_url = settings.get("openai_base_url", "https://api.openai.com/v1")
+        if not openai_key:
+            return {"status": "failed", "message": "未配置 OpenAI API Key，请先在下方输入栏中配置", "models": []}
+        try:
+            headers = {"Authorization": f"Bearer {openai_key}"}
+            url = f"{base_url.rstrip('/')}/models"
+            resp = requests.get(url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                model_objs = data.get("data", [])
+                models = [m.get("id") for m in model_objs if isinstance(m, dict) and m.get("id")]
+                return {"status": "success", "models": models}
+            else:
+                return {"status": "failed", "message": f"OpenAI API 响应异常 (HTTP {resp.status_code})", "models": []}
+        except Exception as e:
+            return {"status": "failed", "message": f"请求 OpenAI 模型失败: {e}", "models": []}
+
+    return {"status": "failed", "message": "未知的服务商", "models": []}
+
+
 # === 智能体交互式终端登录接口 ===
 
 class TerminalAuthState:
@@ -2633,8 +2868,17 @@ async def terminal_ws_endpoint(websocket: WebSocket, provider: str):
             import pty
             import sys
             pid, fd = pty.fork()
-            if pid == 0: # child
+            if pid == 0:  # child
                 try:
+                    import fcntl
+                    import termios
+                    import struct
+                    # 设定初始伪终端窗口尺寸 (24 行 80 列)，唤醒 Bubbletea TUI 界面渲染
+                    winsize = struct.pack("HHHH", 24, 80, 0, 0)
+                    fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)
+                    fcntl.ioctl(1, termios.TIOCSWINSZ, winsize)
+                    os.environ["TERM"] = "xterm-256color"
+                    os.environ["COLORTERM"] = "truecolor"
                     os.execve(cmd_args[0], cmd_args, env)
                 except Exception as ex:
                     sys.stderr.write(f"Failed to exec command: {ex}\n")

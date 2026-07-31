@@ -6,9 +6,11 @@ services:
     container_name: blogger-distiller
     ports:
       - "8000:8000"
+      - "6080:6080"
     environment:
       - HOST=0.0.0.0
       - PORT=8000
+      - DISPLAY=:99
       - PYTHONUNBUFFERED=1
     volumes:
       # 持久化数据库、配置参数、浏览器 Session 与转录日志，避免容器重启数据丢失
