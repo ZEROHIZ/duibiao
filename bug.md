@@ -576,3 +576,14 @@
   1. 重构 `web/backend/app.py` 中的 `GET /api/biji/schedule` 与 `POST /api/biji/schedule` REST API 接口，支持双模式定时（`daily` 每天固定时间点如 `03:00` 与 `interval` 自定义每隔 X 小时如 1/3/6/12/24 小时），并持久化到 `config.json`。
   2. 精简交互设计：彻底移除 `单博主抓取上限 (max_posts)` 限制（改由博主音视频转录队列驱动全量抓取），移除手动选择浏览器账号下拉框（改由后端根据各博主数据库记录的 `biji_browser_id` 自动匹配驱动其各自关联的沙箱环境）。
   3. 后端 `biji_auto_sync_scheduler_loop` Daemon 后台轮询守护线程自动根据设定的 `daily` 或 `interval` 模式秒级计算触发点，实时自动抓取并在「任务日志」展示。
+
+---
+
+## Bug 45: 「博主监控管理」表格「浏览器账号」列仅显示原始 ID (`account_01`) 缺乏映射昵称直观显示
+
+* **发生时间**：2026-08-01
+* **问题现象**：在「博主监控管理」数据表格中，「浏览器账号」一列直接显示了数据库物理标识（如 `account_01`），而无法直观展示用户在后台设置的别名/昵称（如 `得到账号_01` 或 `Get达人`）。
+* **主要根源**：后端 `GET /api/bloggers` 在 SQL 查询时未对 `biji_browser_accounts` 数据表进行 `LEFT JOIN` 联查，仅返回了 `b.biji_browser_id` 原始值；前端 `app.js` 仅将其当做 raw string 呈现。
+* **解决方案**：
+  1. 重构后端 `GET /api/bloggers` 查询 SQL，增加 `LEFT JOIN biji_browser_accounts a ON a.account_id = b.biji_browser_id`，并通过 `COALESCE(NULLIF(a.alias_name, ''), NULLIF(a.nickname, ''), b.biji_browser_id, '得到账号_01')` 优先导出友好别名 `biji_account_name`。
+  2. 前端 `app.js` 渲染时优先展示 `biji_account_name`（如 `得到账号_01`），同时通过 `title` 属性保留原始凭据 ID（`account_01`）鼠标悬浮提示，兼顾直观性与开发调试需求。

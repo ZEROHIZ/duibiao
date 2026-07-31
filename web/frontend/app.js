@@ -1628,8 +1628,10 @@ async function loadBloggersList() {
                 ? `<span class="editable-field home-url-link" data-id="${b.id}" data-field="home_url" data-url="${urlVal}" title="单击在新标签页打开，双击编辑链接" style="cursor: pointer; border-bottom: 1px dashed var(--accent-primary); color: var(--accent-primary); font-family: var(--font-sans); font-size: 0.88rem; font-weight: 500; display: inline-block; padding-bottom: 2px;">主页链接 ↗</span>`
                 : `<span class="editable-field home-url-link" data-id="${b.id}" data-field="home_url" data-url="" title="双击配置个人主页链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-tertiary); color: var(--ink-tertiary); font-family: var(--font-sans); font-size: 0.85rem; display: inline-block; padding-bottom: 2px;">未配置 (双击设置)</span>`;
 
-            // 得到账号 Badge
-            const bijiAccountBadge = `<span style="font-size: 0.75rem; border: 1px solid var(--border-primary); background: var(--bg-tertiary); padding: 0.12rem 0.45rem; border-radius: 3px; color: var(--ink-secondary); font-family: var(--font-mono); display: inline-block;">${b.biji_account || 'account_01'}</span>`;
+            // 得到账号 Badge（映射名称如：得到账号_01 / Get达人，提示包含原始 ID）
+            const accNameDisp = b.biji_account_name || b.biji_account || '得到账号_01';
+            const rawAccId = b.biji_account || 'account_01';
+            const bijiAccountBadge = `<span title="账号凭据 ID: ${rawAccId}" style="font-size: 0.78rem; border: 1px solid var(--border-primary); background: var(--bg-tertiary); padding: 0.15rem 0.5rem; border-radius: 3px; color: var(--ink-primary); font-weight: 500; font-family: var(--font-sans); display: inline-block;">${accNameDisp}</span>`;
 
             // 得到知识库 & biji_url Badge
             const topicNameStr = b.biji_topic_name || b.biji_topic_alias || "默认知识库";

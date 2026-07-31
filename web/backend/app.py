@@ -566,8 +566,10 @@ def get_bloggers_list():
                b.avg_likes, b.avg_collects, b.avg_comments, 
                b.total_likes, b.total_collects, b.total_comments, b.category, b.is_transcribe, b.platform,
                b.biji_browser_id as biji_account, b.biji_topic_name, b.biji_topic_alias, b.biji_url, b.biji_follow_id,
+               COALESCE(NULLIF(a.alias_name, ''), NULLIF(a.nickname, ''), b.biji_browser_id, '得到账号_01') as biji_account_name,
                n.title as latest_note_title, n.published_at as latest_note_time
         FROM bloggers b
+        LEFT JOIN biji_browser_accounts a ON a.account_id = b.biji_browser_id
         LEFT JOIN blogger_notes n ON n.blogger_id = b.id AND n.id = (
             SELECT id FROM blogger_notes 
             WHERE blogger_id = b.id 
