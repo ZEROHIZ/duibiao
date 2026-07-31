@@ -564,3 +564,15 @@
 * **解决方案**：
   - 在 `web/backend/app.py` 启动入口封装并显式调用 `ensure_database_initialized()`。
   - 保证在任何全新部署或空挂载目录下，后端服务一启动即可 100% 自动顺序建表并完成 Migration 热升级（自动创建 `bloggers`、`biji_browser_accounts` 等全部依赖表），彻底消灭全新环境部署下的 500 报错。
+
+---
+
+## Bug 44: 得到文案自动化同步缺少后台 Cron 定时更新调度机制
+
+* **发生时间**：2026-08-01
+* **问题现象**：得到文案同步原先仅支持在前端手动点击 `⚡ 一键同步得到文案` 触发，缺乏后台自动周期性（如每 1 小时、3 小时、6 小时、12 小时、24 小时）定时搜寻与抓取更新的自动化配置。
+* **主要根源**：未在 `app.py` 中构建专属的守护进程 Timer 轮询线程，前端「博主监控管理」顶部操作栏缺少对应的定时参数配置弹窗与状态指示徽章。
+* **解决方案**：
+  1. 在 `web/backend/app.py` 中新增 `GET /api/biji/schedule` 与 `POST /api/biji/schedule` REST API 接口，持久化存储 `biji_auto_sync_enabled`、`biji_auto_sync_interval_hours`、`biji_auto_sync_max_posts` 和 `biji_auto_sync_account` 到 `config.json`。
+  2. 在后端启动 `biji_auto_sync_scheduler_loop` Daemon 后台轮询守护线程，每 60 秒自动计算上次更新时间与周期间隔，时间到达即自动无缝启动 `biji_browser.py` 同步，日志实时推送至「任务日志」页面。
+  3. 在前端 `index.html` 的操作栏新增 `⏱️ 定时同步设置` 按钮与 `🟢 定时: 每 6 小时` / `⚪ 定时: 已禁用` 状态指示徽章，配合全新设计与实现的现代化弹窗控制界面。

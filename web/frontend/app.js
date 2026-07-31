@@ -750,6 +750,124 @@ function setupEventListeners() {
         });
     }
 
+    // === 得到文案后台定时同步设置 ===
+    const btnOpenBijiSchedule = document.getElementById("btn-open-biji-schedule");
+    const badgeBijiScheduleStatus = document.getElementById("badge-biji-schedule-status");
+    const modalBijiSchedule = document.getElementById("modal-biji-schedule");
+    const btnCancelBijiSchedule = document.getElementById("btn-cancel-biji-schedule");
+    const formBijiSchedule = document.getElementById("form-biji-schedule");
+
+    function loadBijiScheduleStatus() {
+        fetch(`${API_BASE}/api/biji/schedule`)
+            .then(res => res.json())
+            .then(json => {
+                if (json.status === "success") {
+                    if (badgeBijiScheduleStatus) {
+                        if (json.enabled) {
+                            badgeBijiScheduleStatus.className = "status-badge active";
+                            badgeBijiScheduleStatus.innerHTML = `🟢 定时: 每 ${json.interval_hours} 小时`;
+                        } else {
+                            badgeBijiScheduleStatus.className = "status-badge queued";
+                            badgeBijiScheduleStatus.innerHTML = `⚪ 定时: 已禁用`;
+                        }
+                    }
+
+                    // 填入 Modal 字段
+                    const selEnabled = document.getElementById("select-biji-schedule-enabled");
+                    const selInterval = document.getElementById("select-biji-schedule-interval");
+                    const inputPosts = document.getElementById("input-biji-schedule-max-posts");
+                    const selAccount = document.getElementById("select-biji-schedule-account");
+                    const lastRunDiv = document.getElementById("biji-schedule-last-run");
+                    const nextRunDiv = document.getElementById("biji-schedule-next-run");
+
+                    if (selEnabled) selEnabled.value = json.enabled ? "true" : "false";
+                    if (selInterval) selInterval.value = String(json.interval_hours);
+                    if (inputPosts) inputPosts.value = json.max_posts || 20;
+
+                    if (lastRunDiv) lastRunDiv.innerHTML = `上次自动同步: <b>${json.last_sync_at}</b>`;
+                    if (nextRunDiv) nextRunDiv.innerHTML = `下次预计同步: <b>${json.next_sync_at}</b>`;
+
+                    // 加载账号列表
+                    if (selAccount) {
+                        fetch(`${API_BASE}/api/biji/accounts`)
+                            .then(r => r.json())
+                            .then(accountsData => {
+                                const accList = accountsData.accounts || accountsData || [];
+                                selAccount.innerHTML = "";
+                                if (Array.isArray(accList) && accList.length > 0) {
+                                    accList.forEach(a => {
+                                        const opt = document.createElement("option");
+                                        opt.value = a.account_id;
+                                        opt.textContent = `${a.alias_name || a.nickname || a.account_id} (${a.account_id})`;
+                                        if (a.account_id === json.account_id) opt.selected = true;
+                                        selAccount.appendChild(opt);
+                                    });
+                                } else {
+                                    selAccount.innerHTML = `<option value="account_01">account_01 (默认账号)</option>`;
+                                }
+                            })
+                            .catch(() => {
+                                selAccount.innerHTML = `<option value="account_01">account_01 (默认账号)</option>`;
+                            });
+                    }
+                }
+            })
+            .catch(err => {
+                console.error("加载得到定时同步设置失败:", err);
+            });
+    }
+
+    if (btnOpenBijiSchedule) {
+        btnOpenBijiSchedule.addEventListener("click", () => {
+            loadBijiScheduleStatus();
+            if (modalBijiSchedule) modalBijiSchedule.style.display = "flex";
+        });
+    }
+
+    if (badgeBijiScheduleStatus) {
+        badgeBijiScheduleStatus.addEventListener("click", () => {
+            loadBijiScheduleStatus();
+            if (modalBijiSchedule) modalBijiSchedule.style.display = "flex";
+        });
+    }
+
+    if (btnCancelBijiSchedule && modalBijiSchedule) {
+        btnCancelBijiSchedule.addEventListener("click", () => {
+            modalBijiSchedule.style.display = "none";
+        });
+    }
+
+    if (formBijiSchedule) {
+        formBijiSchedule.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const enabled = document.getElementById("select-biji-schedule-enabled").value === "true";
+            const interval_hours = parseInt(document.getElementById("select-biji-schedule-interval").value, 10) || 6;
+            const max_posts = parseInt(document.getElementById("input-biji-schedule-max-posts").value, 10) || 20;
+            const account_id = document.getElementById("select-biji-schedule-account").value || "account_01";
+
+            fetch(`${API_BASE}/api/biji/schedule`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled, interval_hours, max_posts, account_id })
+            })
+            .then(res => res.json())
+            .then(json => {
+                if (json.status === "success") {
+                    showToast(json.message || "定时同步设置保存成功！", "success");
+                    if (modalBijiSchedule) modalBijiSchedule.style.display = "none";
+                    loadBijiScheduleStatus();
+                } else {
+                    showToast(`保存失败: ${json.message}`, "error");
+                }
+            })
+            .catch(err => {
+                showToast(`网络请求异常: ${err.message}`, "error");
+            });
+        });
+    }
+
+    loadBijiScheduleStatus();
+
     // 展开/收起录入博主表单时拉取得到账号列表
     const btnToggleAddBlogger = document.getElementById("btn-toggle-add-blogger");
     if (btnToggleAddBlogger) {

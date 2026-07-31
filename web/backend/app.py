@@ -2403,6 +2403,116 @@ def trigger_biji_sync_endpoint(body: BijiSyncRequest):
         "message": f"Get 笔记同步任务 [{task_id}] 已在后台启动"
     }
 
+
+class BijiScheduleUpdateRequest(BaseModel):
+    enabled: bool = False
+    interval_hours: int = 6
+    account_id: str = "account_01"
+    max_posts: int = 20
+
+
+@app.get("/api/biji/schedule")
+def get_biji_schedule_endpoint():
+    """获取得到文案后台定时同步设置及运行状态"""
+    settings = load_settings()
+    enabled = settings.get("biji_auto_sync_enabled", False)
+    if isinstance(enabled, str):
+        enabled = (enabled.lower() == "true")
+
+    interval_hours = int(settings.get("biji_auto_sync_interval_hours", 6))
+    last_sync_str = settings.get("biji_last_auto_sync_at", "")
+    account_id = settings.get("biji_auto_sync_account", "account_01")
+    max_posts = int(settings.get("biji_auto_sync_max_posts", 20))
+
+    next_sync_str = ""
+    if enabled and last_sync_str:
+        try:
+            last_dt = datetime.fromisoformat(last_sync_str)
+            next_dt = last_dt + timedelta(hours=interval_hours)
+            next_sync_str = next_dt.strftime("%Y-%m-%d %H:%M:%S")
+        except:
+            next_sync_str = "即刻（就绪）"
+    elif enabled and not last_sync_str:
+        next_sync_str = "即刻（首次检测）"
+
+    return {
+        "status": "success",
+        "enabled": enabled,
+        "interval_hours": interval_hours,
+        "account_id": account_id,
+        "max_posts": max_posts,
+        "last_sync_at": last_sync_str or "尚未执行",
+        "next_sync_at": next_sync_str or "--"
+    }
+
+
+@app.post("/api/biji/schedule")
+def update_biji_schedule_endpoint(body: BijiScheduleUpdateRequest):
+    """更新得到文案后台定时同步设置"""
+    settings = load_settings()
+    settings["biji_auto_sync_enabled"] = body.enabled
+    settings["biji_auto_sync_interval_hours"] = body.interval_hours
+    settings["biji_auto_sync_account"] = body.account_id
+    settings["biji_auto_sync_max_posts"] = body.max_posts
+
+    if save_settings(settings):
+        status_text = f"已开启 (每 {body.interval_hours} 小时)" if body.enabled else "已禁用"
+        return {
+            "status": "success",
+            "message": f"得到定时同步设置已成功保存！当前状态: {status_text}",
+            "enabled": body.enabled
+        }
+    else:
+        raise HTTPException(status_code=500, detail="保存定时设置失败")
+
+
+def biji_auto_sync_scheduler_loop():
+    print("[得到定时同步调度器] 启动成功，开启后台轮询守护进程...")
+    time.sleep(30)
+
+    while True:
+        try:
+            settings = load_settings()
+            enabled = settings.get("biji_auto_sync_enabled", False)
+            if isinstance(enabled, str):
+                enabled = (enabled.lower() == "true")
+
+            if enabled:
+                interval_hours = int(settings.get("biji_auto_sync_interval_hours", 6))
+                last_sync_str = settings.get("biji_last_auto_sync_at", "")
+                account_id = settings.get("biji_auto_sync_account", "account_01")
+                max_posts = int(settings.get("biji_auto_sync_max_posts", 20))
+
+                should_run = False
+                if not last_sync_str:
+                    should_run = True
+                else:
+                    try:
+                        last_dt = datetime.fromisoformat(last_sync_str)
+                        elapsed_seconds = (datetime.now() - last_dt).total_seconds()
+                        if elapsed_seconds >= interval_hours * 3600:
+                            should_run = True
+                    except:
+                        should_run = True
+
+                if should_run:
+                    print(f"[得到定时同步调度器] 触发定时自动同步任务 (账号: {account_id}, 间隔: {interval_hours}小时)...")
+                    settings["biji_last_auto_sync_at"] = datetime.now().isoformat()
+                    save_settings(settings)
+
+                    try:
+                        req = BijiSyncRequest(account_id=account_id, max_posts=max_posts)
+                        trigger_biji_sync_endpoint(req)
+                    except Exception as ex:
+                        print(f"[得到定时同步调度器] 触发失败: {ex}")
+
+        except Exception as e:
+            print(f"[得到定时同步调度器] 守护进程异常: {e}")
+
+        time.sleep(60)
+
+threading.Thread(target=biji_auto_sync_scheduler_loop, daemon=True).start()
+
 @app.get("/api/biji/accounts")
 def get_biji_accounts_endpoint():
     """获取已录入的 Get 笔记账号列表与登录状态"""
