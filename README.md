@@ -22,16 +22,16 @@ docker compose up -d --build
 ```
 
 ### 📌 从 GitHub Packages 直接拉取并运行 (免本地构建)
-如果您已经使用 GitHub 自动构建好的镜像，可以直接运行以下一行命令拉取并启动服务：
+如果您已经使用 GitHub 自动构建好的镜像，可以直接运行以下命令拉取并启动服务：
 
 **Linux / macOS (Bash) 一键拉取运行：**
 ```bash
-docker run -d --name blogger-distiller -p 8899:8000 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
 ```
 
 **Windows (PowerShell) 一键拉取运行：**
 ```bash
-docker run -d --name blogger-distiller -p 8899:8000 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
 ```
 
 ### 📌 纯 `docker run` 本地构建与运行
@@ -42,15 +42,16 @@ docker run -d --name blogger-distiller -p 8899:8000 -v "${PWD}/data:/app/data" -
 docker build -t blogger-distiller .
 
 # 2. 运行本地镜像 (Windows PowerShell)
-docker run -d --name blogger-distiller -p 8000:8000 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always blogger-distiller
+docker run -d --name blogger-distiller -p 8000:8000 -p 6080:6080 -e DISPLAY=:99 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always blogger-distiller
 
 # 3. 运行本地镜像 (Linux / macOS Bash)
-docker run -d --name blogger-distiller -p 8000:8000 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always blogger-distiller
+docker run -d --name blogger-distiller -p 8000:8000 -p 6080:6080 -e DISPLAY=:99 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always blogger-distiller
 ```
 
 > **💡 持久化与服务说明**：
-> - 启动后，请在浏览器中访问：`http://localhost:8000`
-> - **持久化保障**：容器中使用的 SQLite 数据库、Cookie 缓存、生成报告及二维码截图，均映射在您本地的文件夹中，容器销毁重建数据不丢失。
+> - 启动后，请在浏览器中访问：`http://localhost:8000`（若自定义端口如 8899 则访问 `http://localhost:8899`）
+> - **端口说明**：`8000` (或 `8899`) 为 Web 看板 API 端口；`6080` 为多沙箱浏览器手动远程桌面 (noVNC) 画中画端口。
+> - **持久化保障**：容器中使用的 SQLite 数据库、多账号浏览器 Cookie 缓存、生成报告及二维码截图，均映射在您本地的 `data/` 文件夹中，容器销毁重建数据 100% 不丢失。
 > - **扫码登录**：如果是全新容器且抖音未登录，后台日志提示扫码时，可在本地的 `screenshots/` 目录下找到生成的 `login_qr.png` 二维码，用手机抖音扫码即可！
 
 ---
