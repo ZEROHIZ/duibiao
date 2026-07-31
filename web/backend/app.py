@@ -2406,9 +2406,9 @@ def trigger_biji_sync_endpoint(body: BijiSyncRequest):
 
 class BijiScheduleUpdateRequest(BaseModel):
     enabled: bool = False
+    schedule_mode: str = "interval"  # "interval" 或 "daily"
     interval_hours: int = 6
-    account_id: str = "account_01"
-    max_posts: int = 20
+    daily_time: str = "03:00"
 
 
 @app.get("/api/biji/schedule")
@@ -2419,28 +2419,42 @@ def get_biji_schedule_endpoint():
     if isinstance(enabled, str):
         enabled = (enabled.lower() == "true")
 
+    schedule_mode = settings.get("biji_auto_sync_mode", "interval")
     interval_hours = int(settings.get("biji_auto_sync_interval_hours", 6))
+    daily_time = settings.get("biji_auto_sync_daily_time", "03:00")
     last_sync_str = settings.get("biji_last_auto_sync_at", "")
-    account_id = settings.get("biji_auto_sync_account", "account_01")
-    max_posts = int(settings.get("biji_auto_sync_max_posts", 20))
 
     next_sync_str = ""
-    if enabled and last_sync_str:
-        try:
-            last_dt = datetime.fromisoformat(last_sync_str)
-            next_dt = last_dt + timedelta(hours=interval_hours)
-            next_sync_str = next_dt.strftime("%Y-%m-%d %H:%M:%S")
-        except:
-            next_sync_str = "即刻（就绪）"
-    elif enabled and not last_sync_str:
-        next_sync_str = "即刻（首次检测）"
+    if enabled:
+        if schedule_mode == "daily":
+            try:
+                hour_str, min_str = daily_time.split(":")
+                h, m = int(hour_str), int(min_str)
+                now = datetime.now()
+                target_today = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                if now < target_today:
+                    next_sync_str = target_today.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    next_sync_str = (target_today + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                next_sync_str = f"每天 {daily_time}"
+        else:
+            if last_sync_str:
+                try:
+                    last_dt = datetime.fromisoformat(last_sync_str)
+                    next_dt = last_dt + timedelta(hours=interval_hours)
+                    next_sync_str = next_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    next_sync_str = "即刻（就绪）"
+            else:
+                next_sync_str = "即刻（首次检测）"
 
     return {
         "status": "success",
         "enabled": enabled,
+        "schedule_mode": schedule_mode,
         "interval_hours": interval_hours,
-        "account_id": account_id,
-        "max_posts": max_posts,
+        "daily_time": daily_time,
         "last_sync_at": last_sync_str or "尚未执行",
         "next_sync_at": next_sync_str or "--"
     }
@@ -2451,12 +2465,18 @@ def update_biji_schedule_endpoint(body: BijiScheduleUpdateRequest):
     """更新得到文案后台定时同步设置"""
     settings = load_settings()
     settings["biji_auto_sync_enabled"] = body.enabled
+    settings["biji_auto_sync_mode"] = body.schedule_mode
     settings["biji_auto_sync_interval_hours"] = body.interval_hours
-    settings["biji_auto_sync_account"] = body.account_id
-    settings["biji_auto_sync_max_posts"] = body.max_posts
+    settings["biji_auto_sync_daily_time"] = body.daily_time
 
     if save_settings(settings):
-        status_text = f"已开启 (每 {body.interval_hours} 小时)" if body.enabled else "已禁用"
+        if not body.enabled:
+            status_text = "已禁用"
+        elif body.schedule_mode == "daily":
+            status_text = f"已开启 (每天 {body.daily_time})"
+        else:
+            status_text = f"已开启 (每 {body.interval_hours} 小时)"
+
         return {
             "status": "success",
             "message": f"得到定时同步设置已成功保存！当前状态: {status_text}",
@@ -2469,6 +2489,7 @@ def update_biji_schedule_endpoint(body: BijiScheduleUpdateRequest):
 def biji_auto_sync_scheduler_loop():
     print("[得到定时同步调度器] 启动成功，开启后台轮询守护进程...")
     time.sleep(30)
+    last_run_daily_date = None
 
     while True:
         try:
@@ -2478,30 +2499,46 @@ def biji_auto_sync_scheduler_loop():
                 enabled = (enabled.lower() == "true")
 
             if enabled:
+                schedule_mode = settings.get("biji_auto_sync_mode", "interval")
                 interval_hours = int(settings.get("biji_auto_sync_interval_hours", 6))
+                daily_time = settings.get("biji_auto_sync_daily_time", "03:00")
                 last_sync_str = settings.get("biji_last_auto_sync_at", "")
-                account_id = settings.get("biji_auto_sync_account", "account_01")
-                max_posts = int(settings.get("biji_auto_sync_max_posts", 20))
 
                 should_run = False
-                if not last_sync_str:
-                    should_run = True
-                else:
+                now = datetime.now()
+
+                if schedule_mode == "daily":
                     try:
-                        last_dt = datetime.fromisoformat(last_sync_str)
-                        elapsed_seconds = (datetime.now() - last_dt).total_seconds()
-                        if elapsed_seconds >= interval_hours * 3600:
-                            should_run = True
-                    except:
+                        hour_str, min_str = daily_time.split(":")
+                        sched_h, sched_m = int(hour_str), int(min_str)
+                        today_str = now.strftime("%Y-%m-%d")
+
+                        if now.hour == sched_h and now.minute == sched_m:
+                            if last_run_daily_date != today_str:
+                                should_run = True
+                                last_run_daily_date = today_str
+                    except Exception as pe:
+                        print(f"[得到定时同步调度器] 解析每天固定时间 '{daily_time}' 出错: {pe}")
+                else:
+                    # 时间间隔模式
+                    if not last_sync_str:
                         should_run = True
+                    else:
+                        try:
+                            last_dt = datetime.fromisoformat(last_sync_str)
+                            elapsed_seconds = (now - last_dt).total_seconds()
+                            if elapsed_seconds >= interval_hours * 3600:
+                                should_run = True
+                        except:
+                            should_run = True
 
                 if should_run:
-                    print(f"[得到定时同步调度器] 触发定时自动同步任务 (账号: {account_id}, 间隔: {interval_hours}小时)...")
-                    settings["biji_last_auto_sync_at"] = datetime.now().isoformat()
+                    print(f"[得到定时同步调度器] 触发定时自动同步任务 (模式: {schedule_mode})...")
+                    settings["biji_last_auto_sync_at"] = now.isoformat()
                     save_settings(settings)
 
                     try:
-                        req = BijiSyncRequest(account_id=account_id, max_posts=max_posts)
+                        req = BijiSyncRequest(account_id="account_01", max_posts=999)
                         trigger_biji_sync_endpoint(req)
                     except Exception as ex:
                         print(f"[得到定时同步调度器] 触发失败: {ex}")
@@ -2509,7 +2546,7 @@ def biji_auto_sync_scheduler_loop():
         except Exception as e:
             print(f"[得到定时同步调度器] 守护进程异常: {e}")
 
-        time.sleep(60)
+        time.sleep(30)
 
 threading.Thread(target=biji_auto_sync_scheduler_loop, daemon=True).start()
 

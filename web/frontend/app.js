@@ -757,15 +757,45 @@ function setupEventListeners() {
     const btnCancelBijiSchedule = document.getElementById("btn-cancel-biji-schedule");
     const formBijiSchedule = document.getElementById("form-biji-schedule");
 
+    const radioDaily = document.getElementById("radio-mode-daily");
+    const radioInterval = document.getElementById("radio-mode-interval");
+    const boxDaily = document.getElementById("box-biji-schedule-daily");
+    const boxInterval = document.getElementById("box-biji-schedule-interval");
+
+    function updateModeBoxVisibility() {
+        const isDaily = radioDaily && radioDaily.checked;
+        if (boxDaily) boxDaily.style.display = isDaily ? "block" : "none";
+        if (boxInterval) boxInterval.style.display = isDaily ? "none" : "block";
+    }
+
+    if (radioDaily) radioDaily.addEventListener("change", updateModeBoxVisibility);
+    if (radioInterval) radioInterval.addEventListener("change", updateModeBoxVisibility);
+
+    // 快捷常用间隔按钮点击绑定
+    [1, 3, 6, 12, 24].forEach(hrs => {
+        const qBtn = document.getElementById(`btn-quick-${hrs}h`);
+        if (qBtn) {
+            qBtn.addEventListener("click", () => {
+                const inp = document.getElementById("input-biji-schedule-interval-hours");
+                if (inp) inp.value = hrs;
+            });
+        }
+    });
+
     function loadBijiScheduleStatus() {
         fetch(`${API_BASE}/api/biji/schedule`)
             .then(res => res.json())
             .then(json => {
                 if (json.status === "success") {
+                    const isDaily = json.schedule_mode === "daily";
                     if (badgeBijiScheduleStatus) {
                         if (json.enabled) {
                             badgeBijiScheduleStatus.className = "status-badge active";
-                            badgeBijiScheduleStatus.innerHTML = `🟢 定时: 每 ${json.interval_hours} 小时`;
+                            if (isDaily) {
+                                badgeBijiScheduleStatus.innerHTML = `🟢 定时: 每天 ${json.daily_time || '03:00'}`;
+                            } else {
+                                badgeBijiScheduleStatus.innerHTML = `🟢 定时: 每 ${json.interval_hours || 6} 小时`;
+                            }
                         } else {
                             badgeBijiScheduleStatus.className = "status-badge queued";
                             badgeBijiScheduleStatus.innerHTML = `⚪ 定时: 已禁用`;
@@ -774,42 +804,27 @@ function setupEventListeners() {
 
                     // 填入 Modal 字段
                     const selEnabled = document.getElementById("select-biji-schedule-enabled");
-                    const selInterval = document.getElementById("select-biji-schedule-interval");
-                    const inputPosts = document.getElementById("input-biji-schedule-max-posts");
-                    const selAccount = document.getElementById("select-biji-schedule-account");
+                    const inputDailyTime = document.getElementById("input-biji-schedule-daily-time");
+                    const inputInterval = document.getElementById("input-biji-schedule-interval-hours");
                     const lastRunDiv = document.getElementById("biji-schedule-last-run");
                     const nextRunDiv = document.getElementById("biji-schedule-next-run");
+                    const modeDescDiv = document.getElementById("biji-schedule-mode-desc");
 
                     if (selEnabled) selEnabled.value = json.enabled ? "true" : "false";
-                    if (selInterval) selInterval.value = String(json.interval_hours);
-                    if (inputPosts) inputPosts.value = json.max_posts || 20;
+                    if (isDaily && radioDaily) radioDaily.checked = true;
+                    if (!isDaily && radioInterval) radioInterval.checked = true;
+                    updateModeBoxVisibility();
 
+                    if (inputDailyTime) inputDailyTime.value = json.daily_time || "03:00";
+                    if (inputInterval) inputInterval.value = json.interval_hours || 6;
+
+                    if (modeDescDiv) {
+                        modeDescDiv.innerHTML = isDaily 
+                            ? `模式: <b>每天固定时间 (${json.daily_time || '03:00'})</b>`
+                            : `模式: <b>自定义时间间隔 (每 ${json.interval_hours || 6} 小时)</b>`;
+                    }
                     if (lastRunDiv) lastRunDiv.innerHTML = `上次自动同步: <b>${json.last_sync_at}</b>`;
                     if (nextRunDiv) nextRunDiv.innerHTML = `下次预计同步: <b>${json.next_sync_at}</b>`;
-
-                    // 加载账号列表
-                    if (selAccount) {
-                        fetch(`${API_BASE}/api/biji/accounts`)
-                            .then(r => r.json())
-                            .then(accountsData => {
-                                const accList = accountsData.accounts || accountsData || [];
-                                selAccount.innerHTML = "";
-                                if (Array.isArray(accList) && accList.length > 0) {
-                                    accList.forEach(a => {
-                                        const opt = document.createElement("option");
-                                        opt.value = a.account_id;
-                                        opt.textContent = `${a.alias_name || a.nickname || a.account_id} (${a.account_id})`;
-                                        if (a.account_id === json.account_id) opt.selected = true;
-                                        selAccount.appendChild(opt);
-                                    });
-                                } else {
-                                    selAccount.innerHTML = `<option value="account_01">account_01 (默认账号)</option>`;
-                                }
-                            })
-                            .catch(() => {
-                                selAccount.innerHTML = `<option value="account_01">account_01 (默认账号)</option>`;
-                            });
-                    }
                 }
             })
             .catch(err => {
@@ -841,14 +856,14 @@ function setupEventListeners() {
         formBijiSchedule.addEventListener("submit", (e) => {
             e.preventDefault();
             const enabled = document.getElementById("select-biji-schedule-enabled").value === "true";
-            const interval_hours = parseInt(document.getElementById("select-biji-schedule-interval").value, 10) || 6;
-            const max_posts = parseInt(document.getElementById("input-biji-schedule-max-posts").value, 10) || 20;
-            const account_id = document.getElementById("select-biji-schedule-account").value || "account_01";
+            const schedule_mode = radioDaily && radioDaily.checked ? "daily" : "interval";
+            const interval_hours = parseInt(document.getElementById("input-biji-schedule-interval-hours").value, 10) || 6;
+            const daily_time = document.getElementById("input-biji-schedule-daily-time").value || "03:00";
 
             fetch(`${API_BASE}/api/biji/schedule`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ enabled, interval_hours, max_posts, account_id })
+                body: JSON.stringify({ enabled, schedule_mode, interval_hours, daily_time })
             })
             .then(res => res.json())
             .then(json => {

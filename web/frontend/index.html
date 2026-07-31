@@ -1062,12 +1062,12 @@
 
     <!-- Biji Auto Sync Schedule Modal -->
     <div id="modal-biji-schedule" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.65); z-index: 2000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
-        <div class="modal-box" style="background: var(--bg-primary); border: 2px solid var(--accent-primary); width: 90%; max-width: 480px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        <div class="modal-box" style="background: var(--bg-primary); border: 2px solid var(--accent-primary); width: 90%; max-width: 460px; padding: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
             <span class="section-label" style="color: var(--accent-primary);">AUTOMATED CRON SCHEDULER</span>
             <h3 style="font-family: var(--font-serif); font-size: 1.35rem; margin-top: 0.3rem; margin-bottom: 1.25rem; font-weight: bold; border-bottom: 1px solid var(--border-primary); padding-bottom: 0.5rem;">⏱️ 得到文案后台定时自动同步设置</h3>
             
             <form id="form-biji-schedule" class="editorial-form">
-                <div class="form-group" style="margin-bottom: 1rem;">
+                <div class="form-group" style="margin-bottom: 1.2rem;">
                     <label for="select-biji-schedule-enabled" style="font-weight: bold; font-size: 0.82rem;">定时同步总开关</label>
                     <select id="select-biji-schedule-enabled" style="width: 100%; height: 2.3rem; border: 1px solid var(--ink-primary); background: var(--bg-primary); color: var(--ink-primary); padding: 0 0.75rem; font-size: 0.85rem; cursor: pointer;">
                         <option value="false">⚪ 禁用定时同步 (仅手动触发)</option>
@@ -1075,30 +1075,42 @@
                     </select>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label for="select-biji-schedule-interval" style="font-weight: bold; font-size: 0.82rem;">自动同步间隔时间</label>
-                    <select id="select-biji-schedule-interval" style="width: 100%; height: 2.3rem; border: 1px solid var(--ink-primary); background: var(--bg-primary); color: var(--ink-primary); padding: 0 0.75rem; font-size: 0.85rem; cursor: pointer;">
-                        <option value="1">每 1 小时自动更新 1 次</option>
-                        <option value="3">每 3 小时自动更新 1 次</option>
-                        <option value="6" selected>每 6 小时自动更新 1 次 (推荐)</option>
-                        <option value="12">每 12 小时自动更新 1 次</option>
-                        <option value="24">每 24 小时 (每天) 自动更新 1 次</option>
-                    </select>
+                <div class="form-group" style="margin-bottom: 1.2rem;">
+                    <label style="font-weight: bold; font-size: 0.82rem; margin-bottom: 0.4rem; display: block;">定时触发模式</label>
+                    <div style="display: flex; gap: 1.2rem; align-items: center;">
+                        <label style="font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+                            <input type="radio" name="biji_schedule_mode" value="daily" id="radio-mode-daily"> 每天固定时间
+                        </label>
+                        <label style="font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+                            <input type="radio" name="biji_schedule_mode" value="interval" id="radio-mode-interval" checked> 自定义时间间隔
+                        </label>
+                    </div>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label for="input-biji-schedule-max-posts" style="font-weight: bold; font-size: 0.82rem;">单博主抓取上限 (max_posts)</label>
-                    <input type="number" id="input-biji-schedule-max-posts" value="20" min="5" max="100" style="width: 100%; height: 2.3rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-size: 0.85rem; color: var(--ink-primary);">
+                <!-- 每天固定时间配置项 -->
+                <div id="box-biji-schedule-daily" class="form-group" style="margin-bottom: 1.2rem; display: none;">
+                    <label for="input-biji-schedule-daily-time" style="font-weight: bold; font-size: 0.82rem;">每天定时触发时间 (HH:MM)</label>
+                    <input type="time" id="input-biji-schedule-daily-time" value="03:00" style="width: 100%; height: 2.3rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-size: 0.9rem; color: var(--ink-primary);">
                 </div>
 
-                <div class="form-group" style="margin-bottom: 1.25rem;">
-                    <label for="select-biji-schedule-account" style="font-weight: bold; font-size: 0.82rem;">用于执行自动抓取的浏览器账号</label>
-                    <select id="select-biji-schedule-account" style="width: 100%; height: 2.3rem; border: 1px solid var(--ink-primary); background: var(--bg-primary); color: var(--ink-primary); padding: 0 0.75rem; font-size: 0.85rem; cursor: pointer;">
-                        <option value="account_01">account_01 (默认账号)</option>
-                    </select>
+                <!-- 时间间隔配置项 -->
+                <div id="box-biji-schedule-interval" class="form-group" style="margin-bottom: 1.2rem;">
+                    <label for="input-biji-schedule-interval-hours" style="font-weight: bold; font-size: 0.82rem;">每隔多久自动更新 1 次 (小时)</label>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="number" id="input-biji-schedule-interval-hours" value="6" min="1" max="168" style="flex: 1; height: 2.3rem; border: 1px solid var(--ink-primary); background: transparent; padding: 0 0.75rem; font-size: 0.9rem; color: var(--ink-primary);">
+                        <span style="font-size: 0.85rem; color: var(--ink-secondary);">小时</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--ink-tertiary); margin-top: 0.35rem;">快捷常用间隔: 
+                        <a href="javascript:void(0)" id="btn-quick-1h" style="color: var(--accent-primary); margin-right: 0.4rem;">1小时</a>
+                        <a href="javascript:void(0)" id="btn-quick-3h" style="color: var(--accent-primary); margin-right: 0.4rem;">3小时</a>
+                        <a href="javascript:void(0)" id="btn-quick-6h" style="color: var(--accent-primary); margin-right: 0.4rem;">6小时</a>
+                        <a href="javascript:void(0)" id="btn-quick-12h" style="color: var(--accent-primary); margin-right: 0.4rem;">12小时</a>
+                        <a href="javascript:void(0)" id="btn-quick-24h" style="color: var(--accent-primary);">24小时</a>
+                    </div>
                 </div>
 
-                <div id="biji-schedule-info-box" style="background: var(--bg-secondary); border-left: 3px solid var(--accent-primary); padding: 0.75rem 1rem; font-size: 0.8rem; color: var(--ink-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+                <div id="biji-schedule-info-box" style="background: var(--bg-secondary); border-left: 3px solid var(--accent-primary); padding: 0.75rem 1rem; font-size: 0.8rem; color: var(--ink-secondary); margin-bottom: 1.5rem; line-height: 1.6;">
+                    <div id="biji-schedule-mode-desc">模式: 自定义时间间隔 (每 6 小时)</div>
                     <div id="biji-schedule-last-run">上次自动同步: 尚未执行</div>
                     <div id="biji-schedule-next-run">下次预计同步: --</div>
                 </div>

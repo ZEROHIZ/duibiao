@@ -573,6 +573,6 @@
 * **问题现象**：得到文案同步原先仅支持在前端手动点击 `⚡ 一键同步得到文案` 触发，缺乏后台自动周期性（如每 1 小时、3 小时、6 小时、12 小时、24 小时）定时搜寻与抓取更新的自动化配置。
 * **主要根源**：未在 `app.py` 中构建专属的守护进程 Timer 轮询线程，前端「博主监控管理」顶部操作栏缺少对应的定时参数配置弹窗与状态指示徽章。
 * **解决方案**：
-  1. 在 `web/backend/app.py` 中新增 `GET /api/biji/schedule` 与 `POST /api/biji/schedule` REST API 接口，持久化存储 `biji_auto_sync_enabled`、`biji_auto_sync_interval_hours`、`biji_auto_sync_max_posts` 和 `biji_auto_sync_account` 到 `config.json`。
-  2. 在后端启动 `biji_auto_sync_scheduler_loop` Daemon 后台轮询守护线程，每 60 秒自动计算上次更新时间与周期间隔，时间到达即自动无缝启动 `biji_browser.py` 同步，日志实时推送至「任务日志」页面。
-  3. 在前端 `index.html` 的操作栏新增 `⏱️ 定时同步设置` 按钮与 `🟢 定时: 每 6 小时` / `⚪ 定时: 已禁用` 状态指示徽章，配合全新设计与实现的现代化弹窗控制界面。
+  1. 重构 `web/backend/app.py` 中的 `GET /api/biji/schedule` 与 `POST /api/biji/schedule` REST API 接口，支持双模式定时（`daily` 每天固定时间点如 `03:00` 与 `interval` 自定义每隔 X 小时如 1/3/6/12/24 小时），并持久化到 `config.json`。
+  2. 精简交互设计：彻底移除 `单博主抓取上限 (max_posts)` 限制（改由博主音视频转录队列驱动全量抓取），移除手动选择浏览器账号下拉框（改由后端根据各博主数据库记录的 `biji_browser_id` 自动匹配驱动其各自关联的沙箱环境）。
+  3. 后端 `biji_auto_sync_scheduler_loop` Daemon 后台轮询守护线程自动根据设定的 `daily` 或 `interval` 模式秒级计算触发点，实时自动抓取并在「任务日志」展示。
