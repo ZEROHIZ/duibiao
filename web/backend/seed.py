@@ -99,13 +99,33 @@ def seed_industry_news(cursor):
             print(f"[Seed] Error seeding news: {e}")
 
 def seed_trending_topics(cursor):
-    """播种全网流量热搜（Mock 数据占位，飞书同步接口保留）"""
+    """播种全网流量热搜（丰富 25 条示例热词，完美适配懒加载）"""
     trends = [
         ("人工智能如何重塑大众日常学习模式", "480万", "微博", "https://weibo.com"),
         ("高考填报志愿避坑红线话题热议", "360万", "抖音", "https://douyin.com"),
         ("年轻人为何爱上深度慢阅读卡片", "290万", "小红书", "https://xiaohongshu.com"),
         ("数字游民生活方式的真实困境与出路", "210万", "知乎", "https://zhihu.com"),
-        ("副业做自媒体写作者的核心变现闭环", "180万", "微信", "https://weixin.qq.com")
+        ("副业做自媒体写作者的核心变现闭环", "180万", "微信", "https://weixin.qq.com"),
+        ("Claude 3.5 与 GPT-4o 深度对标实测分析", "165万", "B站", "https://bilibili.com"),
+        ("提示词工程 (Prompting) 入门到精通干货", "150万", "小红书", "https://xiaohongshu.com"),
+        ("普通人如何利用 AI 工具实现 10 倍人效提升", "142万", "知乎", "https://zhihu.com"),
+        ("知识库 Agent 智能体搭建全流程拆解", "135万", "B站", "https://bilibili.com"),
+        ("全网爆款短视频脚本写作黄金三秒法则", "128万", "抖音", "https://douyin.com"),
+        ("深入浅出 RAG 检索增强生成架构解析", "115万", "微博", "https://weibo.com"),
+        ("为什么现在的读者越来越缺乏长文本专注力", "108万", "微信", "https://weixin.qq.com"),
+        ("个人知识管理 (PKM) 卡片盒笔记法深度实操", "99万", "小红书", "https://xiaohongshu.com"),
+        ("程序员转型独立开发者 (Indie Hacker) 避坑指南", "92万", "知乎", "https://zhihu.com"),
+        ("自动化爬虫与 Playwright 无头浏览器部署实践", "88万", "B站", "https://bilibili.com"),
+        ("短视频爆款选题的 5 个底层逆向思考模型", "82万", "抖音", "https://douyin.com"),
+        ("商业自媒体如何建立高信任度的人设 IP", "76万", "微信", "https://weixin.qq.com"),
+        ("音频转文字与 Whisper 本地离线转录性能优化", "70万", "知乎", "https://zhihu.com"),
+        ("个人公众号从 0 到 10 万粉的复盘心得", "65万", "微信", "https://weixin.qq.com"),
+        ("2026 年自媒体创作者生态与流量红利转移分析", "60万", "微博", "https://weibo.com"),
+        ("为什么“反直觉结论”更容易在社交网络裂变", "55万", "小红书", "https://xiaohongshu.com"),
+        ("无头浏览器 Docker 容器部署全记录", "50万", "B站", "https://bilibili.com"),
+        ("怎样用拆解思维找到同行不公开的流量秘密", "45万", "知乎", "https://zhihu.com"),
+        ("现代排版设计：杂志风格与极简黑白美学", "40万", "小红书", "https://xiaohongshu.com"),
+        ("跨平台自媒体分发与自动化工具盘点", "35万", "抖音", "https://douyin.com")
     ]
 
     for trend in trends:

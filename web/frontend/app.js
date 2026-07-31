@@ -2749,7 +2749,7 @@ async function loadIndustryNewsData() {
 // 11. 全网热搜逻辑 (Feed 4 - 支持分批按需懒加载 & 触底自动装载，杜绝卡顿与半透明)
 let trendingAllItems = [];
 let trendingRenderedCount = 0;
-const TRENDING_PAGE_SIZE = 10;
+const TRENDING_PAGE_SIZE = 5;
 let trendingObserver = null;
 
 async function loadTrendingTopicsData() {
