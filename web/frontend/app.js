@@ -2746,48 +2746,110 @@ async function loadIndustryNewsData() {
     }
 }
 
-// 11. 全网热搜逻辑 (Feed 4)
+// 11. 全网热搜逻辑 (Feed 4 - 支持分批按需懒加载 & 触底自动装载，杜绝卡顿与半透明)
+let trendingAllItems = [];
+let trendingRenderedCount = 0;
+const TRENDING_PAGE_SIZE = 10;
+let trendingObserver = null;
+
 async function loadTrendingTopicsData() {
     const container = document.getElementById("trending-list-container");
     container.innerHTML = `<div class="lead-text">查询热搜中...</div>`;
 
     try {
-        const res = await fetch(`${API_BASE}/api/trending`);
+        const res = await fetch(`${API_BASE}/api/trending?t=${Date.now()}`);
         const data = await res.json();
 
-        if (data.length === 0) {
+        if (!Array.isArray(data) || data.length === 0) {
             container.innerHTML = `<div class="lead-text" style="font-style: italic;">暂无今日流量热词。</div>`;
             return;
         }
 
+        trendingAllItems = data;
+        trendingRenderedCount = 0;
         container.innerHTML = "";
-        data.forEach((item, index) => {
-            const div = document.createElement("div");
-            div.className = "trending-item";
-            div.innerHTML = `
-                <div class="trending-item-left">
-                    <span class="trending-rank">${index + 1}</span>
-                    <a href="${item.url}" target="_blank" class="trending-title">${item.title}</a>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <span style="font-size: 0.75rem; color: var(--ink-secondary); font-weight: 500;">${item.source}</span>
-                    <span class="trending-heat">${item.heat}</span>
-                </div>
-            `;
-            container.appendChild(div);
-        });
 
-        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-            gsap.from(".trending-item", {
-                opacity: 0,
-                y: 10,
-                duration: 0.4,
-                stagger: 0.05,
-                ease: "power2.out"
-            });
-        }
+        // 首次分批加载前 10 条，秒级极速渲染
+        renderNextBatchTrendingTopics();
+
     } catch (e) {
         container.innerHTML = `<div class="lead-text" style="color: var(--accent-primary);">流量热搜缓存获取失败。</div>`;
+    }
+}
+
+function renderNextBatchTrendingTopics() {
+    const container = document.getElementById("trending-list-container");
+    if (!container || !trendingAllItems.length) return;
+
+    // 清理旧的懒加载触发器按钮与 Sentinel
+    const oldBtnBox = document.getElementById("trending-lazy-btn-box");
+    if (oldBtnBox) oldBtnBox.remove();
+
+    const nextBatch = trendingAllItems.slice(trendingRenderedCount, trendingRenderedCount + TRENDING_PAGE_SIZE);
+    const newElements = [];
+
+    nextBatch.forEach((item, idx) => {
+        const globalRank = trendingRenderedCount + idx + 1;
+        const div = document.createElement("div");
+        div.className = "trending-item";
+        div.style.opacity = "1"; // 强锁定 100% 不会被遗留半透明遮罩
+        div.innerHTML = `
+            <div class="trending-item-left">
+                <span class="trending-rank" style="opacity: 1;">${globalRank}</span>
+                <a href="${item.url}" target="_blank" class="trending-title">${item.title}</a>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <span style="font-size: 0.75rem; color: var(--ink-secondary); font-weight: 500;">${item.source}</span>
+                <span class="trending-heat">${item.heat}</span>
+            </div>
+        `;
+        container.appendChild(div);
+        newElements.push(div);
+    });
+
+    trendingRenderedCount += nextBatch.length;
+
+    // 仅对新加载批次进行轻量动画，并在完成后清除所有 inline 遮罩样式（clearProps: "all"）
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && newElements.length > 0) {
+        gsap.fromTo(newElements, 
+            { opacity: 0.3, y: 8 },
+            { opacity: 1, y: 0, duration: 0.3, stagger: 0.03, ease: "power2.out", clearProps: "all" }
+        );
+    }
+
+    // 若依然有剩余未呈现热点，加入底端懒加载控件
+    if (trendingRenderedCount < trendingAllItems.length) {
+        const lazyBox = document.createElement("div");
+        lazyBox.id = "trending-lazy-btn-box";
+        lazyBox.style.cssText = "margin-top: 1.5rem; text-align: center; padding-bottom: 1.5rem;";
+        lazyBox.innerHTML = `
+            <button id="btn-load-more-trending" class="btn-text" style="border: 1px dashed var(--ink-secondary); padding: 0.5rem 1.5rem; font-size: 0.85rem; cursor: pointer; color: var(--accent-primary);">
+                👇 点击或向下滚动加载更多热搜 (已加载 ${trendingRenderedCount} / ${trendingAllItems.length} 条)
+            </button>
+            <div id="trending-lazy-sentinel" style="height: 10px; margin-top: 10px;"></div>
+        `;
+        container.appendChild(lazyBox);
+
+        const btnLoadMore = document.getElementById("btn-load-more-trending");
+        if (btnLoadMore) {
+            btnLoadMore.addEventListener("click", () => {
+                renderNextBatchTrendingTopics();
+            });
+        }
+
+        // 绑定 IntersectionObserver 实现触底无感自动懒加载
+        if ("IntersectionObserver" in window) {
+            if (trendingObserver) trendingObserver.disconnect();
+            trendingObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    trendingObserver.disconnect();
+                    renderNextBatchTrendingTopics();
+                }
+            }, { rootMargin: "150px" });
+
+            const sentinel = document.getElementById("trending-lazy-sentinel");
+            if (sentinel) trendingObserver.observe(sentinel);
+        }
     }
 }
 

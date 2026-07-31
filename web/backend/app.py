@@ -541,12 +541,17 @@ def get_industry_news():
 
 @app.get("/api/trending")
 def get_trending_topics():
-    """获取全网热度资讯"""
+    """获取全网热度资讯 (自动按标题去重并保留最新热度)"""
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("SELECT * FROM trending_topics ORDER BY id ASC;")
+        cursor.execute("""
+            SELECT MIN(id) as id, title, heat, source, url, MAX(synced_at) as synced_at 
+            FROM trending_topics 
+            GROUP BY title 
+            ORDER BY id ASC;
+        """)
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
     except Exception as e:

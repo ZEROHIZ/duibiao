@@ -865,7 +865,8 @@ body {
 .trending-rank {
     font-family: var(--font-serif);
     font-size: 1.4rem;
-    color: var(--ink-tertiary);
+    color: var(--ink-secondary);
+    font-weight: 500;
     width: 25px;
     text-align: right;
 }

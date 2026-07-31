@@ -587,3 +587,17 @@
 * **解决方案**：
   1. 重构后端 `GET /api/bloggers` 查询 SQL，增加 `LEFT JOIN biji_browser_accounts a ON a.account_id = b.biji_browser_id`，并通过 `COALESCE(NULLIF(a.alias_name, ''), NULLIF(a.nickname, ''), b.biji_browser_id, '得到账号_01')` 优先导出友好别名 `biji_account_name`。
   2. 前端 `app.js` 渲染时优先展示 `biji_account_name`（如 `得到账号_01`），同时通过 `title` 属性保留原始凭据 ID（`account_01`）鼠标悬浮提示，兼顾直观性与开发调试需求。
+
+---
+
+## Bug 46: 「全网热点」列表全量渲染导致 DOM 卡顿，且 GSAP 动画 Stagger 导致 4 号之后项目呈半透明/隐藏
+
+* **发生时间**：2026-08-01
+* **问题现象**：打开「全网热点」页面时，网页产生卡顿，且排在 4 号及以后的热搜词显示为半透明、淡化甚至完全无法看到。
+* **主要根源**：
+  1. 数据库 `trending_topics` 存在相同标题的重复记录，`SELECT *` 一次性查出数十条重复数据全量渲染，导致 DOM 卡顿。
+  2. 前端使用 `gsap.from(".trending-item", { opacity: 0, stagger: 0.05 })`，导致后续批次的元素在动画计算期间被强行锁死在 `opacity: 0` / 半透明遮罩状态。
+* **解决方案**：
+  1. 重构后端 `GET /api/trending` SQL 查询，采用 `GROUP BY title` 自动去重，只保留最新条目。
+  2. 重构前端 `loadTrendingTopicsData`，实现**分批懒加载 (Batch Lazy Loading)** 与 **`IntersectionObserver` 触底自动装载**，首屏仅装载 10 条，秒级极速渲染。
+  3. 修复动画遮罩：在 GSAP 动画中增加 `clearProps: "all"` 并在 CSS 中强化透明度，确保所有编号热点 100% 清晰呈现。
