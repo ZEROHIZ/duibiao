@@ -83,6 +83,22 @@ class BijiBrowserEngine:
             except:
                 pass
 
+    def capture_error_screenshot(self, page, step_name):
+        """保存关键步骤点击失败/异常截图，并打印显式错误信息供 Web 看板展现"""
+        timestamp = int(time.time())
+        screenshot_name = f"biji_error_{self.account_id}_{timestamp}.png"
+        screenshot_path = os.path.join(SCREENSHOT_DIR, screenshot_name)
+        try:
+            page.screenshot(path=screenshot_path, full_page=True)
+            self.log(f"\n==================================================")
+            self.log(f"❌ [关键步骤异常终止] 在步骤『{step_name}』中操作失败！")
+            self.log(f"📸 故障现场截图已保存至：")
+            self.log(f"   {screenshot_path}")
+            self.log(f"==================================================\n")
+        except Exception as e:
+            self.log(f"❌ 保存异常截图失败: {e}")
+        return screenshot_path
+
     def update_account_status(self, nickname="", user_id="", status="LOGGED_IN"):
         """更新数据库中的账号状态记录"""
         conn = sqlite3.connect(DB_PATH)
@@ -348,26 +364,38 @@ class BijiBrowserEngine:
 
                 # 步骤 1: 点击 "添加"
                 self.log("🔍 正在查找页面『添加』按钮...")
-                add_btn = page.locator("xpath=//*[contains(text(), '添加')]").first
-                add_btn.wait_for(state="visible", timeout=8000)
-                self.log("👆 点击『添加』按钮...")
-                add_btn.click()
-                time.sleep(1)
+                try:
+                    add_btn = page.locator("xpath=//*[contains(text(), '添加')]").first
+                    add_btn.wait_for(state="visible", timeout=8000)
+                    self.log("👆 点击『添加』按钮...")
+                    add_btn.click()
+                    time.sleep(1)
+                except Exception as ex:
+                    self.capture_error_screenshot(page, "点击『添加』按钮")
+                    raise RuntimeError(f"无法定位或点击页面『添加』按钮: {ex}")
 
                 # 步骤 2: 点击 "订阅直播/博主"
                 self.log("🔍 正在查找『订阅直播/博主』菜单选项...")
-                sub_btn = page.locator("div[role='menuitem']:has-text('订阅直播/博主'), [role='menuitem']:has-text('订阅直播/博主')").first
-                sub_btn.wait_for(state="visible", timeout=8000)
-                self.log("👆 点击『订阅直播/博主』...")
-                sub_btn.click()
-                time.sleep(1)
+                try:
+                    sub_btn = page.locator("div[role='menuitem']:has-text('订阅直播/博主'), [role='menuitem']:has-text('订阅直播/博主')").first
+                    sub_btn.wait_for(state="visible", timeout=8000)
+                    self.log("👆 点击『订阅直播/博主』...")
+                    sub_btn.click()
+                    time.sleep(1)
+                except Exception as ex:
+                    self.capture_error_screenshot(page, "点击『订阅直播/博主』菜单")
+                    raise RuntimeError(f"无法定位或点击『订阅直播/博主』菜单: {ex}")
 
                 # 步骤 3: 点击 "抖音博主"
                 self.log("🔍 正在定位『抖音博主』Tab 页签 (data-name='douyin')...")
-                tab_btn = page.locator(".n-tabs-tab[data-name='douyin'], div[data-name='douyin'], .n-tabs-tab:has-text('抖音博主')").first
-                tab_btn.wait_for(state="visible", timeout=8000)
-                self.log("👆 点击『抖音博主』Tab...")
-                tab_btn.click()
+                try:
+                    tab_btn = page.locator(".n-tabs-tab[data-name='douyin'], div[data-name='douyin'], .n-tabs-tab:has-text('抖音博主')").first
+                    tab_btn.wait_for(state="visible", timeout=8000)
+                    self.log("👆 点击『抖音博主』Tab...")
+                    tab_btn.click()
+                except Exception as ex:
+                    self.capture_error_screenshot(page, "点击『抖音博主』Tab")
+                    raise RuntimeError(f"无法定位或点击『抖音博主』Tab: {ex}")
                 
                 # 显式等待 Tab 激活动画完成
                 self.log("⏳ 等待 Tab 激活状态变更 (data-name='douyin')...")
@@ -379,19 +407,27 @@ class BijiBrowserEngine:
 
                 # 步骤 4: 填入博主 URL
                 self.log(f"✍️ 在输入框填入抖音博主主页 URL: {home_url}...")
-                url_input = page.locator(".n-tab-pane:not([style*='display: none']) input.n-input__input-el, .n-input__input-el").first
-                url_input.click()
-                url_input.fill(home_url)
                 try:
-                    page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", url_input.element_handle())
-                except:
-                    pass
-                time.sleep(0.5)
+                    url_input = page.locator(".n-tab-pane:not([style*='display: none']) input.n-input__input-el, .n-input__input-el").first
+                    url_input.click()
+                    url_input.fill(home_url)
+                    try:
+                        page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", url_input.element_handle())
+                    except:
+                        pass
+                    time.sleep(0.5)
+                except Exception as ex:
+                    self.capture_error_screenshot(page, "填入博主 URL 输入框")
+                    raise RuntimeError(f"无法填入博主 URL 输入框: {ex}")
 
                 # 步骤 5: 点击 "确定"
                 self.log("👆 点击『确定』提交按钮...")
-                confirm_btn = page.locator(".n-tab-pane:not([style*='display: none']) button.n-button--primary-type, button.n-button--primary-type, button:has-text('确定')").first
-                confirm_btn.click()
+                try:
+                    confirm_btn = page.locator(".n-tab-pane:not([style*='display: none']) button.n-button--primary-type, button.n-button--primary-type, button:has-text('确定')").first
+                    confirm_btn.click()
+                except Exception as ex:
+                    self.capture_error_screenshot(page, "点击『确定』提交按钮")
+                    raise RuntimeError(f"无法定位或点击『确定』提交按钮: {ex}")
 
                 # 显式轮询等待 2.json 网络响应拦截回调 (最长 10 秒)
                 self.log("⏳ 正在等待 2.json 关注响应回调 (最长 10 秒)...")
@@ -809,10 +845,11 @@ class BijiBrowserEngine:
                                     blogger_tab.click()
                                 time.sleep(1.5)
                             except Exception as click_ex:
-                                print(f"     ⚠️ 点击『博主』Tab 或监听 2.json 提示: {click_ex}")
-                                time.sleep(1.5)
+                                self.capture_error_screenshot(page, f"点击『博主』Tab - 知识库『{t_name}』")
+                                print(f"     ❌ [关键步骤异常终止] 点击『博主』Tab 或监听 2.json 失败: {click_ex}")
                         else:
-                            print(f"     ❌ 尝试多个选择器均未定位到『博主』Tab 页签！")
+                            self.capture_error_screenshot(page, f"定位『博主』Tab - 知识库『{t_name}』")
+                            print(f"     ❌ [关键步骤异常终止] 知识库『{t_name}』中尝试所有选择器均未定位到『博主』Tab，终止该知识库寻路！")
 
                         if self.follows_data:
                             print(f"     📋 成功捕获到 {len(self.follows_data)} 个关注卡片，对比目标博主『{b_name}』 (URL: {b_home_url or '未配置'})...")

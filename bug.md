@@ -660,6 +660,8 @@
   1. 解耦 `page.goto` 与 `blogger_tab` 点击，引入多重备用选择器（如 `.n-tabs-tab:has-text('博主')`, `div[role='tab']:has-text('博主')`）。
   2. 补全寻路过程中【打开页面】->【定位 Tab】->【点击 Tab 触发 2.json】->【输出所有捕获到的卡片】->【比对 URL 与名称】的**全流程粒度日志**。
   3. 增强匹配规则：支持 URL 规范化/ID 提取匹配、完全同名匹配，以及双向模糊包含匹配（如 `小A` 与 `小A学财经`）。
+  4. 引入**关键点击节点现场截屏与强终止机制**（`capture_error_screenshot`）：在“添加”、“订阅直播/博主”、“抖音博主 Tab”、“确定”以及寻路“博主 Tab”等核心点击节点上，一旦定位或点击失败，禁止静默跳过，立刻截取 Viewport 全屏快照保存至 `screenshots/biji_error_*.png` 并抛出 RuntimeError 终止流程，供 Web 看板自动抓取展现现场。
+
 
 
 
