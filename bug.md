@@ -601,3 +601,63 @@
   1. 重构后端 `GET /api/trending` SQL 查询，采用 `GROUP BY title` 自动去重，只保留最新条目。
   2. 重构前端 `loadTrendingTopicsData`，实现**分批懒加载 (Batch Lazy Loading)** 与 **`IntersectionObserver` 触底自动装载**，首屏仅装载 10 条，秒级极速渲染。
   3. 修复动画遮罩：在 GSAP 动画中增加 `clearProps: "all"` 并在 CSS 中强化透明度，确保所有编号热点 100% 清晰呈现。
+
+---
+
+## Bug 47: Go / Bubbletea 命令行 TUI 在无 TTY 管道中黑屏崩溃 (0xC000013A) 与 PTY 窗口尺寸未初始化死锁
+
+* **发生时间**：2026-08-01
+* **问题现象**：在 Docker 容器或无物理控制台环境中，拉起 `agy` / `codex` 等基于 Go / Bubbletea 框架的命令行交互工具时，终端控制台黑屏无任何字符输出，或者在 Windows 重定向管道中直接抛出 `0xC000013A` (3221225786) 崩溃退出。
+* **主要根源**：
+  1. **缺少物理 TTY 句柄**：Go 语言的 Bubbletea 选单库要求真实的 TTY 终端与 ANSI 交互环境。如果直接使用 Python `subprocess.PIPE` 进行标准流重定向，Go 进程会因为检测不到 TTY 或尝试访问底层控制台句柄而崩溃。
+  2. **PTY 初始尺寸为 0x0**：在 Linux POSIX 环境下使用 `pty.fork()` 创建伪终端时，若未显式调用 `ioctl` 设定初始窗口宽高（默认为 0 行 0 列），会导致 Bubbletea 一直等待 `SIGWINCH` 窗口 resize 变化信号，陷入永久死锁。
+* **解决方案**：
+  1. **跨平台双 PTY 会话驱动**：
+     - Windows 宿主机：使用 `winpty.PtyProcess` (`PtyProcess.spawn`) 产生 ConPTY 物理会话。
+     - Linux / Docker 容器：使用标准库 `pty.fork()`。
+  2. **显式窗口尺寸与环境变量注入**：
+     - 在 `pty.fork()` 的子进程 (`pid == 0`) 中，必须使用 `struct.pack("HHHH", 24, 80, 0, 0)` 打包并通过 `fcntl.ioctl(0, termios.TIOCSWINSZ, winsize)` 注入 `24x80` 初始列宽。
+     - 必须显式声明环境变量 `os.environ["TERM"] = "xterm-256color"` 与 `os.environ["COLORTERM"] = "truecolor"`，唤醒彩色 TUI 界面渲染。
+
+---
+
+## Bug 48: Web PTY 终端接收 OAuth 长 URL 在 80 列宽度切分后导致 Google 返回 400
+
+* **发生时间**：2026-08-01
+* **问题现象**：在网页 Web Terminal 中完成 Google OAuth 授权时，点击终端打印出来的授权 URL 链接跳转，Google 提示 `400. 出现了错误。服务器无法处理该请求，因为其格式不正确`。
+* **主要根源**：
+  * 伪终端默认列宽设为 80 列。当命令行工具打印极长的 OAuth URL（通常 >200 字符，包含 `client_id` 与 `state`）时，PTY 会自动向输出文本中插入 `\n` 换行符。
+  * 前端正则若简单按行解析超链接，会把 URL 在中途截断（丢失后半截关键的 `state=` 校验参数），或者在拼接时保留了内部的换行符与空格，导致构造出的 URL 格式破损。
+* **解决方案**：
+  * 前端使用流式文本拼接器，在提取 URL 前利用正则表达式彻底剔除内部的空白与换行符 (`[\r\n\t\s"'>]+`)。
+  * 在校验提取出的字符串完整包含 `https://` 与 `state=` 关键参数后，才在 DOM 中替换生成可直接点击的 `<a href="..." target="_blank">` 按钮，保障一键跳转 100% 正确。
+
+---
+
+## Bug 49: Windows 环境下 `subprocess.Popen` `shell=True` 导致 CLI 命令行参数列表截断与管道块缓冲
+
+* **发生时间**：2026-08-01
+* **问题现象**：
+  1. 在 Windows 宿主机下拉起 `agy` 智能体拆解任务时，`agy` 没有任何报错但瞬间以退出码 `1` 结束，且未执行任何拆解动作。
+  2. 智能体运行过程中，前端的任务日志控制台一直处于空白状态，直到整个任务完全结束才一瞬间吐出全量日志。
+* **主要根源**：
+  1. **`shell=True` 参数截断**：在 Windows 下如果 `subprocess.Popen` 开启了 `shell=True` 且传入的是命令参数列表 (`['agy', 'analyze', '--verbose']`)，Windows `cmd.exe` 解释器只把列表第一项 `agy` 作为命令执行，后面的参数列表全被抛弃。
+  2. **C-stdio 块缓冲区存留**：Python subprocess 在捕获标准输出时默认对管道启用了 C-stdio 4KB 块缓冲，在缓冲区填满前不会向文件写入，导致日志无法实时推送到前端。
+* **解决方案**：
+  1. 将 `subprocess.Popen` 的 `shell` 参数统一强控制为 `False`（若使用 shell 必须拼接为单条 String），确保 Windows 内核原封不动将 List 参数传给子进程。
+  2. 强制传递 `PYTHONUNBUFFERED=1` 环境变量，并在 Python subprocess 管道读取循环中使用无缓冲 `bufsize=0` 和按行 `f.flush()` 强行冲刷磁盘，打通秒级实时推流通道。
+
+---
+
+## Bug 50: 得到 (biji.com) 寻路模式缺失知识库遍历调试日志与 1.json 网络接口未拦截捕获时 self.topics_data 为空问题
+
+* **发生时间**：2026-08-01
+* **问题现象**：得到抓取引擎在寻路模式下未提示任何知识库遍历日志，直接输出 `⚠️ 未在得到中找到博主『xxx』的对应关注卡片，跳过。`。
+* **主要根源**：
+  1. **未抓到 1.json**：`page.goto(BASE_URL)` 时若网络波动或接口未被响应拦截回调捕获，`self.topics_data` 仍保持初始空列表 `[]`，导致 `for t in self.topics_data:` 循环直接跳过。
+  2. **缺少调试日志**：循环体内部只有在成功匹配时才会打印 `[博主绑定成功]`，未匹配或遍历每个知识库时缺乏 Log 提示，使用户无法感知遍历进度。
+* **解决方案**：
+  1. 在 `biji_browser.py` 的寻路逻辑中加入 `1.json` (`v1/web/topic/mine/list`) 加载与自动重试机制。
+  2. 显式打印当前账号捕获到的知识库数量，并在 `for t in self.topics_data` 遍历中增加每个知识库的检索状态、拦截到的关注卡片数量和比对结果的详细调试日志。
+
+

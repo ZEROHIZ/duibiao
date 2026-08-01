@@ -749,29 +749,39 @@ class BijiBrowserEngine:
                     # 分支 B: 若未绑定 biji_url，通过知识库寻路检索 2.json 并自动绑定
                     # ----------------------------------------------------
                     print(f"  🔍 [寻路模式] 博主『{b_name}』尚未绑定 biji_url，进入得到知识库寻路...")
-                    page.goto(BASE_URL, wait_until="networkidle")
-                    time.sleep(2)
 
+                    # 触发/重试加载 1.json 知识库列表
                     if not self.topics_data:
+                        print("  📚 [寻路] 知识库缓存为空，正在加载主页获取知识库列表 (1.json)...")
+                        try:
+                            with page.expect_response(lambda r: "v1/web/topic/mine/list" in r.url and r.status == 200, timeout=6000):
+                                page.goto(BASE_URL, wait_until="domcontentloaded")
+                        except Exception:
+                            page.goto(BASE_URL, wait_until="domcontentloaded")
                         time.sleep(2)
 
+                    print(f"  📚 当前账号共捕获到 {len(self.topics_data)} 个知识库")
+
                     found_url = None
-                    for t in self.topics_data:
+                    for t_idx, t in enumerate(self.topics_data, start=1):
                         t_alias = t.get("id_alias")
                         t_name = t.get("name") or "知识库"
                         topic_page_url = f"https://www.biji.com/subject/{t_alias}/DEFAULT"
 
+                        print(f"  🔍 [{t_idx}/{len(self.topics_data)}] 正在检索知识库: 『{t_name}』 (Alias: {t_alias})...")
+
                         self.follows_data = None
                         try:
                             with page.expect_response(lambda r: "v1/web/follow/list" in r.url and r.status == 200, timeout=6000):
-                                page.goto(topic_page_url, wait_until="networkidle")
+                                page.goto(topic_page_url, wait_until="domcontentloaded")
                                 blogger_tab = page.locator("xpath=//*[text()='博主']").first
-                                if blogger_tab.is_visible():
+                                if blogger_tab.is_visible(timeout=3000):
                                     blogger_tab.click()
                         except Exception:
                             pass
 
                         if self.follows_data:
+                            print(f"     └─ 成功捕获到 {len(self.follows_data)} 个关注卡片，对比目标博主『{b_name}』...")
                             # 优先比对 2.json 里的原主页链接 url 与本地 home_url (100% 精确防同名)
                             for follow in self.follows_data:
                                 f_id = str(follow.get("id") or "")
@@ -813,10 +823,14 @@ class BijiBrowserEngine:
 
                                     print(f"  ✅ [博主绑定成功] ({match_reason}) 已为博主『{b_name}』保存 biji_url: {found_url}")
                                     break
+                        else:
+                            print(f"     └─ ⚠️ 知识库『{t_name}』未获取到关注列表 (follows_data 为空或该知识库下无关注)")
 
                         if found_url:
                             biji_url = found_url
                             break
+                        else:
+                            print(f"     └─ ℹ️ 知识库『{t_name}』中未匹配到博主『{b_name}』")
 
                 if not biji_url:
                     print(f"  ⚠️ 未在得到中找到博主『{b_name}』的对应关注卡片，跳过。")
