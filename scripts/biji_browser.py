@@ -769,42 +769,39 @@ class BijiBrowserEngine:
                         topic_page_url = f"https://www.biji.com/subject/{t_alias}/DEFAULT"
 
                         print(f"  🔍 [{t_idx}/{len(self.topics_data)}] 正在检索知识库: 『{t_name}』 (Alias: {t_alias})...")
+                        print(f"     └─ 🌐 打开知识库页面: {topic_page_url}")
 
                         self.follows_data = None
                         try:
-                            print(f"     🌐 跳转至知识库页面: {topic_page_url}")
                             page.goto(topic_page_url, wait_until="domcontentloaded")
                             time.sleep(1.5)
 
-                            print("     🔍 定位『博主』Tab 页签...")
-                            blogger_tab = page.locator("xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))]").first
-                            if not blogger_tab.is_visible(timeout=3000):
-                                blogger_tab = page.locator("text=博主").first
+                            print("     └─ 🔍 定位『博主』Tab 按钮...")
+                            blogger_tab = page.locator(
+                                "xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))], .n-tabs-tab:has-text('博主'), [role='tab']:has-text('博主'), text='博主'"
+                            ).first
 
-                            if blogger_tab.is_visible(timeout=4000):
-                                print("     👆 点击『博主』Tab 页签...")
-                                try:
-                                    with page.expect_response(lambda r: "v1/web/follow/list" in r.url and r.status == 200, timeout=6000):
-                                        blogger_tab.click()
-                                except Exception as resp_ex:
-                                    print(f"     [提示] 拦截 2.json 响应等待: {resp_ex}")
-                                    time.sleep(1.5)
-                            else:
-                                print("     ⚠️ 未能定位到『博主』Tab 页签")
-                        except Exception as tab_ex:
-                            print(f"     ⚠️ 打开知识库/点击博主 Tab 异常: {tab_ex}")
+                            try:
+                                blogger_tab.wait_for(state="visible", timeout=4000)
+                                print("     └─ 👆 找到『博主』Tab，正在点击并等待关注列表 (2.json) 响应...")
+                                with page.expect_response(lambda r: "v1/web/follow/list" in r.url and r.status == 200, timeout=6000):
+                                    blogger_tab.click()
+                                print("     └─ ✅ 成功触发点击『博主』Tab 并截获 2.json 响应！")
+                            except Exception as click_err:
+                                print(f"     └─ ⚠️ 点击『博主』Tab 或等待网络响应提示: {click_err}")
+                        except Exception as nav_err:
+                            print(f"     └─ ❌ 打开知识库页面异常: {nav_err}")
+
+                        time.sleep(1)
 
                         if self.follows_data:
-                            print(f"     └─ 成功捕获到 {len(self.follows_data)} 个关注卡片:")
-                            for idx, f_item in enumerate(self.follows_data, start=1):
-                                f_item_name = f_item.get("name") or "未命名"
-                                print(f"        └─ {idx}. 博主卡片: 『{f_item_name}』")
-
-                            # 优先比对 2.json 里的原主页链接 url 与本地 home_url (100% 精确防同名)
+                            print(f"     └─ 📋 成功捕获到 {len(self.follows_data)} 个关注卡片，开始对比目标博主『{b_name}』...")
                             for follow in self.follows_data:
                                 f_id = str(follow.get("id") or "")
                                 f_name = follow.get("name") or ""
                                 f_url = (follow.get("url") or "").strip()
+
+                                print(f"        • 比对得到卡片: 『{f_name}』 (ID: {f_id}, 原主页: {f_url or '无'})")
 
                                 is_match = False
                                 match_reason = ""
@@ -814,17 +811,16 @@ class BijiBrowserEngine:
                                     if clean_key and clean_key in f_url:
                                         is_match = True
                                         match_reason = f"原主页链接匹配 ({f_url})"
-                                
-                                # 2. 精确名称匹配
-                                if not is_match and f_name == b_name:
-                                    is_match = True
-                                    match_reason = f"博主昵称精确匹配 ({f_name})"
 
-                                # 3. 包含关系模糊匹配 (如 本地:『小A』 vs 得到:『小A学财经』)
                                 if not is_match and b_name and f_name:
-                                    if (b_name in f_name or f_name in b_name) and len(b_name) >= 2:
+                                    cb = b_name.strip()
+                                    cf = f_name.strip()
+                                    if cb == cf:
                                         is_match = True
-                                        match_reason = f"博主昵称包含匹配 (本地:『{b_name}』 <-> 得到:『{f_name}』)"
+                                        match_reason = f"博主昵称同名匹配 ({f_name})"
+                                    elif cb in cf or cf in cb:
+                                        is_match = True
+                                        match_reason = f"博主昵称包含匹配 (得到的名称为『{f_name}』)"
 
                                 if is_match:
                                     topic_alias = t_alias
@@ -849,7 +845,7 @@ class BijiBrowserEngine:
                                     print(f"  ✅ [博主绑定成功] ({match_reason}) 已为博主『{b_name}』保存 biji_url: {found_url}")
                                     break
                         else:
-                            print(f"     └─ ⚠️ 知识库『{t_name}』未获取到关注列表 (follows_data 为空或该知识库下无关注)")
+                            print(f"     └─ ⚠️ 知识库『{t_name}』未获取到关注列表 (follows_data 为空或无响应)")
 
                         if found_url:
                             biji_url = found_url
