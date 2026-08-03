@@ -30,7 +30,6 @@ test_output/
 .env
 .env.*
 tikhub_config.json
-API_DOCKER_GUIDE.md
 DESIGN.md
 SECURITY.md
 DISCLAIMER.md

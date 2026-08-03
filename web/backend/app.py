@@ -412,9 +412,11 @@ class BloggerCreate(BaseModel):
     home_url: str = ""
     is_transcribe: Optional[int] = 1
     platform: Optional[str] = "douyin"
-    biji_account_id: Optional[str] = "account_01"
+    biji_account_id: Optional[str] = None
+    account: Optional[str] = None  # 手机端/快捷指令简写: "1", "01", "account_01"
     biji_topic_alias: Optional[str] = None
     biji_topic_name: Optional[str] = None
+    topic: Optional[str] = None  # 手机端/快捷指令简写: "默认知识库", "40Dk9QrY"
 
 
 class BijiAccountCreate(BaseModel):
@@ -1041,9 +1043,62 @@ def create_blogger(body: BloggerCreate):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        b_account = body.biji_account_id or "account_01"
-        b_topic_alias = body.biji_topic_alias or ""
-        b_topic_name = body.biji_topic_name or ""
+        # 1. 平台 (platform) 别名映射（支持 抖音/dy/douyin, 小红书/xhs/xiaohongshu, B站/bili/bilibili）
+        PLATFORM_MAP = {
+            "抖音": "douyin", "dy": "douyin", "douyin": "douyin",
+            "小红书": "xiaohongshu", "xhs": "xiaohongshu", "red": "xiaohongshu", "xiaohongshu": "xiaohongshu",
+            "b站": "bilibili", "bili": "bilibili", "bilibili": "bilibili"
+        }
+        raw_platform = (body.platform or "douyin").strip().lower()
+        platform_val = PLATFORM_MAP.get(raw_platform, raw_platform)
+
+        # 2. 得到浏览器账号 (account / biji_account_id) 别名与阿拉伯数字映射 (如 1, 01 -> account_01)
+        raw_account = (body.account or body.biji_account_id or "account_01").strip()
+        b_account = "account_01"
+        if raw_account:
+            if raw_account.isdigit():
+                b_account = f"account_{int(raw_account):02d}"
+            elif raw_account.lower().startswith("account_"):
+                num_part = raw_account.lower().replace("account_", "")
+                if num_part.isdigit():
+                    b_account = f"account_{int(num_part):02d}"
+                else:
+                    b_account = raw_account
+            else:
+                cursor.execute("SELECT account_id FROM biji_browser_accounts WHERE alias_name = ? OR nickname = ? OR account_id = ?;", (raw_account, raw_account, raw_account))
+                acc_row = cursor.fetchone()
+                if acc_row:
+                    b_account = acc_row["account_id"]
+                else:
+                    b_account = raw_account
+
+        # 3. 得到知识库 (topic / biji_topic_name / biji_topic_alias) 名字与 Alias 智能查找绑定
+        raw_topic = (body.topic or body.biji_topic_name or body.biji_topic_alias or "").strip()
+        b_topic_alias = ""
+        b_topic_name = ""
+
+        if raw_topic and raw_topic != "new":
+            cursor.execute("SELECT DISTINCT biji_topic_alias, biji_topic_name FROM bloggers WHERE biji_topic_alias = ?;", (raw_topic,))
+            alias_row = cursor.fetchone()
+            if alias_row:
+                b_topic_alias = alias_row["biji_topic_alias"]
+                b_topic_name = alias_row["biji_topic_name"] or raw_topic
+            else:
+                cursor.execute("SELECT DISTINCT biji_topic_alias, biji_topic_name FROM bloggers WHERE biji_topic_name = ? AND biji_topic_alias IS NOT NULL AND biji_topic_alias != '' AND biji_topic_alias != 'new';", (raw_topic,))
+                name_row = cursor.fetchone()
+                if name_row:
+                    b_topic_alias = name_row["biji_topic_alias"]
+                    b_topic_name = name_row["biji_topic_name"]
+                else:
+                    if len(raw_topic) == 8 and raw_topic.isalnum() and not any('\u4e00' <= char <= '\u9fff' for char in raw_topic):
+                        b_topic_alias = raw_topic
+                        b_topic_name = raw_topic
+                    else:
+                        b_topic_alias = "new"
+                        b_topic_name = raw_topic
+        elif raw_topic == "new":
+            b_topic_alias = "new"
+            b_topic_name = body.biji_topic_name or "默认知识库"
 
         cursor.execute("""
         INSERT INTO bloggers (
@@ -1056,7 +1111,7 @@ def create_blogger(body: BloggerCreate):
             blogger_name, 
             body.home_url, 
             body.is_transcribe if body.is_transcribe is not None else 1,
-            body.platform if body.platform else "douyin",
+            platform_val,
             b_account,
             b_topic_alias if b_topic_alias != "new" else "",
             b_topic_name
