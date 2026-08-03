@@ -1034,25 +1034,52 @@ def create_blogger(body: BloggerCreate):
     import sqlite3
     import threading
     import uuid
+    import re
 
-    # 允许博主名称空置，后续由爬虫或得到自动提取充实
+    raw_input_text = body.home_url.strip() if body.home_url else ""
+    if not raw_input_text:
+        raise HTTPException(status_code=400, detail="主页链接 (home_url) 不能为空")
+
+    # 1. 核心 URL 提取：自动从复制的复杂文本中正则解析出标准的 http/https 链接
+    url_match = re.search(r'https?://[^\s]+', raw_input_text)
+    clean_home_url = url_match.group(0).rstrip('}>＞》,，。') if url_match else raw_input_text
+
+    # 2. 博主昵称智能提取：若未提供 name，尝试从分享文本（如 @你好我是大Jerry 或 【xxx的作品】）中提取
     blogger_name = body.name.strip() if (body.name and body.name.strip()) else ""
+    if not blogger_name:
+        name_match = re.search(r'@([^\s\n【】＞>]+)', raw_input_text)
+        if name_match:
+            blogger_name = name_match.group(1).strip()
+        else:
+            name_match2 = re.search(r'【([^】]+)的作品】|【([^】]+)的个人主页】', raw_input_text)
+            if name_match2:
+                blogger_name = (name_match2.group(1) or name_match2.group(2)).strip()
     if not blogger_name:
         blogger_name = f"待爬取博主_{str(uuid.uuid4())[:6]}"
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # 1. 平台 (platform) 别名映射（支持 抖音/dy/douyin, 小红书/xhs/xiaohongshu, B站/bili/bilibili）
+        # 3. 平台 (platform) 智能识别与别名映射
+        raw_platform = (body.platform or "").strip().lower()
         PLATFORM_MAP = {
             "抖音": "douyin", "dy": "douyin", "douyin": "douyin",
             "小红书": "xiaohongshu", "xhs": "xiaohongshu", "red": "xiaohongshu", "xiaohongshu": "xiaohongshu",
             "b站": "bilibili", "bili": "bilibili", "bilibili": "bilibili"
         }
-        raw_platform = (body.platform or "douyin").strip().lower()
-        platform_val = PLATFORM_MAP.get(raw_platform, raw_platform)
+        if not raw_platform or raw_platform == "douyin":
+            if "xhslink.cn" in raw_input_text or "xiaohongshu.com" in raw_input_text or "小红书" in raw_input_text:
+                platform_val = "xiaohongshu"
+            elif "b23.tv" in raw_input_text or "bilibili.com" in raw_input_text or "b站" in raw_input_text.lower():
+                platform_val = "bilibili"
+            elif "douyin.com" in raw_input_text or "抖音" in raw_input_text:
+                platform_val = "douyin"
+            else:
+                platform_val = PLATFORM_MAP.get(raw_platform, "douyin")
+        else:
+            platform_val = PLATFORM_MAP.get(raw_platform, raw_platform)
 
-        # 2. 得到浏览器账号 (account / biji_account_id) 别名与阿拉伯数字映射 (如 1, 01 -> account_01)
+        # 4. 得到浏览器账号 (account / biji_account_id) 别名与阿拉伯数字映射 (如 1, 01 -> account_01)
         raw_account = (body.account or body.biji_account_id or "account_01").strip()
         b_account = "account_01"
         if raw_account:
@@ -1072,7 +1099,7 @@ def create_blogger(body: BloggerCreate):
                 else:
                     b_account = raw_account
 
-        # 3. 得到知识库 (topic / biji_topic_name / biji_topic_alias) 名字与 Alias 智能查找绑定
+        # 5. 得到知识库 (topic / biji_topic_name / biji_topic_alias) 名字与 Alias 智能查找绑定
         raw_topic = (body.topic or body.biji_topic_name or body.biji_topic_alias or "").strip()
         b_topic_alias = ""
         b_topic_name = ""
@@ -1109,7 +1136,7 @@ def create_blogger(body: BloggerCreate):
         ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?);
         """, (
             blogger_name, 
-            body.home_url, 
+            clean_home_url, 
             body.is_transcribe if body.is_transcribe is not None else 1,
             platform_val,
             b_account,
