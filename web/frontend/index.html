@@ -1171,28 +1171,24 @@
 
     <!-- FULL UNTRUNCATED LOG MODAL -->
     <div id="modal-full-log" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; justify-content: center; align-items: center;">
-        <div class="modal-box" style="width: 92vw; height: 90vh; background: var(--bg-primary); border: 2px solid var(--accent-primary); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.6); padding: 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1.25rem; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary); flex-wrap: wrap; gap: 0.75rem;">
-                <div style="display: flex; align-items: center; gap: 0.85rem;">
+        <div class="modal-box" style="width: 90vw; height: 90vh; background: var(--bg-primary); border: 2px solid var(--accent-primary); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.6); padding: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary);">
+                <div style="display: flex; align-items: center; gap: 1rem;">
                     <h3 style="margin: 0; font-size: 1.1rem; font-family: var(--font-mono); color: var(--ink-primary); font-weight: bold;" id="full-log-modal-title">📜 完整日志详情 (无截断)</h3>
-                    <span style="font-size: 0.78rem; background: var(--accent-primary); color: #fff; padding: 0.15rem 0.6rem; font-family: var(--font-mono); border-radius: 2px; font-weight: 500;" id="full-log-meta-info">共 0 行</span>
+                    <span style="font-size: 0.8rem; color: var(--accent-primary); font-family: var(--font-mono);" id="full-log-modal-sub">包含全量行记录</span>
                 </div>
-                
-                <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
-                    <input type="text" id="full-log-search-input" placeholder="🔍 实时过滤查找日志 (如: 错误 / Error)..." style="height: 2rem; width: 260px; border: 1px solid var(--border-primary); background: var(--bg-primary); padding: 0 0.5rem; font-size: 0.8rem; font-family: var(--font-mono); color: var(--ink-primary);" />
-                    <button id="btn-log-scroll-top" class="btn-text" style="font-size: 0.78rem; border: 1px solid var(--border-primary); padding: 0.2rem 0.6rem; color: var(--ink-primary);">⬆️ 顶</button>
-                    <button id="btn-log-scroll-bottom" class="btn-text" style="font-size: 0.78rem; border: 1px solid var(--border-primary); padding: 0.2rem 0.6rem; color: var(--ink-primary);">⬇️ 底</button>
-                    <button id="btn-copy-full-log-modal" class="btn-text" style="font-size: 0.8rem; border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.25rem 0.85rem; font-weight: 500; background: transparent;">📋 一键复制全量日志</button>
-                    <button id="btn-close-full-log-modal" class="btn-text" style="font-size: 1.3rem; cursor: pointer; padding: 0 0.5rem; line-height: 1; border: none; color: var(--ink-primary); margin-left: 0.5rem;">✕</button>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button id="btn-copy-full-log-modal" class="btn-text" style="font-size: 0.8rem; border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.25rem 0.85rem; font-weight: 500;">📋 一键复制全量日志</button>
+                    <button id="btn-close-full-log-modal" class="btn-text" style="font-size: 1.2rem; cursor: pointer; padding: 0 0.5rem; line-height: 1; border: none; color: var(--ink-primary);">✕</button>
                 </div>
             </div>
-            <div style="flex: 1; position: relative; background: #141414; padding: 1rem; overflow: hidden; display: flex; flex-direction: column;">
-                <pre id="full-log-modal-content" style="flex: 1; margin: 0; overflow: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6; color: #e8e8e8; white-space: pre-wrap; word-break: break-all; background: transparent; border: none; padding-right: 0.5rem;">正在拉取全量无截断日志，请稍候...</pre>
+            <div style="flex: 1; position: relative; background: #181818; padding: 1rem; overflow: hidden; display: flex; flex-direction: column;">
+                <pre id="full-log-modal-content" style="flex: 1; margin: 0; overflow: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; color: #f0f0f0; white-space: pre-wrap; word-break: break-all; background: transparent; border: none;">正在拉取全量无截断日志，请稍候...</pre>
             </div>
         </div>
     </div>
 
     <!-- UI Logic Script -->
-    <script src="app.js?v=20260729_1"></script>
+    <script src="app.js?v=20260804_1"></script>
 </body>
 </html>

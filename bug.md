@@ -723,7 +723,17 @@
   2. 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js) 的 `openFullLogModal` 之前写死了 `contentEl.scrollTop = contentEl.scrollHeight`，导致打开弹窗时直接强制拉到底部，用户需要手动向上滑才能看到顶部记录。
 * **解决方案**：
   * 彻底移除 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py) 中重复的第二个 `get_crawler_status` 函数定义，确保全局唯一的 Endpoint 100% 响应 `full=true` 参数返回从第 1 行起的所有全量字符。
-  * 将 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js) 的 `openFullLogModal` 的 `scrollTop` 设置为 `0`，使得弹窗打开时默认展现日志第一行起点，符合常规浏览习惯。
+---
+
+## Bug 57: 浏览器缓存 `index.html` 导致弹窗 DOM 节点不存在，触发 `TypeError: Cannot set properties of null`
+
+* **发生时间**：2026-08-04
+* **问题现象**：在前端点击「查看完整日志」时控制台报错 `Uncaught (in promise) TypeError: Cannot set properties of null (setting 'textContent') at HTMLButtonElement.openFullLogModal`。
+* **主要根源**：用户浏览器缓存了老版本的 `index.html` HTML 模版，尚未载入底部的 `#modal-full-log` 容器，而 JavaScript 在尝试获取 `document.getElementById("full-log-modal-sub")` 时拿到 `null` 并直接修改其 `.textContent`。
+* **解决方案**：
+  * 在 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L4088) 的 `openFullLogModal` 中加入**强力防御机制**：检测到 `#modal-full-log` 缺失时，在 JS 内存中即时动态创建该 Modal 节点并注入到 `document.body` 中，并给全局 DOM 操作加上可选链保护（`titleSub?.textContent = ...`）。
+  * 在 [index.html](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/index.html#L1192) 尾部将 `app.js` 的版本查询参数更新为 `?v=20260804_1`，强制刷新浏览器静态缓存。
+
 
 
 

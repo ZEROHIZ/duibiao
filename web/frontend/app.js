@@ -4091,25 +4091,66 @@ async function openFullLogModal() {
         return;
     }
     
-    const modal = document.getElementById("modal-full-log");
+    let modal = document.getElementById("modal-full-log");
+    // 动态防护：若因浏览器缓存 index.html 导致 DOM 节点缺失，自动在 body 中动态创建
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "modal-full-log";
+        modal.className = "modal-overlay";
+        modal.style.cssText = "display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; justify-content: center; align-items: center;";
+        modal.innerHTML = `
+        <div class="modal-box" style="width: 90vw; height: 90vh; background: var(--bg-primary); border: 2px solid var(--accent-primary); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.6); padding: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary);">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <h3 style="margin: 0; font-size: 1.1rem; font-family: var(--font-mono); color: var(--ink-primary); font-weight: bold;" id="full-log-modal-title">📜 完整日志详情 (无截断)</h3>
+                    <span style="font-size: 0.8rem; color: var(--accent-primary); font-family: var(--font-mono);" id="full-log-modal-sub">包含全量行记录</span>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button id="btn-copy-full-log-modal" class="btn-text" style="font-size: 0.8rem; border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.25rem 0.85rem; font-weight: 500;">📋 一键复制全量日志</button>
+                    <button id="btn-close-full-log-modal" class="btn-text" style="font-size: 1.2rem; cursor: pointer; padding: 0 0.5rem; line-height: 1; border: none; color: var(--ink-primary);">✕</button>
+                </div>
+            </div>
+            <div style="flex: 1; position: relative; background: #181818; padding: 1rem; overflow: hidden; display: flex; flex-direction: column;">
+                <pre id="full-log-modal-content" style="flex: 1; margin: 0; overflow: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; color: #f0f0f0; white-space: pre-wrap; word-break: break-all; background: transparent; border: none;">正在拉取全量无截断日志，请稍候...</pre>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+
+        document.getElementById("btn-close-full-log-modal")?.addEventListener("click", () => {
+            modal.style.display = "none";
+        });
+        document.getElementById("btn-copy-full-log-modal")?.addEventListener("click", () => {
+            const text = document.getElementById("full-log-modal-content")?.textContent;
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast("已一键复制全量无截断日志！", "success");
+                }).catch(err => {
+                    showToast("复制失败: " + err, "error");
+                });
+            }
+        });
+    }
+
     const titleSub = document.getElementById("full-log-modal-sub");
     const contentEl = document.getElementById("full-log-modal-content");
     
     modal.style.display = "flex";
-    titleSub.textContent = `任务 ID: ${activeConsoleTaskId}`;
-    contentEl.textContent = "正在拉取全量无截断日志，请稍候...";
+    if (titleSub) titleSub.textContent = `任务 ID: ${activeConsoleTaskId}`;
+    if (contentEl) contentEl.textContent = "正在拉取全量无截断日志，请稍候...";
     
     try {
         const res = await fetch(`${API_BASE}/api/crawl/status/${activeConsoleTaskId}?full=true`);
         const json = await res.json();
         if (json.status === "success" && json.logs) {
-            contentEl.textContent = json.logs;
-            contentEl.scrollTop = 0;
+            if (contentEl) {
+                contentEl.textContent = json.logs;
+                contentEl.scrollTop = 0;
+            }
         } else {
-            contentEl.textContent = json.message || "未能获取到该任务的完整日志";
+            if (contentEl) contentEl.textContent = json.message || "未能获取到该任务的完整日志";
         }
     } catch (err) {
-        contentEl.textContent = `拉取完整日志发生异常: ${err.message}`;
+        if (contentEl) contentEl.textContent = `拉取完整日志发生异常: ${err.message}`;
     }
 }
 
