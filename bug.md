@@ -695,7 +695,15 @@
   * 前端 `app.js` 的 `extractCleanAuthUrl` 在从终端流文本提取 URL 时，结束关键词列表未能匹配全小写的 `shift+up` 和 Unicode 连字符 `(1–`，导致 URL 末尾的 `state=` 参数后面粘连了这段翻页提示字符。
 * **解决方案**：
   * 在 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L3714) 的 `extractCleanAuthUrl` 中扩充结束关键词列表（包含 `shift+up`, `lines)`, `(1–` 等）。
-  * 对 `state=` 参数增加了**精准正则表达式截取补丁**（匹配 `state=([A-Za-z0-9_\-]+)`），彻底将 `state` 校验串之后拼接的任何 TUI 杂质字符切除抹平，确保生成的授权 URL 100% 干净、可一键打开。
+---
+
+## Bug 54: FastAPI 启动报错 `NameError: name 'Request' is not defined`
+
+* **发生时间**：2026-08-04
+* **问题现象**：Docker 容器启动拉起 FastAPI 后端时控制台报错 `NameError: name 'Request' is not defined. Did you mean: 'requests'?` 导致容器不断崩溃重启。
+* **主要根源**：在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L14) 头部导入 `from fastapi import ...` 时，未导入 `Request` 类，而在 `/api/blogger/distill/run` 函数签名中声明了 `request: Request`。
+* **解决方案**：在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L14) 顶部的 `from fastapi import ...` 导入列表中加入 `Request`。
+
 
 
 
