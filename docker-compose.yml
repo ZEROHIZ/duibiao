@@ -19,4 +19,8 @@ services:
       - ./output:/app/output
       # 映射扫码登录截图目录，便于调试与查看登录二维码
       - ./screenshots:/app/screenshots
+      # 持久化智能体 CLI 的 OAuth 登录凭证，确保 Docker 重新构建/重建容器后依然无需重新登录
+      - ./data/cli_config/opencode:/root/.config/opencode
+      - ./data/cli_config/antigravity:/root/.config/antigravity
+      - ./data/cli_config/codex:/root/.codex
     restart: always
