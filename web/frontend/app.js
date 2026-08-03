@@ -4085,6 +4085,8 @@ async function pollCLIInstallLogs() {
 }
 
 // === 全量无截断日志查看器逻辑 ===
+let rawFullLogsText = "";
+
 async function openFullLogModal() {
     if (!activeConsoleTaskId) {
         showToast("请先在左侧任务队列中选择一个任务", "info");
@@ -4092,24 +4094,35 @@ async function openFullLogModal() {
     }
     
     const modal = document.getElementById("modal-full-log");
-    const titleSub = document.getElementById("full-log-modal-sub");
+    const metaInfoEl = document.getElementById("full-log-meta-info");
     const contentEl = document.getElementById("full-log-modal-content");
+    const searchInput = document.getElementById("full-log-search-input");
     
     modal.style.display = "flex";
-    titleSub.textContent = `任务 ID: ${activeConsoleTaskId}`;
-    contentEl.textContent = "正在拉取全量无截断日志，请稍候...";
+    if (searchInput) searchInput.value = "";
+    metaInfoEl.textContent = "正在加载...";
+    contentEl.textContent = "正在向后端拉取全量无截断日志，请稍候...";
     
     try {
         const res = await fetch(`${API_BASE}/api/crawl/status/${activeConsoleTaskId}?full=true`);
         const json = await res.json();
-        if (json.status === "success" && json.logs) {
-            contentEl.textContent = json.logs;
-            contentEl.scrollTop = contentEl.scrollHeight;
+        if (json.status === "success" && json.logs !== undefined) {
+            rawFullLogsText = json.logs;
+            contentEl.textContent = rawFullLogsText;
+            
+            const totalLines = json.total_lines || (rawFullLogsText ? rawFullLogsText.split("\n").length : 0);
+            const totalKb = ((json.total_bytes || rawFullLogsText.length) / 1024).toFixed(1);
+            metaInfoEl.textContent = `共 ${totalLines} 行 (${totalKb} KB)`;
+            
+            // 默认滚动回顶部，方便从第 1 行起查阅
+            contentEl.scrollTop = 0;
         } else {
             contentEl.textContent = json.message || "未能获取到该任务的完整日志";
+            metaInfoEl.textContent = "获取失败";
         }
     } catch (err) {
         contentEl.textContent = `拉取完整日志发生异常: ${err.message}`;
+        metaInfoEl.textContent = "发生异常";
     }
 }
 
@@ -4152,6 +4165,42 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnCloseFullLogModal) {
         btnCloseFullLogModal.addEventListener("click", () => {
             document.getElementById("modal-full-log").style.display = "none";
+        });
+    }
+
+    // 快捷滚动到顶部
+    const btnLogScrollTop = document.getElementById("btn-log-scroll-top");
+    if (btnLogScrollTop) {
+        btnLogScrollTop.addEventListener("click", () => {
+            const contentEl = document.getElementById("full-log-modal-content");
+            if (contentEl) contentEl.scrollTop = 0;
+        });
+    }
+
+    // 快捷滚动到底部
+    const btnLogScrollBottom = document.getElementById("btn-log-scroll-bottom");
+    if (btnLogScrollBottom) {
+        btnLogScrollBottom.addEventListener("click", () => {
+            const contentEl = document.getElementById("full-log-modal-content");
+            if (contentEl) contentEl.scrollTop = contentEl.scrollHeight;
+        });
+    }
+
+    // 实时日志搜索过滤
+    const searchInput = document.getElementById("full-log-search-input");
+    if (searchInput) {
+        searchInput.addEventListener("input", (e) => {
+            const query = e.target.value.trim().toLowerCase();
+            const contentEl = document.getElementById("full-log-modal-content");
+            if (!contentEl) return;
+            
+            if (!query) {
+                contentEl.textContent = rawFullLogsText;
+            } else {
+                const lines = rawFullLogsText.split("\n");
+                const matched = lines.filter(line => line.toLowerCase().includes(query));
+                contentEl.textContent = matched.join("\n") || `[未检索到包含关键词 "${query}" 的日志行]`;
+            }
         });
     }
 });
