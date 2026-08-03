@@ -662,6 +662,20 @@
   3. 增强匹配规则：支持 URL 规范化/ID 提取匹配、完全同名匹配，以及双向模糊包含匹配（如 `小A` 与 `小A学财经`）。
   4. 引入**关键点击节点现场截屏与强终止机制**（`capture_error_screenshot`）：在“添加”、“订阅直播/博主”、“抖音博主 Tab”、“确定”以及寻路“博主 Tab”等核心点击节点上，一旦定位或点击失败，禁止静默跳过，立刻截取 Viewport 全屏快照保存至 `screenshots/biji_error_*.png` 并抛出 RuntimeError 终止流程，供 Web 看板自动抓取展现现场。
 
+---
+
+## Bug 51: Google 智能体 OAuth 终端登录时缺失代理环境变量注入导致的换码失败问题
+
+* **发生时间**：2026-08-03
+* **问题现象**：在 Docker 容器或设置了 HTTP 代理（如 `http://host.docker.internal:7890`）的网络环境下，在网页端点击开启 Google 智能体授权登录时，命令行控制台报错 `Got an error: token exchange failed: Post "https://oauth2.googleapis.com/token"`。
+* **主要根源**：
+  * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L3048) 中在拉起终端登录 WebSocket / PTY 进程时，注入代理环境变量的判断条件写死为了 `if proxy_url and provider == "openai":`。
+  * 导致当 `provider == "google"` 时，全局配置的 `proxy_url` 被强行剥离过滤，没有注入到 `agy` / `opencode` 进程的环境变量中。Go 语言 CLI 工具在无代理状态下直接向 `https://oauth2.googleapis.com/token` 发起连接请求，进而导致网络超时与 Auth Token 交换失败。
+* **解决方案**：
+  * 修改 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L3048) 代理注入条件为 `if proxy_url:`，去掉对 `provider` 的限定。
+  * 补全 `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, `https_proxy`, `ALL_PROXY`, `all_proxy` 大小写全部代理环境变量的注入，确保 `agy` / `opencode` CLI 在进行 Google OAuth 授权换码时能够稳定通过 Docker 宿主机代理访问外部 API。
+
+
 
 
 

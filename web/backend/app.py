@@ -2964,6 +2964,10 @@ def terminal_start_endpoint(body: TerminalStartRequest):
         if proxy_url:
             env["HTTP_PROXY"] = proxy_url
             env["HTTPS_PROXY"] = proxy_url
+            env["http_proxy"] = proxy_url
+            env["https_proxy"] = proxy_url
+            env["ALL_PROXY"] = proxy_url
+            env["all_proxy"] = proxy_url
 
         try:
             use_shell = (os.name == "nt")
@@ -3043,11 +3047,15 @@ async def terminal_ws_endpoint(websocket: WebSocket, provider: str):
     
     # 注意：我们这里不需要强制注入 SSH_CONNECTION 以退化为文本形式！
     # 因为使用 PTY，Bubbletea 就可以在网页的 xterm.js 窗口中以完整的 GUI TUI 彩色交互正常渲染运行！
-    # 唯一需要注意的是代理：只为 OpenAI 注入代理以防 agy 挂死
+    # 代理设置：向环境变量注入统一的 HTTP/HTTPS 及大小写代理变量，确保 CLI (agy / opencode / codex) 正常使用代理
     proxy_url = settings.get("proxy_url", "")
-    if proxy_url and provider == "openai":
+    if proxy_url:
         env["HTTP_PROXY"] = proxy_url
         env["HTTPS_PROXY"] = proxy_url
+        env["http_proxy"] = proxy_url
+        env["https_proxy"] = proxy_url
+        env["ALL_PROXY"] = proxy_url
+        env["all_proxy"] = proxy_url
 
     is_windows = os.name == "nt"
     proc = None
