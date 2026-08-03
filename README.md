@@ -26,12 +26,12 @@ docker compose up -d --build
 
 **Linux / macOS (Bash) 一键拉取运行：**
 ```bash
-docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" -v "$(pwd)/data/cli_config/opencode:/root/.config/opencode" -v "$(pwd)/data/cli_config/antigravity:/root/.config/antigravity" -v "$(pwd)/data/cli_config/codex:/root/.codex" --restart always ghcr.io/zerohiz/duibiao:latest
 ```
 
 **Windows (PowerShell) 一键拉取运行：**
 ```bash
-docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always ghcr.io/zerohiz/duibiao:latest
+docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" -v "${PWD}/data/cli_config/opencode:/root/.config/opencode" -v "${PWD}/data/cli_config/antigravity:/root/.config/antigravity" -v "${PWD}/data/cli_config/codex:/root/.codex" --restart always ghcr.io/zerohiz/duibiao:latest
 ```
 
 ### 📌 纯 `docker run` 本地构建与运行
@@ -42,10 +42,10 @@ docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 
 docker build -t blogger-distiller .
 
 # 2. 运行本地镜像 (Windows PowerShell)
-docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" --restart always blogger-distiller
+docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "${PWD}/data:/app/data" -v "${PWD}/output:/app/output" -v "${PWD}/screenshots:/app/screenshots" -v "${PWD}/data/cli_config/opencode:/root/.config/opencode" -v "${PWD}/data/cli_config/antigravity:/root/.config/antigravity" -v "${PWD}/data/cli_config/codex:/root/.codex" --restart always blogger-distiller
 
 # 3. 运行本地镜像 (Linux / macOS Bash)
-docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" --restart always blogger-distiller
+docker run -d --name blogger-distiller -p 8899:8000 -p 6080:6080 -e DISPLAY=:99 -v "$(pwd)/data:/app/data" -v "$(pwd)/output:/app/output" -v "$(pwd)/screenshots:/app/screenshots" -v "$(pwd)/data/cli_config/opencode:/root/.config/opencode" -v "$(pwd)/data/cli_config/antigravity:/root/.config/antigravity" -v "$(pwd)/data/cli_config/codex:/root/.codex" --restart always blogger-distiller
 ```
 
 > **💡 持久化与服务说明**：
