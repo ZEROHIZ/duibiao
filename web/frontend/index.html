@@ -815,7 +815,13 @@
                     <!-- Right Column: Live Console & Screenshots -->
                     <div class="settings-col-right">
                         <span class="section-label">LIVE CONSOLE</span>
-                        <h3 class="detail-section-title" id="console-task-title" style="margin-bottom: 0.75rem; font-size: 1.25rem;">实时控制台日志 (未选定任务)</h3>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                            <h3 class="detail-section-title" id="console-task-title" style="margin: 0; font-size: 1.25rem;">实时控制台日志 (未选定任务)</h3>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <button id="btn-view-full-log" class="btn-text" style="border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.2rem 0.65rem; font-size: 0.78rem; cursor: pointer; background: transparent; font-weight: 500;">📜 查看完整日志 (无截断)</button>
+                                <button id="btn-copy-console-log" class="btn-text" style="border: 1px solid var(--border-primary); color: var(--ink-primary); padding: 0.2rem 0.65rem; font-size: 0.78rem; cursor: pointer; background: transparent;">📋 复制当前输出</button>
+                            </div>
+                        </div>
                         
                         <!-- Step tracker indicator -->
                         <div id="console-step-box" style="display: none; background-color: var(--bg-secondary); border-left: 3px solid var(--accent-primary); padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.88rem;">
@@ -1159,6 +1165,25 @@
             </div>
             <div style="flex: 1; position: relative; background: #1a1a1a;">
                 <iframe id="novnc-iframe" src="about:blank" style="width: 100%; height: 100%; border: none;"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- FULL UNTRUNCATED LOG MODAL -->
+    <div id="modal-full-log" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.85); z-index: 9999; justify-content: center; align-items: center;">
+        <div class="modal-box" style="width: 90vw; height: 90vh; background: var(--bg-primary); border: 2px solid var(--accent-primary); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.6); padding: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1.25rem; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary);">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <h3 style="margin: 0; font-size: 1.1rem; font-family: var(--font-mono); color: var(--ink-primary); font-weight: bold;" id="full-log-modal-title">📜 完整日志详情 (无截断)</h3>
+                    <span style="font-size: 0.8rem; color: var(--accent-primary); font-family: var(--font-mono);" id="full-log-modal-sub">包含全量行记录</span>
+                </div>
+                <div style="display: flex; gap: 0.75rem; align-items: center;">
+                    <button id="btn-copy-full-log-modal" class="btn-text" style="font-size: 0.8rem; border: 1px solid var(--accent-primary); color: var(--accent-primary); padding: 0.25rem 0.85rem; font-weight: 500;">📋 一键复制全量日志</button>
+                    <button id="btn-close-full-log-modal" class="btn-text" style="font-size: 1.2rem; cursor: pointer; padding: 0 0.5rem; line-height: 1; border: none; color: var(--ink-primary);">✕</button>
+                </div>
+            </div>
+            <div style="flex: 1; position: relative; background: #181818; padding: 1rem; overflow: hidden; display: flex; flex-direction: column;">
+                <pre id="full-log-modal-content" style="flex: 1; margin: 0; overflow: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5; color: #f0f0f0; white-space: pre-wrap; word-break: break-all; background: transparent; border: none;">正在拉取全量无截断日志，请稍候...</pre>
             </div>
         </div>
     </div>

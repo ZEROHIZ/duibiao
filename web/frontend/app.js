@@ -4084,4 +4084,76 @@ async function pollCLIInstallLogs() {
     }
 }
 
+// === 全量无截断日志查看器逻辑 ===
+async function openFullLogModal() {
+    if (!activeConsoleTaskId) {
+        showToast("请先在左侧任务队列中选择一个任务", "info");
+        return;
+    }
+    
+    const modal = document.getElementById("modal-full-log");
+    const titleSub = document.getElementById("full-log-modal-sub");
+    const contentEl = document.getElementById("full-log-modal-content");
+    
+    modal.style.display = "flex";
+    titleSub.textContent = `任务 ID: ${activeConsoleTaskId}`;
+    contentEl.textContent = "正在拉取全量无截断日志，请稍候...";
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/crawl/status/${activeConsoleTaskId}?full=true`);
+        const json = await res.json();
+        if (json.status === "success" && json.logs) {
+            contentEl.textContent = json.logs;
+            contentEl.scrollTop = contentEl.scrollHeight;
+        } else {
+            contentEl.textContent = json.message || "未能获取到该任务的完整日志";
+        }
+    } catch (err) {
+        contentEl.textContent = `拉取完整日志发生异常: ${err.message}`;
+    }
+}
+
+// 页面 DOM 加载完毕后统一绑定全量日志按钮事件
+document.addEventListener("DOMContentLoaded", () => {
+    const btnViewFullLog = document.getElementById("btn-view-full-log");
+    if (btnViewFullLog) {
+        btnViewFullLog.addEventListener("click", openFullLogModal);
+    }
+
+    const btnCopyConsoleLog = document.getElementById("btn-copy-console-log");
+    if (btnCopyConsoleLog) {
+        btnCopyConsoleLog.addEventListener("click", () => {
+            const consoleEl = document.getElementById("settings-console-content");
+            if (consoleEl && consoleEl.textContent) {
+                navigator.clipboard.writeText(consoleEl.textContent).then(() => {
+                    showToast("已成功复制当前控制台输出！", "success");
+                }).catch(err => {
+                    showToast("复制失败: " + err, "error");
+                });
+            }
+        });
+    }
+
+    const btnCopyFullLogModal = document.getElementById("btn-copy-full-log-modal");
+    if (btnCopyFullLogModal) {
+        btnCopyFullLogModal.addEventListener("click", () => {
+            const modalContent = document.getElementById("full-log-modal-content");
+            if (modalContent && modalContent.textContent) {
+                navigator.clipboard.writeText(modalContent.textContent).then(() => {
+                    showToast("已一键复制全量无截断日志！", "success");
+                }).catch(err => {
+                    showToast("复制失败: " + err, "error");
+                });
+            }
+        });
+    }
+
+    const btnCloseFullLogModal = document.getElementById("btn-close-full-log-modal");
+    if (btnCloseFullLogModal) {
+        btnCloseFullLogModal.addEventListener("click", () => {
+            document.getElementById("modal-full-log").style.display = "none";
+        });
+    }
+});
+
 

@@ -4707,7 +4707,7 @@ def analyze_task_step(logs):
     return "正在执行"
 
 @app.get("/api/crawl/status/{task_id}")
-def get_crawler_status(task_id: str):
+def get_crawler_status(task_id: str, full: bool = Query(False)):
     is_crawl = False
     
     with tasks_lock:
@@ -4748,15 +4748,21 @@ def get_crawler_status(task_id: str):
     logs = ""
     if os.path.exists(log_path):
         try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                logs = "".join(lines[-150:])
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                if full:
+                    logs = f.read()
+                else:
+                    lines = f.readlines()
+                    logs = "".join(lines[-150:])
         except UnicodeDecodeError:
             try:
                 # 尝试用 GBK（带 errors="replace"）读取以解决 Windows 编码兼容性问题
                 with open(log_path, "r", encoding="gbk", errors="replace") as f:
-                    lines = f.readlines()
-                    logs = "".join(lines[-150:])
+                    if full:
+                        logs = f.read()
+                    else:
+                        lines = f.readlines()
+                        logs = "".join(lines[-150:])
             except Exception as e:
                 logs = f"Failed to read logs (GBK): {e}"
         except Exception as e:

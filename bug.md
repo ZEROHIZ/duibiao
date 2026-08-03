@@ -702,7 +702,18 @@
 * **发生时间**：2026-08-04
 * **问题现象**：Docker 容器启动拉起 FastAPI 后端时控制台报错 `NameError: name 'Request' is not defined. Did you mean: 'requests'?` 导致容器不断崩溃重启。
 * **主要根源**：在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L14) 头部导入 `from fastapi import ...` 时，未导入 `Request` 类，而在 `/api/blogger/distill/run` 函数签名中声明了 `request: Request`。
-* **解决方案**：在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L14) 顶部的 `from fastapi import ...` 导入列表中加入 `Request`。
+---
+
+## Bug 55 / 优化: 任务日志控制台默认截断 150 行导致排查困难，新增「全量无截断日志弹窗」
+
+* **发生时间**：2026-08-04
+* **问题现象**：在「任务日志」模块查看长时间运行或详细步骤日志时，实时控制台默认只截取末尾 150 行（`lines[-150:]`），导致日志开头的初始化过程、部分异常报错堆栈或完整参数上下文被截断，难以定位故障原因。
+* **主要根源**：后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L4710) 的 `/api/crawl/status/{task_id}` 接口未提供无截断拉取模式，前端控制台亦缺乏“查看全量”与“一键复制”操作。
+* **解决方案**：
+  * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L4710) 的 `get_crawler_status` 支持 `full: bool = Query(False)` 查询参数。当传入 `full=true` 时，后端返回 100% 完整的日志全文。
+  * 前端 [index.html](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/index.html) 在 Live Console 顶部右侧新增 **「📜 查看完整日志 (无截断)」** 与 **「📋 复制当前输出」** 两个按钮，底部新增全屏弹窗 `#modal-full-log`。
+  * 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js) 点击查看完整日志时拉取全量无截断日志，在弹窗中完美回显并支持一键复制，彻底解决调试与排错困难。
+
 
 
 
