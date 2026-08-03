@@ -3698,8 +3698,8 @@ function extractCleanAuthUrl(streamText, provider) {
 
     let sub = text.substring(startIdx);
 
-    // 3. 截取到提示结束语位置 (例如 "If you aren't automatically redirected", "If not:", "Enter code:")
-    const endKeywords = ["If you aren't", "authorization code", "If not:", "Shift+up", "paste the", "Enter code"];
+    // 3. 截取到提示结束语或终端底栏位置
+    const endKeywords = ["If you aren't", "authorization code", "If not:", "Shift+up", "shift+up", "paste the", "Enter code", "Navigate", "lines)", "of24lines", "(1–", "(1-"];
     let endIdx = sub.length;
     for (let kw of endKeywords) {
         let pos = sub.indexOf(kw);
@@ -3712,8 +3712,16 @@ function extractCleanAuthUrl(streamText, provider) {
     // 4. 【核心精髓】彻底把这个 URL 中所有的 \r, \n, \t, 空格、双引号、单引号全部删除抹平！
     let cleanUrl = sub.replace(/[\r\n\t\s"'>]+/g, '');
 
-    // 5. 校验：如果是 Google 链接，必须等到 state= 接收完整，避免捕获半截
-    if (provider === "google" && !cleanUrl.includes("state=") && cleanUrl.length < 280) {
+    // 5. 【防御裁切】针对 Google OAuth 链接的 state= 参数精准裁剪（state 仅由 A-Za-z0-9_- 组成，剔除多余的终端底栏杂质）
+    if (cleanUrl.includes("state=")) {
+        const stateMatch = cleanUrl.match(/(https:\/\/accounts\.google\.com\/o\/oauth2\/auth\?.*?state=([A-Za-z0-9_\-]+))/);
+        if (stateMatch) {
+            cleanUrl = stateMatch[1];
+        }
+    }
+
+    // 6. 校验：如果是 Google 链接，必须等到 state= 接收完整，避免捕获半截
+    if (provider === "google" && !cleanUrl.includes("state=")) {
         return null;
     }
 

@@ -684,7 +684,19 @@
   * 同时，该接口写死了 `timeout=5` 秒超时，在代理握手或网络延迟较高时极易被击穿。
 * **解决方案**：
   * 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2835) 中的 `/api/auth/cli/models` 路由里补齐 `proxy_url` 大小写代理环境变量的注入。
-  * 将模型拉取超时从 5 秒提升至 **15 秒**，并将状态探测与轮询处的超时提升至 **10 秒**，彻底消除超时报错。
+---
+
+## Bug 53: Google OAuth 授权 URL 自动捕获包含 Bubbletea TUI 底部导航页码杂质问题
+
+* **发生时间**：2026-08-03
+* **问题现象**：在 Web 终端进行 Google 授权登录时，网页端顶部自动弹出的“点击跳转授权”按钮中包裹的 OAuth URL 尾部带有 `(1–20of24lines)shift+up/downNavigate` 等无关的 TUI 终端翻页提示字符，点击跳转后 Google 提示 `400 / 格式不正确`。
+* **主要根源**：
+  * `agy` CLI 在伪终端（PTY）中渲染界面时，尾部会带有 TUI 的底栏翻页提示信息（如 `(1–20of24lines)shift+up/downNavigate`）。
+  * 前端 `app.js` 的 `extractCleanAuthUrl` 在从终端流文本提取 URL 时，结束关键词列表未能匹配全小写的 `shift+up` 和 Unicode 连字符 `(1–`，导致 URL 末尾的 `state=` 参数后面粘连了这段翻页提示字符。
+* **解决方案**：
+  * 在 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L3714) 的 `extractCleanAuthUrl` 中扩充结束关键词列表（包含 `shift+up`, `lines)`, `(1–` 等）。
+  * 对 `state=` 参数增加了**精准正则表达式截取补丁**（匹配 `state=([A-Za-z0-9_\-]+)`），彻底将 `state` 校验串之后拼接的任何 TUI 杂质字符切除抹平，确保生成的授权 URL 100% 干净、可一键打开。
+
 
 
 
