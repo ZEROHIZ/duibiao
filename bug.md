@@ -712,7 +712,19 @@
 * **解决方案**：
   * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L4710) 的 `get_crawler_status` 支持 `full: bool = Query(False)` 查询参数。当传入 `full=true` 时，后端返回 100% 完整的日志全文。
   * 前端 [index.html](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/index.html) 在 Live Console 顶部右侧新增 **「📜 查看完整日志 (无截断)」** 与 **「📋 复制当前输出」** 两个按钮，底部新增全屏弹窗 `#modal-full-log`。
-  * 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js) 点击查看完整日志时拉取全量无截断日志，在弹窗中完美回显并支持一键复制，彻底解决调试与排错困难。
+---
+
+## Bug 56: 后端重复注册 `get_crawler_status` 接口覆盖 `full=true` 无截断逻辑，且弹窗默认滚动至底部
+
+* **发生时间**：2026-08-04
+* **问题现象**：在全量日志弹窗中点击打开日志时，顶部依然直接从第 13 条记录（`处理进度 (13/30)`）开始展示，前 12 条记录仍然缺失被截断。
+* **主要根源**：
+  1. [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py) 中定义了两个重名的 `@app.get("/api/crawl/status/{task_id}")` 路由（分别在 4293 行和 4715 行）。FastAPI 以后者为准，导致支持 `full=true` 的逻辑被底部未升级的旧函数直接覆盖。
+  2. 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js) 的 `openFullLogModal` 之前写死了 `contentEl.scrollTop = contentEl.scrollHeight`，导致打开弹窗时直接强制拉到底部，用户需要手动向上滑才能看到顶部记录。
+* **解决方案**：
+  * 彻底移除 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py) 中重复的第二个 `get_crawler_status` 函数定义，确保全局唯一的 Endpoint 100% 响应 `full=true` 参数返回从第 1 行起的所有全量字符。
+  * 将 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js) 的 `openFullLogModal` 的 `scrollTop` 设置为 `0`，使得弹窗打开时默认展现日志第一行起点，符合常规浏览习惯。
+
 
 
 

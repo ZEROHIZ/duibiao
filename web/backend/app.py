@@ -4303,85 +4303,90 @@ def get_crawler_status(task_id: str, full: bool = Query(False)):
         elif task_id in active_transcribe_tasks:
             task_info = active_transcribe_tasks[task_id]
 
-    log_path = None
-    if task_info:
-        log_path = task_info.get("log_path")
-    else:
-        possible_filenames = [
-            task_id,
-            f"{task_id}.log" if not task_id.endswith(".log") else task_id
-        ]
-        for fname in possible_filenames:
-            p = os.path.join(ROOT_DIR, "data", "logs", fname)
-            if os.path.exists(p):
-                log_path = p
-                break
-
-    if not log_path or not os.path.exists(log_path):
-        return {"status": "error", "message": f"未找到任务 [{task_id}] 对应的日志文件"}
-
-    raw_lines = []
-    try:
-        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            raw_lines = f.readlines()
-    except Exception as e:
-        try:
-            with open(log_path, "r", encoding="gbk", errors="replace") as f:
-                raw_lines = f.readlines()
-        except Exception as ge:
-            raw_lines = [f"Failed to read logs: {ge}"]
-
-    total_lines = len(raw_lines)
-    full_text = "".join(raw_lines)
-
-    if full:
-        logs = full_text
-        is_truncated = False
-    else:
-        if total_lines > 150:
-            logs = "".join(raw_lines[-150:])
-            is_truncated = True
+    logs = ""
+    started_dt = None
+    
+    if not task_info:
+        # 探测是否是 data/logs 下的任务日志文件 (包含 .log 后缀或无后缀)
+        log_filename = task_id if task_id.endswith(".log") else f"{task_id}.log"
+        agent_log_path = os.path.join(ROOT_DIR, "data", "logs", log_filename)
+        if os.path.exists(agent_log_path):
+            try:
+                mtime = os.path.getmtime(agent_log_path)
+                started_dt = datetime.fromtimestamp(mtime) - timedelta(minutes=10)
+                with open(agent_log_path, "r", encoding="utf-8", errors="replace") as f:
+                    if full:
+                        logs = f.read()
+                    else:
+                        lines = f.readlines()
+                        logs = "".join(lines[-150:])
+            except Exception as e:
+                logs = f"Failed to read agent logs: {e}"
+                
+            current_step = analyze_task_step(logs)
+            is_crawl = True
         else:
-            logs = full_text
-            is_truncated = False
-
-    current_step = "执行中..."
-    if is_crawl:
-        current_step = analyze_task_step(logs)
-    elif task_info:
-        current_step = task_info.get("current_step", "后台运行中...")
+            return {"status": "error", "message": "Task not found"}
     else:
-        if "=== HotHook 智能体拆解任务完成" in full_text or "=== 任务完成" in full_text or "退出码: 0" in full_text or "Exit code: 0" in full_text or "全量数据同步完成" in full_text:
-            current_step = "已执行完成"
-        elif "❌" in full_text or "Failed" in full_text or "Error" in full_text:
-            current_step = "执行中断/失败"
-        else:
-            current_step = "已完成"
-
-    screenshots = []
-    if task_info and task_info.get("started_at"):
-        screenshots_dir = os.path.join(ROOT_DIR, "screenshots")
-        if os.path.exists(screenshots_dir):
+        log_path = task_info["log_path"]
+        if os.path.exists(log_path):
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    if full:
+                        logs = f.read()
+                    else:
+                        lines = f.readlines()
+                        logs = "".join(lines[-150:])
+            except Exception as e:
+                logs = f"Failed to read logs: {e}"
+        if task_info.get("started_at"):
             try:
                 started_dt = datetime.fromisoformat(task_info["started_at"])
-                for filename in os.listdir(screenshots_dir):
-                    if filename.lower().endswith((".png", ".jpg")):
-                        filepath = os.path.join(screenshots_dir, filename)
-                        mtime = datetime.fromtimestamp(os.path.getmtime(filepath))
-                        if mtime >= started_dt:
-                            screenshots.append(filename)
-                screenshots.sort()
-            except Exception:
+            except:
                 pass
+                
+        if is_crawl:
+            current_step = analyze_task_step(logs)
+        else:
+            current_step = task_info.get("current_step", "正在进行后台语音转录...")
+
+    # 扫描与当前任务运行时间匹配的截图文件 (包括 biji 二维码与通用截图)
+    screenshots = []
+    screenshots_dir = os.path.join(ROOT_DIR, "screenshots")
+    if os.path.exists(screenshots_dir) and started_dt:
+        try:
+            # 确定任务的时间窗口 (启动时间 - 5分钟 ~ 结束时间 + 5分钟)
+            task_end_dt = datetime.now() + timedelta(minutes=5)
+            if task_info and task_info.get("finished_at"):
+                try:
+                    task_end_dt = datetime.fromisoformat(task_info["finished_at"]) + timedelta(minutes=5)
+                except:
+                    pass
+
+            for filename in os.listdir(screenshots_dir):
+                if filename.lower().endswith((".png", ".jpg", ".jpeg")):
+                    filepath = os.path.join(screenshots_dir, filename)
+                    mtime = os.path.getmtime(filepath)
+                    mtime_dt = datetime.fromtimestamp(mtime)
+                    
+                    # 严格判定：截图修改时间必须落在该任务的实际运行时间窗口内
+                    if (started_dt - timedelta(minutes=5)) <= mtime_dt <= task_end_dt:
+                        screenshots.append(f"/screenshots/{filename}?t={int(mtime)}")
+        except Exception as err:
+            print(f"Error scanning screenshots: {err}")
+            
+    task_status = "running"
+    if task_info:
+        task_status = task_info.get("status", "running")
+    else:
+        task_status = "completed"
 
     return {
         "status": "success",
+        "task_status": task_status,
         "logs": logs,
         "current_step": current_step,
-        "screenshots": screenshots,
-        "total_lines": total_lines,
-        "total_bytes": len(full_text.encode("utf-8", errors="replace")),
-        "is_truncated": is_truncated
+        "screenshots": screenshots
     }
 
 @app.get("/api/agent/tasks")
@@ -4706,100 +4711,6 @@ def analyze_task_step(logs):
         return current_phase
         
     return "正在执行"
-
-@app.get("/api/crawl/status/{task_id}")
-def get_crawler_status(task_id: str, full: bool = Query(False)):
-    is_crawl = False
-    
-    with tasks_lock:
-        if task_id in active_crawl_tasks:
-            task_info = active_crawl_tasks[task_id]
-            is_crawl = True
-        elif task_id in active_transcribe_tasks:
-            task_info = active_transcribe_tasks[task_id]
-        else:
-            task_info = None
-
-    if not task_info:
-        # 探测是否是 data/logs 下的智能体任务日志
-        agent_log_path = os.path.join(ROOT_DIR, "data", "logs", task_id)
-        if os.path.exists(agent_log_path):
-            logs = ""
-            try:
-                with open(agent_log_path, "r", encoding="utf-8", errors="replace") as f:
-                    logs = f.read()
-            except Exception as e:
-                logs = f"Failed to read agent logs: {e}"
-                
-            current_step = "智能体分析执行中..."
-            if "=== HotHook 智能体拆解任务完成" in logs or "=== 任务完成" in logs or "退出码" in logs or "Exit code" in logs:
-                current_step = "已执行完成"
-            elif "❌" in logs or "Failed" in logs:
-                current_step = "执行中断/失败"
-                
-            return {
-                "status": "success",
-                "logs": logs,
-                "current_step": current_step,
-                "screenshots": []
-            }
-        return {"status": "error", "message": "Task not found"}
-        
-    log_path = task_info["log_path"]
-    logs = ""
-    if os.path.exists(log_path):
-        try:
-            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                if full:
-                    logs = f.read()
-                else:
-                    lines = f.readlines()
-                    logs = "".join(lines[-150:])
-        except UnicodeDecodeError:
-            try:
-                # 尝试用 GBK（带 errors="replace"）读取以解决 Windows 编码兼容性问题
-                with open(log_path, "r", encoding="gbk", errors="replace") as f:
-                    if full:
-                        logs = f.read()
-                    else:
-                        lines = f.readlines()
-                        logs = "".join(lines[-150:])
-            except Exception as e:
-                logs = f"Failed to read logs (GBK): {e}"
-        except Exception as e:
-            logs = f"Failed to read logs: {e}"
-            
-    # 分析日志得出当前正在运行或卡住的步骤
-    if is_crawl:
-        current_step = analyze_task_step(logs)
-    else:
-        current_step = task_info.get("current_step", "正在进行后台语音转录...")
-    
-    # 扫描与当前任务运行时间匹配的截图文件
-    screenshots = []
-    screenshots_dir = os.path.join(ROOT_DIR, "screenshots")
-    if os.path.exists(screenshots_dir) and task_info.get("started_at"):
-        try:
-            from datetime import datetime, timedelta
-            started_dt = datetime.fromisoformat(task_info["started_at"])
-            for filename in os.listdir(screenshots_dir):
-                if filename.lower().endswith(".png"):
-                    filepath = os.path.join(screenshots_dir, filename)
-                    mtime = os.path.getmtime(filepath)
-                    mtime_dt = datetime.fromtimestamp(mtime)
-                    # 允许 5 秒的系统启动误差
-                    if mtime_dt >= started_dt - timedelta(seconds=5):
-                        screenshots.append(f"/screenshots/{filename}")
-        except Exception as err:
-            print(f"Error scanning screenshots: {err}")
-            
-    return {
-        "status": task_info["status"],
-        "blogger": task_info["blogger"],
-        "logs": logs,
-        "current_step": current_step,
-        "screenshots": screenshots
-    }
 
 
 
