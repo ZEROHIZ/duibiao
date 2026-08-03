@@ -2706,12 +2706,20 @@ def get_auth_status_endpoint():
                 agy_path = default_win
         if agy_path:
             try:
+                proxy_url = settings.get("proxy_url", "")
                 check_env = os.environ.copy()
                 check_env["BROWSER"] = "false"
                 check_env.pop("DISPLAY", None)
                 check_env.pop("SSH_CONNECTION", None)
                 check_env.pop("SSH_CLIENT", None)
-                r = subprocess.run([agy_path, "models"], capture_output=True, text=True, env=check_env, timeout=3.0)
+                if proxy_url:
+                    check_env["HTTP_PROXY"] = proxy_url
+                    check_env["HTTPS_PROXY"] = proxy_url
+                    check_env["http_proxy"] = proxy_url
+                    check_env["https_proxy"] = proxy_url
+                    check_env["ALL_PROXY"] = proxy_url
+                    check_env["all_proxy"] = proxy_url
+                r = subprocess.run([agy_path, "models"], capture_output=True, text=True, env=check_env, timeout=10.0)
                 if r.returncode == 0:
                     settings["google_access_token"] = "CLI_AUTHENTICATED"
                     save_settings(settings)
@@ -2820,11 +2828,19 @@ def get_cli_models_endpoint(provider: str = Query("google")):
             return {"status": "failed", "message": "未找到 agy CLI 命令，请确认系统已安装", "models": []}
 
         try:
+            proxy_url = settings.get("proxy_url", "")
             env = os.environ.copy()
             env["BROWSER"] = "false"
             env.pop("DISPLAY", None)
+            if proxy_url:
+                env["HTTP_PROXY"] = proxy_url
+                env["HTTPS_PROXY"] = proxy_url
+                env["http_proxy"] = proxy_url
+                env["https_proxy"] = proxy_url
+                env["ALL_PROXY"] = proxy_url
+                env["all_proxy"] = proxy_url
 
-            res = subprocess.run([agy_path, "models"], capture_output=True, text=True, env=env, timeout=5)
+            res = subprocess.run([agy_path, "models"], capture_output=True, text=True, env=env, timeout=15)
             stdout = (res.stdout or "").strip()
             stderr = (res.stderr or "").strip()
             output = stdout + "\n" + stderr
@@ -2948,11 +2964,19 @@ def check_google_status_thread(state_obj):
             state_obj.process = None
         return
 
+    proxy_url = settings.get("proxy_url", "")
     env = os.environ.copy()
     env["BROWSER"] = "false"
     env.pop("DISPLAY", None)
     env.pop("SSH_CONNECTION", None)
     env.pop("SSH_CLIENT", None)
+    if proxy_url:
+        env["HTTP_PROXY"] = proxy_url
+        env["HTTPS_PROXY"] = proxy_url
+        env["http_proxy"] = proxy_url
+        env["https_proxy"] = proxy_url
+        env["ALL_PROXY"] = proxy_url
+        env["all_proxy"] = proxy_url
 
     try:
         proc = subprocess.run(
@@ -2960,7 +2984,7 @@ def check_google_status_thread(state_obj):
             capture_output=True,
             text=True,
             env=env,
-            timeout=3.0
+            timeout=10.0
         )
         if proc.returncode == 0:
             with state_obj.lock:

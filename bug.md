@@ -673,7 +673,19 @@
   * 导致当 `provider == "google"` 时，全局配置的 `proxy_url` 被强行剥离过滤，没有注入到 `agy` / `opencode` 进程的环境变量中。Go 语言 CLI 工具在无代理状态下直接向 `https://oauth2.googleapis.com/token` 发起连接请求，进而导致网络超时与 Auth Token 交换失败。
 * **解决方案**：
   * 修改 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L3048) 代理注入条件为 `if proxy_url:`，去掉对 `provider` 的限定。
-  * 补全 `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, `https_proxy`, `ALL_PROXY`, `all_proxy` 大小写全部代理环境变量的注入，确保 `agy` / `opencode` CLI 在进行 Google OAuth 授权换码时能够稳定通过 Docker 宿主机代理访问外部 API。
+---
+
+## Bug 52: 拉取 Google CLI 可用模型列表时缺失代理注入与 5 秒超时异常 (`agy models timed out after 5 seconds`)
+
+* **发生时间**：2026-08-03
+* **问题现象**：在前端“智能体授权”页面点击拉取 Google 可用模型列表时，后台控制台报错 `❌ 请求模型进程超时或发生异常: Command '['/root/.local/bin/agy', 'models']' timed out after 5 seconds`。
+* **主要根源**：
+  * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2835) 中的模型拉取路由 `/api/auth/cli/models` 在通过 `subprocess.run` 调用 `/root/.local/bin/agy models` 时，缺少了将 `proxy_url` 环境变量注入 `env` 的逻辑，导致容器内的 `agy` 进程在无代理环境下试图直连 Google 网关。
+  * 同时，该接口写死了 `timeout=5` 秒超时，在代理握手或网络延迟较高时极易被击穿。
+* **解决方案**：
+  * 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2835) 中的 `/api/auth/cli/models` 路由里补齐 `proxy_url` 大小写代理环境变量的注入。
+  * 将模型拉取超时从 5 秒提升至 **15 秒**，并将状态探测与轮询处的超时提升至 **10 秒**，彻底消除超时报错。
+
 
 
 
