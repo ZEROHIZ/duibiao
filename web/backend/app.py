@@ -1630,6 +1630,124 @@ def get_blogger_files_status(name: str, mode: str = "A"):
         }
     }
 
+@app.get("/api/distill/pending_tasks/{blogger_name}/content")
+def get_blogger_distill_task_content(blogger_name: str):
+    """获取指定博主的 AI 蒸馏任务底稿正文 (供 CLI Agent 消费)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id, name, category, home_url, platform FROM bloggers WHERE name = ?;", (blogger_name,))
+        b_row = cursor.fetchone()
+        if not b_row:
+            raise HTTPException(status_code=404, detail=f"未找到博主『{blogger_name}』的记录")
+            
+        blogger_id = b_row["id"]
+        
+        cursor.execute("""
+            SELECT id, title, desc, type, likes, collects, comments, shares, category, published_at, comments_json
+            FROM blogger_notes
+            WHERE blogger_id = ?
+            ORDER BY likes DESC
+            LIMIT 20;
+        """, (blogger_id,))
+        notes_rows = cursor.fetchall()
+        
+        notes_text = []
+        for idx, n in enumerate(notes_rows, 1):
+            c_list = []
+            if n["comments_json"]:
+                try:
+                    c_list = json.loads(n["comments_json"])
+                except:
+                    c_list = []
+            
+            top_comments = []
+            for c in c_list[:5]:
+                speaker = c.get("speaker") or c.get("user") or "匿名"
+                content = c.get("content", "")
+                likes = c.get("likeCount") or c.get("likes") or 0
+                top_comments.append(f"  - {speaker} (👍 {likes}): {content}")
+            
+            comments_str = "\n".join(top_comments) if top_comments else "  - (暂无捕获到高赞评论)"
+            
+            notes_text.append(f"""
+### 作品 #{idx}: 《{n['title']}》
+- **类型**: {n['type']} | **分类**: {n['category']}
+- **数据**: {n['likes']} 赞 / {n['collects']} 收藏 / {n['comments']} 评论
+- **发布时间**: {n['published_at']}
+- **正文/语音转录文案**:
+{n['desc'] or '无文案'}
+- **热门评论**:
+{comments_str}
+""")
+        
+        full_content = f"""# {blogger_name}_AI蒸馏任务
+
+- **博主姓名**: {b_row['name']}
+- **主营分类**: {b_row['category'] or '未设定'}
+- **平台类型**: {b_row['platform']}
+- **主页链接**: {b_row['home_url']}
+- **包含样本笔记数**: {len(notes_rows)} 条
+
+---
+
+## 博主作品与文案数据全集
+
+{"".join(notes_text)}
+"""
+        return {"status": "success", "blogger": blogger_name, "content": full_content}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+class DistillUploadRequest(BaseModel):
+    blogger: str
+    mode: str = "A"
+    report_html: str
+    skill_md: str
+    soul_md: Optional[str] = None
+
+@app.post("/api/distill/upload")
+def upload_distill_result(body: DistillUploadRequest):
+    """保存 Agent 回传的 HTML 报告与 Skill Markdown 文件"""
+    blogger_name = body.blogger
+    mode = body.mode.upper()
+    
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    
+    if mode == "B":
+        report_filename = f"{blogger_name}_诊断报告.html"
+        skill_dir = os.path.join(output_dir, f"{blogger_name}_创作基因.skill")
+    else:
+        report_filename = f"{blogger_name}_蒸馏报告.html"
+        skill_dir = os.path.join(output_dir, f"{blogger_name}_创作指南.skill")
+        
+    os.makedirs(skill_dir, exist_ok=True)
+    
+    # 写入 HTML 报告
+    report_path = os.path.join(output_dir, report_filename)
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(body.report_html)
+        
+    # 写入 SKILL.md
+    skill_path = os.path.join(skill_dir, "SKILL.md")
+    with open(skill_path, "w", encoding="utf-8") as f:
+        f.write(body.skill_md)
+        
+    # 写入 SOUL.md (如果有)
+    if body.soul_md:
+        soul_path = os.path.join(skill_dir, "SOUL.md")
+        with open(soul_path, "w", encoding="utf-8") as f:
+            f.write(body.soul_md)
+            
+    return {"status": "success", "message": f"成功回写博主『{blogger_name}』(模式 {mode}) 物理报告与 Skill 资源！"}
+
+
 # ----------------------------------------------------------
 # AI 跨界视野扩展与垂直找号探索 API 接口
 # ----------------------------------------------------------
@@ -3873,6 +3991,133 @@ def trigger_video_teardown_endpoint(body: TeardownRequest, background_tasks: Bac
                 
     background_tasks.add_task(run_hothook_cli_in_background)
     return {"status": "success", "message": f"已成功拉起智能体，正在后台静默分析视频『{title}』。"}
+
+
+class BloggerDistillRunRequest(BaseModel):
+    blogger: str
+    mode: str = "A"  # "A" 对标蒸馏，"B" 账号诊断
+
+@app.post("/api/blogger/distill/run")
+def trigger_blogger_distill_agent(body: BloggerDistillRunRequest, request: Request, background_tasks: BackgroundTasks):
+    """异步唤醒智能体 CLI 对指定博主运行深度对标蒸馏(模式 A)或账号诊断(模式 B)"""
+    settings = load_settings()
+    google_token = settings.get("google_access_token", "")
+    openai_token = settings.get("openai_access_token", "")
+    proxy_url = settings.get("proxy_url", "")
+    
+    agent_cmd = None
+    env_vars = {}
+    if google_token:
+        agent_cmd = "agy"
+        env_vars["GOOGLE_OAUTH_ACCESS_TOKEN"] = google_token
+    elif openai_token:
+        agent_cmd = "codex"
+        env_vars["OPENAI_API_KEY"] = openai_token
+    else:
+        raise HTTPException(status_code=400, detail="请先在『智能体授权』页面绑定 Google 或 OpenAI 账号")
+        
+    mode = body.mode.upper()
+    if mode not in ["A", "B"]:
+        mode = "A"
+
+    mode_name = "对标蒸馏" if mode == "A" else "账号诊断"
+    
+    # 动态感知获取服务器基准 URL，绝不硬编码！
+    api_base = str(request.base_url).rstrip("/")
+
+    # 异步在后台拉起 CLI 进程并打日志
+    def run_distill_cli_in_background():
+        google_model = settings.get("google_model", "gemini-2.5-pro")
+        openai_model = settings.get("openai_model", "gpt-4o")
+
+        AGY_MODEL_MAP = {
+            "gemini-2.5-pro":           "Gemini 2.5 Pro",
+            "gemini-3.5-flash-medium":  "Gemini 3.5 Flash (Medium)",
+            "gemini-3.5-flash-high":    "Gemini 3.5 Flash (High)",
+            "gemini-3.5-flash-low":     "Gemini 3.5 Flash (Low)",
+            "gemini-3.1-pro-low":       "Gemini 3.1 Pro (Low)",
+            "gemini-3.1-pro-high":      "Gemini 3.1 Pro (High)",
+        }
+        agy_model_name = AGY_MODEL_MAP.get(google_model, google_model)
+
+        abs_project_dir = ROOT_DIR.replace("\\", "/")
+        abs_skill_path = f"{abs_project_dir}/skills/blogger-distiller/SKILL.md"
+
+        prompt_text = (
+            f"您的项目工作区根目录位于 {abs_project_dir}。请加载该工作区并认真阅读位于 {abs_skill_path} 的技能定义与分析流程。"
+            f"请使用 skills/blogger-distiller 对博主『{body.blogger}』进行【{mode_name} (模式 {mode})】。"
+            f"首先调用 API 接口从 {api_base}/api/distill/pending_tasks/{body.blogger}/content 拉取任务底稿数据，"
+            f"按照 SKILL.md 规范完成三层蒸馏推导，生成报告 HTML 及 Skill Markdown 文件落盘，"
+            f"最后调用 POST {api_base}/api/distill/upload 接口将分析结果回传回服务器完成提交。"
+        )
+
+        if agent_cmd == "agy":
+            cmd = [
+                agent_cmd,
+                "--dangerously-skip-permissions",
+                "--add-dir", ROOT_DIR,
+                "--model", agy_model_name,
+                "-p", prompt_text
+            ]
+        else:
+            cmd = [
+                agent_cmd,
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--model", openai_model,
+                "-p", prompt_text
+            ]
+        
+        env = os.environ.copy()
+        env.update(env_vars)
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUNBUFFERED"] = "1"
+        if proxy_url:
+            env["HTTP_PROXY"] = proxy_url
+            env["HTTPS_PROXY"] = proxy_url
+            
+        task_id = f"distill_{body.blogger}_{mode}_{int(time.time())}"
+        log_dir = os.path.join(ROOT_DIR, "data", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{task_id}.log")
+        
+        try:
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(f"=== 博主 AI 智能体蒸馏任务启动 ({mode_name} 模式 {mode}) ===\n")
+                f.write(f"目标博主: 『{body.blogger}』\n")
+                f.write(f"服务器 API 地址: {api_base}\n")
+                f.write(f"命令: {' '.join(cmd)}\n\n")
+
+            process = subprocess.Popen(
+                cmd,
+                shell=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=ROOT_DIR,
+                env=env
+            )
+
+            while True:
+                line = process.stdout.readline()
+                if not line:
+                    break
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(line)
+                    f.flush()
+
+            process.wait()
+
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n=== 博主蒸馏智能体拆解任务完成，退出码: {process.returncode} ===\n")
+        except Exception as ex:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n❌ 拉起智能体进程时发生异常错误: {ex}\n")
+                
+    background_tasks.add_task(run_distill_cli_in_background)
+    return {"status": "success", "message": f"已成功启动智能体【{mode_name}】任务，后台正在分析博主『{body.blogger}』。"}
 
 
 class FeishuTestRequest(BaseModel):

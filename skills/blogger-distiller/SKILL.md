@@ -8,7 +8,7 @@ description: >
 
 # 博主蒸馏器
 
-> ⚠️ **使用前必读**：本 Skill 不负责任何底稿数据抓取或清洗，底稿数据直接调用后端 API (http://192.168.110.30:8899) 从服务器拉取该任务底稿。任务完成后，本地保存产物方式保持不变，并在此基础上自动上传至服务器。
+> ⚠️ **使用前必读**：本 Skill 不负责任何底稿数据抓取或清洗，底稿数据直接调用后端 API（根据启动命令中传入的 `{SERVER_URL}`，例如 `http://127.0.0.1:8000`）从服务器拉取该任务底稿。任务完成后，本地保存产物方式保持不变，并在此基础上自动上传至服务器。
 
 ## 你是什么
 
@@ -61,12 +61,12 @@ description: >
 ## 前置要求
 
 - Python 3.10+
-- 已在后端生成对应的蒸馏任务底稿（直接从后端服务拉取，基准 API 地址为 http://192.168.110.30:8899）
+- 已在后端生成对应的蒸馏任务底稿（直接从后端服务拉取，基准 API 地址为启动参数中传入的 `{SERVER_URL}`）
 
 ### 输入底稿数据源要求
 
 本智能体直接通过 API 获取底稿数据源：
-- **API 获取**：通过 GET 请求 `http://192.168.110.30:8899/api/distill/pending_tasks/{博主名}/content` 获取底稿正文
+- **API 获取**：通过 GET 请求 `{SERVER_URL}/api/distill/pending_tasks/{博主名}/content` 获取底稿正文
 
 ---
 
@@ -79,11 +79,11 @@ description: >
    在终端执行 Python 一行命令或 PowerShell 请求 API 从服务器拉取：
    * **Python 方式（推荐）**：
      ```bash
-     python -c "import urllib.request, json; res = urllib.request.urlopen('http://192.168.110.30:8899/api/distill/pending_tasks/{博主名}/content').read(); print(json.loads(res.decode('utf-8'))['content'])"
+     python -c "import urllib.request, json; res = urllib.request.urlopen('{SERVER_URL}/api/distill/pending_tasks/{博主名}/content').read(); print(json.loads(res.decode('utf-8'))['content'])"
      ```
    * **PowerShell 方式**：
      ```powershell
-     (Invoke-RestMethod -Uri "http://192.168.110.30:8899/api/distill/pending_tasks/{博主名}/content" -Method Get).content
+     (Invoke-RestMethod -Uri "{SERVER_URL}/api/distill/pending_tasks/{博主名}/content" -Method Get).content
      ```
 2. **解析数据**：将拉取到的底稿 Markdown 文本作为分析 Context，分析其中的：
    * 分析主体博主姓名 (nickname)
@@ -158,7 +158,7 @@ AI 必须读取底稿数据，执行 **Observe-Deduce-Verify (观察-推导-验�
      ```python
      import urllib.request, json
      
-     url = "http://192.168.110.30:8899/api/distill/upload"
+     url = f"{SERVER_URL}/api/distill/upload"
      data = {
          "blogger": "博主名",
          "mode": "A", # 诊断模式则为 "B"

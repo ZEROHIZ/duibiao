@@ -2264,9 +2264,13 @@ function formatMarkdownFallback(text) {
 function renderBloggerProfileHeader(b) {
     const container = document.getElementById("detail-profile-header");
     container.innerHTML = `
-        <div class="profile-meta">
+        <div class="profile-meta" style="flex: 1;">
             <span class="section-label">CREATOR INSIGHTS</span>
             <h2>对标账号：${b.name}</h2>
+            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+                <button class="btn-text" style="background: var(--accent-primary); color: #fff; border: none; padding: 0.35rem 0.85rem; font-size: 0.82rem; cursor: pointer; font-weight: 500;" onclick="triggerBloggerDistillAgentPrompt('${b.name}', 'A')">⚡ 启动 AI 对标蒸馏 (模式 A)</button>
+                <button class="btn-text" style="background: transparent; color: var(--accent-primary); border: 1px solid var(--accent-primary); padding: 0.35rem 0.85rem; font-size: 0.82rem; cursor: pointer; font-weight: 500;" onclick="triggerBloggerDistillAgentPrompt('${b.name}', 'B')">🩺 启动 AI 创作诊断 (模式 B)</button>
+            </div>
         </div>
         <div class="profile-stats">
             <div class="profile-stat-box">
@@ -2287,6 +2291,37 @@ function renderBloggerProfileHeader(b) {
             </div>
         </div>
     `;
+}
+
+// 唤醒智能体运行蒸馏/诊断
+async function triggerBloggerDistillAgentPrompt(bloggerName, mode) {
+    const modeName = mode === "A" ? "对标蒸馏 (模式 A)" : "创作诊断 (模式 B)";
+    if (!confirm(`确定要在后台拉起智能体，对博主『${bloggerName}』运行【${modeName}】吗？`)) {
+        return;
+    }
+
+    showToast(`正在拉起智能体进行【${modeName}】...`, "info");
+
+    try {
+        const res = await fetch(`${API_BASE}/api/blogger/distill/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ blogger: bloggerName, mode: mode })
+        });
+        const json = await res.json();
+        if (res.ok && json.status === "success") {
+            showToast(json.message, "success");
+            // 延迟 1 秒跳转至任务日志页以展现 CLI 流式日志
+            setTimeout(() => {
+                switchTab("logs");
+                loadSettingsPageTasks();
+            }, 1000);
+        } else {
+            showToast(`启动智能体失败: ${json.detail || json.message || "接口报错"}`, "error");
+        }
+    } catch (err) {
+        showToast(`请求智能体接口出错: ${err.message}`, "error");
+    }
 }
 
 function renderBloggerOverviewTab(data) {
