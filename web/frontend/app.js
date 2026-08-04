@@ -1638,11 +1638,11 @@ async function loadBloggersList() {
             const bijiUrlBadge = b.biji_url
                 ? `<div style="display: flex; flex-direction: column; gap: 3px;">
                     <span style="font-size: 0.85rem; font-weight: 500; color: var(--ink-primary);">${topicNameStr}</span>
-                    <a href="${b.biji_url}" target="_blank" onclick="event.stopPropagation();" style="font-size: 0.78rem; color: var(--accent-primary); border-bottom: 1px dashed var(--accent-primary); text-decoration: none; display: inline-block;">✅ 得到链接 ↗</a>
+                    <span class="editable-field biji-url-link" data-id="${b.id}" data-field="biji_url" data-url="${b.biji_url}" title="单击打开得到页面，双击编辑 BIJI_URL 链接" style="cursor: pointer; border-bottom: 1px dashed var(--accent-primary); color: var(--accent-primary); font-size: 0.78rem; display: inline-block;">✅ 得到链接 ↗</span>
                    </div>`
                 : `<div style="display: flex; flex-direction: column; gap: 3px;">
                     <span style="font-size: 0.85rem; color: var(--ink-secondary);">${topicNameStr}</span>
-                    <span style="font-size: 0.78rem; color: var(--ink-tertiary);">⚠️ 未保存 URL</span>
+                    <span class="editable-field biji-url-link" data-id="${b.id}" data-field="biji_url" data-url="" title="双击手动配置得到 BIJI_URL 链接" style="cursor: pointer; border-bottom: 1px dashed var(--ink-tertiary); color: var(--ink-tertiary); font-size: 0.78rem; display: inline-block;">⚠️ 未保存 (双击设置)</span>
                    </div>`;
 
             tr.innerHTML = `
@@ -1700,7 +1700,7 @@ async function loadBloggersList() {
             let clickTimer = null;
             const field = el.getAttribute("data-field");
             
-            if (field === "home_url") {
+            if (field === "home_url" || field === "biji_url") {
                 el.addEventListener("click", (e) => {
                     e.stopPropagation();
                     const url = el.getAttribute("data-url");
@@ -1791,9 +1791,9 @@ function startInlineEdit(el) {
     const bloggerId = el.getAttribute("data-id");
     const field = el.getAttribute("data-field");
     let originalValue = el.innerText;
-    if (field === "home_url") {
+    if (field === "home_url" || field === "biji_url") {
         originalValue = el.getAttribute("data-url") || "";
-    } else if (originalValue === "未配置 (双击设置)" || originalValue === "双击配置个人主页链接...") {
+    } else if (originalValue === "未配置 (双击设置)" || originalValue === "双击配置个人主页链接..." || originalValue === "⚠️ 未保存 (双击设置)") {
         originalValue = "";
     }
     
@@ -1822,7 +1822,7 @@ function startInlineEdit(el) {
     }
     
     input.style.width = "100%";
-    input.style.fontFamily = field === "home_url" ? "var(--font-mono)" : "var(--font-sans)";
+    input.style.fontFamily = (field === "home_url" || field === "biji_url") ? "var(--font-mono)" : "var(--font-sans)";
     input.style.fontSize = el.style.fontSize;
     input.style.fontWeight = el.style.fontWeight;
     input.style.border = "1px solid var(--accent-primary)";
@@ -1860,6 +1860,9 @@ function startInlineEdit(el) {
                 if (field === "home_url") {
                     url = `${API_BASE}/api/bloggers/${bloggerId}/home_url`;
                     payload = { home_url: newValue };
+                } else if (field === "biji_url") {
+                    url = `${API_BASE}/api/bloggers/${bloggerId}/biji_url`;
+                    payload = { biji_url: newValue };
                 } else if (field === "category") {
                     url = `${API_BASE}/api/bloggers/${bloggerId}/category`;
                     payload = { category: newValue };

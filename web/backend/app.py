@@ -1363,6 +1363,22 @@ def create_blogger_shortcut(body: BloggerShortcutCreate):
 
 
 
+class BloggerNameUpdate(BaseModel):
+    name: str
+
+class BloggerHomeUrlUpdate(BaseModel):
+    home_url: str
+
+class BloggerBijiUrlUpdate(BaseModel):
+    biji_url: str
+
+class BloggerCategoryUpdate(BaseModel):
+    category: str
+
+class BloggerPlatformUpdate(BaseModel):
+    platform: str
+
+
 @app.put("/api/bloggers/{blogger_id}/name")
 def update_blogger_name(blogger_id: int, body: BloggerNameUpdate):
     """更新指定博主的名称"""
@@ -1385,6 +1401,100 @@ def update_blogger_name(blogger_id: int, body: BloggerNameUpdate):
         """, (body.name, blogger_id))
         conn.commit()
         return {"status": "success", "message": "Blogger name updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/api/bloggers/{blogger_id}/home_url")
+def update_blogger_home_url(blogger_id: int, body: BloggerHomeUrlUpdate):
+    """更新指定博主的主页监控链接"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+        
+        cursor.execute("UPDATE bloggers SET home_url = ? WHERE id = ?;", (body.home_url.strip(), blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "Home URL updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/api/bloggers/{blogger_id}/biji_url")
+def update_blogger_biji_url(blogger_id: int, body: BloggerBijiUrlUpdate):
+    """手动修改/绑定指定博主的得到知识库 BIJI_URL 链接"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+        
+        b_url = body.biji_url.strip()
+        follow_id = None
+        topic_alias = None
+        if b_url:
+            import re
+            m_fid = re.search(r'followId=([^&]+)', b_url)
+            if m_fid:
+                follow_id = m_fid.group(1)
+            m_alias = re.search(r'/subject/([^/]+)', b_url)
+            if m_alias:
+                topic_alias = m_alias.group(1)
+                
+        cursor.execute("""
+            UPDATE bloggers 
+            SET biji_url = ?, 
+                biji_follow_id = COALESCE(?, biji_follow_id),
+                biji_topic_alias = COALESCE(?, biji_topic_alias)
+            WHERE id = ?;
+        """, (b_url or None, follow_id, topic_alias, blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "BIJI URL updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/api/bloggers/{blogger_id}/category")
+def update_blogger_category(blogger_id: int, body: BloggerCategoryUpdate):
+    """更新指定博主的分类/定位"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+        
+        cursor.execute("UPDATE bloggers SET category = ? WHERE id = ?;", (body.category.strip(), blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "Category updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.put("/api/bloggers/{blogger_id}/platform")
+def update_blogger_platform(blogger_id: int, body: BloggerPlatformUpdate):
+    """更新指定博主的平台类型"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM bloggers WHERE id = ?;", (blogger_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Blogger not found.")
+        
+        cursor.execute("UPDATE bloggers SET platform = ? WHERE id = ?;", (body.platform.strip(), blogger_id))
+        conn.commit()
+        return {"status": "success", "message": "Platform updated successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

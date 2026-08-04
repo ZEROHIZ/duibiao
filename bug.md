@@ -743,7 +743,19 @@
   2. [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L447) 的降级兜底在 URL/昵称对不上时，盲目读取了 `2.json` 返回的第一个有效博主，引发错绑覆写。
 * **解决方案**：
   * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L1216) 统一使用正则提炼后的 `clean_home_url` 传给得到自动化引擎。
-  * [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L440) 抽象 `match_captured_blogger` 匹配器：严格校验 URL 精确匹配、短链 Key 匹配或昵称匹配。对不上的直接忽略并跳过回写，杜绝任何对已有博主的误伤。
+---
+
+## Bug 59 / 功能支持: 「得到知识库 / BIJI_URL」字段缺少双击在线编辑与纠错功能
+
+* **发生时间**：2026-08-04
+* **问题现象**：主界面博主表格中的「得到知识库 / BIJI_URL」链接在历史上若绑定错误或未自动绑定成功，用户无法在表格界面直接双击在线修改或手动补全。
+* **主要根源**：
+  1. 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L1411) 缺少 `PUT /api/bloggers/{blogger_id}/biji_url` 路由接口。
+  2. 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L1638) 在渲染 `bijiUrlBadge` 时未赋予 `.editable-field` 属性与双击事件绑定，且内联编辑未将 `biji_url` 映射到更新接口。
+* **解决方案**：
+  * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L1411) 新增 `PUT /api/bloggers/{blogger_id}/biji_url` 接口，支持用户手动写入或清除 BIJI_URL，并自动提取 query 中的 `followId` 与 `topic_alias` 更新数据库。
+  * 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L1638) 将得到链接列升级为 `.editable-field`，单击可直达得到页面，双击弹出输入框进行实时修改保存。
+
 
 
 
