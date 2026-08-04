@@ -4030,9 +4030,12 @@ def trigger_video_teardown_endpoint(body: TeardownRequest, background_tasks: Bac
         abs_db_path = f"{abs_project_dir}/data/distiller.db"
         abs_output_dir = f"{abs_project_dir}/output"
 
+        real_cmd_bin = shutil.which(agent_cmd) or agent_cmd
+
         if agent_cmd == "agy":
             cmd = [
-                agent_cmd,
+                real_cmd_bin,
+                "--verbose",
                 "--dangerously-skip-permissions",
                 "--add-dir", ROOT_DIR,
                 "--model", agy_model_name,
@@ -4041,7 +4044,7 @@ def trigger_video_teardown_endpoint(body: TeardownRequest, background_tasks: Bac
             ]
         else:
             cmd = [
-                agent_cmd,
+                real_cmd_bin,
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--model", openai_model,
                 "-p",
@@ -4161,9 +4164,12 @@ def trigger_blogger_distill_agent(body: BloggerDistillRunRequest, request: Reque
             f"最后调用 POST {api_base}/api/distill/upload 接口将分析结果回传回服务器完成提交。"
         )
 
+        real_cmd_bin = shutil.which(agent_cmd) or agent_cmd
+
         if agent_cmd == "agy":
             cmd = [
-                agent_cmd,
+                real_cmd_bin,
+                "--verbose",
                 "--dangerously-skip-permissions",
                 "--add-dir", ROOT_DIR,
                 "--model", agy_model_name,
@@ -4171,7 +4177,7 @@ def trigger_blogger_distill_agent(body: BloggerDistillRunRequest, request: Reque
             ]
         else:
             cmd = [
-                agent_cmd,
+                real_cmd_bin,
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--model", openai_model,
                 "-p", prompt_text

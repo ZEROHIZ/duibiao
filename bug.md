@@ -754,7 +754,19 @@
   2. 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L1638) 在渲染 `bijiUrlBadge` 时未赋予 `.editable-field` 属性与双击事件绑定，且内联编辑未将 `biji_url` 映射到更新接口。
 * **解决方案**：
   * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L1411) 新增 `PUT /api/bloggers/{blogger_id}/biji_url` 接口，支持用户手动写入或清除 BIJI_URL，并自动提取 query 中的 `followId` 与 `topic_alias` 更新数据库。
-  * 前端 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L1638) 将得到链接列升级为 `.editable-field`，单击可直达得到页面，双击弹出输入框进行实时修改保存。
+---
+
+## Bug 60: Docker / Linux 容器静默运行 `agy` 智能体时日志缺少思考推导过程
+
+* **发生时间**：2026-08-04
+* **问题现象**：在 Docker 控制台触发博主蒸馏或单视频拆解时，日志在打印完启动命令后便没有后续推导输出，导致前端控制台无法实时追踪智能体的拆解行为。
+* **主要根源**：
+  1. `agy` 命令行工具在 Linux 无头静默环境下，默认不输出详细思索日志，需显式开启 `--verbose` 开关。
+  2. 后端在拼装 `cmd` 时直接使用字符串 `"agy"`，在特定容器 Path 设置下可能无法解析全路径。
+* **解决方案**：
+  * 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L4033) 与 L4164 的智能体启动方法中，使用 `shutil.which(agent_cmd)` 解析绝对路径，并强制注入 `--verbose` 详细日志标志。
+  * 在 [kaifa/docker远程.md](file:///d:/daima/codex/蒸馏/blogger-distiller-main/kaifa/docker远程.md#L171) 中添加 **「2.5 Docker 容器下 AI 智能体 CLI (`agy` / `codex`) 后台静默流式日志规范」** 与 **「坑 6」** 开发避坑指南。
+
 
 
 
