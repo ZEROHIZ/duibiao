@@ -436,49 +436,51 @@ class BijiBrowserEngine:
                         break
                     time.sleep(0.5)
 
-                # 提取拿到的有效 follow_id 与真实博主名称 (通过 URL 短码/Key 及名字精准比对，严禁无差别取第 1 项)
-                clean_home_url = home_url
-                url_match = re.search(r'https?://[^\s]+', home_url)
-                if url_match:
-                    clean_home_url = url_match.group(0)
+                # 提取拿到的有效 follow_id 与真实博主名称 (优先通过 home_url 精准比对)
+                # 显式轮询等待 2.json 网络响应拦截回调 (最长 10 秒)
+                self.log("⏳ 正在等待 2.json 关注响应回调 (最长 10 秒)...")
+                for _ in range(20):
+                    if captured_follow_map or captured_follow_info:
+                        break
+                    time.sleep(0.5)
 
-                def extract_url_key(u):
-                    if not u:
-                        return ""
-                    clean_u = u.split("?")[0].rstrip("/").lower()
-                    parts = [p for p in clean_u.split("/") if p]
-                    return parts[-1] if parts else clean_u
+                def match_captured_blogger(target_u, target_n):
+                    norm_h = normalize_url(target_u)
+                    clean_h_key = norm_h.split("/")[-1] if norm_h else ""
+                    
+                    for k, val in captured_follow_map.items():
+                        rname, fid, item_u = val
+                        if not is_valid_name(rname):
+                            continue
+                        norm_item = normalize_url(item_u)
+                        clean_item_key = norm_item.split("/")[-1] if norm_item else ""
+                        
+                        # 1. URL 精确匹配
+                        if norm_h and norm_h == norm_item:
+                            return rname, fid, "URL 精确匹配"
+                        # 2. Key 包含匹配 (防止长短链或 query 参数差异)
+                        if clean_h_key and len(clean_h_key) > 5 and clean_h_key in norm_item:
+                            return rname, fid, "URL Key 匹配"
+                        if clean_item_key and len(clean_item_key) > 5 and clean_item_key in norm_h:
+                            return rname, fid, "URL Key 匹配"
+                        # 3. 博主昵称匹配 (非待爬取占位符)
+                        if target_n and not target_n.startswith("待爬取") and rname:
+                            if target_n == rname:
+                                return rname, fid, "昵称精确匹配"
+                            elif (target_n in rname or rname in target_n) and len(target_n) >= 2:
+                                return rname, fid, "昵称包含匹配"
+                    return None, None, ""
 
-                target_key = extract_url_key(clean_home_url)
-                real_blogger_name = None
-                target_fid = None
+                real_blogger_name, target_fid, match_reason = match_captured_blogger(home_url, blogger_name)
                 
-                # 遍历 2.json 中捕获的有效博主列表
-                for fname, fid, item_u in captured_follow_map.values():
-                    if not is_valid_name(fname):
-                        continue
-                    item_key = extract_url_key(item_u)
-                    # 1. 优先比对提取的 URL Key（如短码 TgDW28duOCY 或 sec_uid）
-                    if target_key and item_key and (target_key in item_key or item_key in target_key):
-                        real_blogger_name = fname
-                        target_fid = fid
-                        self.log(f"🎯 [URL Key 精准比对成功] 匹配到 ({target_key}) -> 博主: '{fname}' (ID: {fid})")
-                        break
-                    # 2. 次优先比对真实博主名 (若非占位符)
-                    elif blogger_name and blogger_name != "all" and not blogger_name.startswith("待爬取") and (blogger_name == fname or blogger_name in fname or fname in blogger_name):
-                        real_blogger_name = fname
-                        target_fid = fid
-                        self.log(f"🎯 [博主名精准比对成功] 匹配到 '{blogger_name}' -> 博主: '{fname}' (ID: {fid})")
-                        break
-
                 if target_fid and real_blogger_name:
                     import urllib.parse
                     encoded_name = urllib.parse.quote(real_blogger_name)
                     biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
                     follow_id = target_fid
-                    self.log(f"✅ [得到关注成功] 从 2.json 捕获得到 URL: {biji_url} | 真实博主名: {real_blogger_name}")
+                    self.log(f"✅ [得到关注成功] ({match_reason}) 匹配到 URL: {biji_url} | 博主名: {real_blogger_name}")
                 else:
-                    self.log(f"⚠️ [尝试自愈重寻] 重新加载知识库刷新获取已订阅列表...")
+                    self.log(f"⚠️ [尝试自愈重寻] 未能在关注响应中精准匹配目标博主，刷新知识库列表...")
                     page.goto(topic_url, wait_until="domcontentloaded")
                     time.sleep(1.5)
 
@@ -499,45 +501,20 @@ class BijiBrowserEngine:
                                 self.log("  [自愈] 未找到『博主』Tab，等待网络自动触发...")
                         time.sleep(1.5)
                     except Exception as tab_ex:
-                        self.log(f"  [自愈] 点击博主 Tab 提示: {tab_ex}，继续尝试比对缓存数据...")
+                        self.log(f"  [自愈] 点击博主 Tab 提示: {tab_ex}...")
                         time.sleep(2)
 
                     # 再次精准比对
-                    for fname, fid, item_u in captured_follow_map.values():
-                        if not is_valid_name(fname):
-                            continue
-                        item_key = extract_url_key(item_u)
-                        if target_key and item_key and (target_key in item_key or item_key in target_key):
-                            real_blogger_name = fname
-                            target_fid = fid
-                            break
-                        elif blogger_name and blogger_name != "all" and not blogger_name.startswith("待爬取") and (blogger_name == fname or blogger_name in fname or fname in blogger_name):
-                            real_blogger_name = fname
-                            target_fid = fid
-                            break
+                    real_blogger_name, target_fid, match_reason = match_captured_blogger(home_url, blogger_name)
                     
                     if target_fid and real_blogger_name:
                         import urllib.parse
                         encoded_name = urllib.parse.quote(real_blogger_name)
                         biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
                         follow_id = target_fid
-                        self.log(f"✅ [刷新自愈成功] 从页面关注列表 2.json 提取 biji_url: {biji_url}")
-                    elif blogger_name and not blogger_name.startswith("待爬取"):
-                        self.log(f"🔍 尝试在页面卡片中查找博主名字: 『{blogger_name}』...")
-                        card_selector = page.locator(f"text={blogger_name}").first
-                        if card_selector.is_visible():
-                            self.log("👆 找到博主卡片，点击以跳转抓取地址...")
-                            card_selector.click()
-                            time.sleep(2.5)
-                            current_url = page.url
-                            if "followId=" in current_url:
-                                biji_url = current_url
-                                match = re.search(r'followId=([^&]+)', current_url)
-                                if match:
-                                    follow_id = match.group(1)
-                                self.log(f"✅ [自愈成功] 从当前页面 URL 提取 biji_url: {biji_url}")
+                        self.log(f"✅ [刷新自愈成功] ({match_reason}) 提取 biji_url: {biji_url}")
                     else:
-                        self.log(f"⏳ 博主『{blogger_name or home_url}』在得到平台尚处于『GET笔记正在帮你订阅』异步处理挂起状态，跳过绑定，将在后续自动全量同步时重连。")
+                        self.log("ℹ️ 得到的关注节点可能尚处于后台异步处理中，本次跳过回写（防止误绑定其他博主）。")
             except Exception as err:
                 self.log(f"⚠️ [关注流程提示/异常]: {err}")
             finally:
@@ -554,14 +531,13 @@ class BijiBrowserEngine:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            # 1. 优先精确定位目标行的 ID
             target_id = None
             if home_url:
                 cursor.execute("SELECT id FROM bloggers WHERE home_url = ?;", (home_url,))
                 r = cursor.fetchone()
                 if r:
                     target_id = r[0]
-            if not target_id and blogger_name:
+            if not target_id and blogger_name and not blogger_name.startswith("待爬取"):
                 cursor.execute("SELECT id FROM bloggers WHERE name = ?;", (blogger_name,))
                 r = cursor.fetchone()
                 if r:
@@ -573,37 +549,25 @@ class BijiBrowserEngine:
                     target_id = r[0]
 
             if target_id:
-                cursor.execute("SELECT name FROM bloggers WHERE id = ?;", (target_id,))
-                old_row = cursor.fetchone()
-                old_name = old_row[0] if old_row else blogger_name
-                
-                # 仅当旧名字为占位符时才更名
-                should_rename = False
-                if real_name and not real_name.startswith("待爬取") and (old_name.startswith("待爬取") or old_name.startswith("account_") or old_name == "待诊断"):
-                    should_rename = True
-                
-                final_name = real_name if should_rename else old_name
-                
                 cursor.execute("""
                     UPDATE bloggers 
-                    SET name = ?, biji_url = ?, biji_follow_id = ?, biji_topic_alias = ?
+                    SET biji_url = ?, biji_follow_id = ?, biji_topic_alias = ?
                     WHERE id = ?;
-                """, (final_name, biji_url, str(follow_id or ""), topic_alias, target_id))
-            else:
-                final_name = real_name if (real_name and not real_name.startswith("待爬取")) else blogger_name
-                cursor.execute("""
-                    UPDATE bloggers 
-                    SET name = ?, biji_url = ?, biji_follow_id = ?, biji_topic_alias = ?
-                    WHERE rowid = (
-                        SELECT rowid FROM bloggers 
-                        WHERE name = ? OR home_url = ? OR (biji_url IS NULL AND biji_topic_alias = ?) 
-                        LIMIT 1
-                    );
-                """, (final_name, biji_url, str(follow_id or ""), topic_alias, blogger_name, home_url, topic_alias))
+                """, (biji_url, str(follow_id or ""), topic_alias, target_id))
                 
-            conn.commit()
-            conn.close()
-            self.log(f"💾 [数据库回写成功] 已精准将 biji_url ({biji_url}) 绑定至博主 '{final_name}' (ID: {target_id})！")
+                # 仅当名称为“待爬取”时才更新为 real_name
+                if real_name and not real_name.startswith("待爬取"):
+                    cursor.execute("SELECT name FROM bloggers WHERE id = ?;", (target_id,))
+                    curr_r = cursor.fetchone()
+                    if curr_r and (not curr_r[0] or curr_r[0].startswith("待爬取")):
+                        cursor.execute("UPDATE bloggers SET name = ? WHERE id = ?;", (real_name, target_id))
+                        
+                conn.commit()
+                conn.close()
+                self.log(f"💾 [数据库回写成功] 已精准将 biji_url ({biji_url}) 绑定至博主 (ID: {target_id})！")
+            else:
+                conn.close()
+                self.log(f"⚠️ [数据库回写跳过] 未在数据库中定位到唯一的博主记录 (home_url={home_url}, name={blogger_name})")
         except Exception as e:
             self.log(f"❌ [数据库回写失败]: {e}")
 

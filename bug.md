@@ -734,18 +734,16 @@
   * 在 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L4088) 的 `openFullLogModal` 中加入**强力防御机制**：检测到 `#modal-full-log` 缺失时，在 JS 内存中即时动态创建该 Modal 节点并注入到 `document.body` 中，并给全局 DOM 操作加上可选链保护（`titleSub?.textContent = ...`）。
 ---
 
-## Bug 58: GET笔记（biji.com）异步关注占位期间降级逻辑误将列表第 1 项已有博主（如『陈陈陈Clara』）绑至新账号
+## Bug 58: 得到自动化传参未用纯净 `clean_home_url` 且降级兜底逻辑误绑列表首个老博主
 
 * **发生时间**：2026-08-04
-* **问题现象**：添加新博主（如 `8.com`）并启动得到同步时，得到后台尚处于 `GET笔记正在帮你订阅` 异步处理中，日志显示 `已精准将 biji_url 绑定至博主 '陈陈陈Clara'`，将原有账号的 URL 覆盖篡改。
+* **问题现象**：输入包含文本杂质的抖音分享短链添加博主时，在得到的操作日志和得到界面中充斥着原始文本，且得到在后台处理订阅期间，系统错将得到的 `biji_url` 绑定给列表中的首个老博主。
 * **主要根源**：
-  1. `biji_browser.py` 的 `add_blogger_to_biji` 中，在 `2.json` 未找到长链完全匹配项时，其降级 `elif captured_follow_map:` 兜底循环缺乏 URL Key/ID 的精准判定，无差别地拿取了列表第 1 项已有博主 (`陈陈陈Clara`) 作为结果。
-  2. 传入的 `home_url` 包含粘贴的复制口令文字（如 `5- 长按复制...`），使得 `normalize_url` 无法与 `2.json` 中的干净域名直接相等。
-  3. `save_biji_url_to_db` 会将 SQLite 中目标博主的 `name` 直接用回传的真实姓名替换，导致名字被污染覆盖。
+  1. [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L1216) 在启动 `async_biji_pipeline` 线程时，误将未清洗的 `body.home_url` 传给了 `engine.add_blogger_to_biji`，导致 Playwright 直接将多余文本填入了得到输入框，也破坏了后续的 URL 格式匹配。
+  2. [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L447) 的降级兜底在 URL/昵称对不上时，盲目读取了 `2.json` 返回的第一个有效博主，引发错绑覆写。
 * **解决方案**：
-  * 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L436) 中引入 `extract_url_key` 抽取函数，先将混杂的口令文案剥离，提取出唯一的短码 ID（如 `TgDW28duOCY` 或 `sec_uid`）。
-  * 彻底移除无差别的第 1 项降级机制。当在 `2.json` 中找不到精准匹配且得到仍在异步处理时，跳过绑定并打印提示，严禁误绑任何无关博主。
-  * 在 `save_biji_url_to_db` 中增加名字保护：仅当主库中原有博主名字为 `待爬取` 或 `account_` 占位符时才进行更名，防止已有博主名字被误覆盖。
+  * 后端 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L1216) 统一使用正则提炼后的 `clean_home_url` 传给得到自动化引擎。
+  * [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L440) 抽象 `match_captured_blogger` 匹配器：严格校验 URL 精确匹配、短链 Key 匹配或昵称匹配。对不上的直接忽略并跳过回写，杜绝任何对已有博主的误伤。
 
 
 

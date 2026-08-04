@@ -1154,7 +1154,7 @@ def create_blogger(body: BloggerCreate):
         created_task_id = None
 
         # 先保存数据库，立即响应前端；得到的自动建库与关注作为可视化后台任务呈现
-        if (b_topic_alias or b_topic_name) and body.home_url:
+        if (b_topic_alias or b_topic_name) and clean_home_url:
             task_id = f"biji_add_{uuid.uuid4().hex[:8]}"
             created_task_id = task_id
             log_dir = os.path.join(ROOT_DIR, "data", "logs")
@@ -1190,7 +1190,7 @@ def create_blogger(body: BloggerCreate):
                     from biji_browser import BijiBrowserEngine
                     headless_mode = get_headless_setting()
                     log_msg(f"🚀 [得到自动化任务启动] TaskID: {task_id} | 账号: {b_account} | 无头模式: {headless_mode}")
-                    log_msg(f"📌 博主名称: {blogger_name} | 主页链接: {body.home_url}")
+                    log_msg(f"📌 博主名称: {blogger_name} | 主页链接: {clean_home_url}")
                     
                     engine = BijiBrowserEngine(account_id=b_account, headless=headless_mode, log_func=log_msg)
                     target_alias = b_topic_alias
@@ -1211,9 +1211,9 @@ def create_blogger(body: BloggerCreate):
                             log_msg(f"⚠️ [建库提示] 抓取完成，尝试继续关联页面...")
 
                     # 2. 若存在知识库 Alias 且有主页 URL，进行得到关注
-                    if target_alias and target_alias != "new" and body.home_url:
+                    if target_alias and target_alias != "new" and clean_home_url:
                         log_msg(f"👤 [步骤 2/2] 正在打开得到知识库 (Alias: {target_alias}) 关注博主...")
-                        engine.add_blogger_to_biji(target_alias, body.home_url, blogger_name=blogger_name)
+                        engine.add_blogger_to_biji(target_alias, clean_home_url, blogger_name=blogger_name)
                         log_msg(f"🎉 [完成] 博主『{blogger_name}』已成功处理完毕！")
 
                     with tasks_lock:
@@ -1235,7 +1235,7 @@ def create_blogger(body: BloggerCreate):
             "data": {
                 "id": new_id,
                 "name": blogger_name,
-                "home_url": body.home_url,
+                "home_url": clean_home_url,
                 "is_transcribe": is_transcribe_val,
                 "platform": platform_val
             }
