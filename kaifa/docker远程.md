@@ -65,6 +65,9 @@ graph TD
 #!/bin/bash
 set -e
 
+# 0. 自动清理上次容器崩溃/重启遗留的 X11 显示屏锁文件
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /tmp/.X*-lock /tmp/.X11-unix/X* 2>/dev/null || true
+
 # 1. 启动 Xvfb 虚拟屏幕 (DISPLAY=:99)
 Xvfb :99 -screen 0 1280x1024x24 &
 export DISPLAY=:99

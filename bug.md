@@ -765,7 +765,17 @@
   2. 后端在拼装 `cmd` 时直接使用字符串 `"agy"`，在特定容器 Path 设置下可能无法解析全路径。
 * **解决方案**：
   * 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L4033) 与 L4164 的智能体启动方法中，使用 `shutil.which(agent_cmd)` 解析绝对路径，并强制注入 `--verbose` 详细日志标志。
-  * 在 [kaifa/docker远程.md](file:///d:/daima/codex/蒸馏/blogger-distiller-main/kaifa/docker远程.md#L171) 中添加 **「2.5 Docker 容器下 AI 智能体 CLI (`agy` / `codex`) 后台静默流式日志规范」** 与 **「坑 6」** 开发避坑指南。
+---
+
+## Bug 61: Docker 容器重启残留 `/tmp/.X99-lock` 导致 `Xvfb` 屏与 noVNC 远程桌面死锁崩溃
+
+* **发生时间**：2026-08-06
+* **问题现象**：Docker 容器非正常关机或热重载重启后，网页端“🖥️ 远程桌面 (noVNC 画中画)”功能消失/拒绝连接，日志报错：`Fatal server error: Server is already active for display 99` 以及 `x11vnc was unable to open the X DISPLAY: ":99"`，`Connection refused`。
+* **主要根源**：上一次容器关闭时遗留了物理锁文件 `/tmp/.X99-lock`，导致 `entrypoint.sh` 再次拉起 `Xvfb :99` 时认为是二次启动而直接崩溃，连带引发 `Fluxbox`、`x11vnc` 和 `websockify` 代理链条全线崩溃。
+* **解决方案**：
+  * 在 [entrypoint.sh](file:///d:/daima/codex/蒸馏/blogger-distiller-main/entrypoint.sh#L20) 开头添加启动自动清理机制：`rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /tmp/.X*-lock /tmp/.X11-unix/X* 2>/dev/null || true`，保证任何强杀或重启均能瞬间擦除锁文件并 100% 成功启动图形环境。
+  * 同步更新 [kaifa/docker远程.md](file:///d:/daima/codex/蒸馏/blogger-distiller-main/kaifa/docker远程.md#L68) 中的 `entrypoint.sh` 脚本模板规范。
+
 
 
 
