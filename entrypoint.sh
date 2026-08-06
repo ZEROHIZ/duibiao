@@ -17,8 +17,11 @@ echo "====================================================="
 echo "🚀 启动 Docker 图形环境与服务组件"
 echo "====================================================="
 
-# 0. 自动清理上次容器崩溃/重启遗留的 X11 显示屏锁文件
+# 0. 自动清理上次容器崩溃/重启遗留的 X11 显示屏锁文件与 Chromium 单例死锁标志
 rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /tmp/.X*-lock /tmp/.X11-unix/X* 2>/dev/null || true
+if [ -d "/app/data/browser_context" ]; then
+    find /app/data/browser_context \( -name "SingletonLock" -o -name "SingletonSocket" -o -name "SingletonCookie" \) -delete 2>/dev/null || true
+fi
 
 # 1. 启动 Xvfb 虚拟显示屏 (分辨率: 1280x800, 24位深度)
 echo "[1/5] 启动 Xvfb 虚拟屏 ($DISPLAY)..."

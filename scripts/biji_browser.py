@@ -48,6 +48,17 @@ class BijiBrowserEngine:
         os.makedirs(self.context_dir, exist_ok=True)
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
+        # 自动强力擦除可能存在的 Chromium 单例锁文件，防止浏览器上下文死锁报错
+        for root, dirs, files in os.walk(self.context_dir):
+            for name in files + dirs:
+                if name in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
+                    full_path = os.path.join(root, name)
+                    try:
+                        if os.path.islink(full_path) or os.path.exists(full_path):
+                            os.remove(full_path)
+                    except:
+                        pass
+
         # 若未指定 headless，优先从 config.json 读取配置（默认无头）
         if headless is None:
             headless = True

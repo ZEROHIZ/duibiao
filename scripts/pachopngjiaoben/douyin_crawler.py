@@ -836,6 +836,18 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
     user_data_dir = os.path.join(ROOT_DIR, "data", "browser_context")
     os.makedirs(user_data_dir, exist_ok=True)
     
+    # 自动强力擦除死锁标志（SingletonLock/SingletonCookie/SingletonSocket），防止死锁崩溃
+    for root, dirs, files in os.walk(user_data_dir):
+        for name in files + dirs:
+            if name in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
+                full_path = os.path.join(root, name)
+                try:
+                    if os.path.islink(full_path) or os.path.exists(full_path):
+                        os.remove(full_path)
+                        print(f"[浏览器启动] 已自动清楚残留死锁标志文件: {full_path}")
+                except Exception as ex:
+                    pass
+
     async with async_playwright() as p:
         print(f"[浏览器启动] 使用持久化会话数据目录: {user_data_dir}, 无头模式: {headless}")
         

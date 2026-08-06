@@ -773,8 +773,17 @@
 * **问题现象**：Docker 容器非正常关机或热重载重启后，网页端“🖥️ 远程桌面 (noVNC 画中画)”功能消失/拒绝连接，日志报错：`Fatal server error: Server is already active for display 99` 以及 `x11vnc was unable to open the X DISPLAY: ":99"`，`Connection refused`。
 * **主要根源**：上一次容器关闭时遗留了物理锁文件 `/tmp/.X99-lock`，导致 `entrypoint.sh` 再次拉起 `Xvfb :99` 时认为是二次启动而直接崩溃，连带引发 `Fluxbox`、`x11vnc` 和 `websockify` 代理链条全线崩溃。
 * **解决方案**：
-  * 在 [entrypoint.sh](file:///d:/daima/codex/蒸馏/blogger-distiller-main/entrypoint.sh#L20) 开头添加启动自动清理机制：`rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /tmp/.X*-lock /tmp/.X11-unix/X* 2>/dev/null || true`，保证任何强杀或重启均能瞬间擦除锁文件并 100% 成功启动图形环境。
-  * 同步更新 [kaifa/docker远程.md](file:///d:/daima/codex/蒸馏/blogger-distiller-main/kaifa/docker远程.md#L68) 中的 `entrypoint.sh` 脚本模板规范。
+---
+
+## Bug 62: Chromium 物理挂载目录残留 `SingletonLock` 导致重新部署/抓取任务抛出 `TargetClosedError` 崩溃
+
+* **发生时间**：2026-08-06
+* **问题现象**：重新拉取镜像或重新部署 Docker 后，触发数据抓取时日志报错：`The profile appears to be in use by another Chromium process (...) on another computer. Chromium has locked the profile so that it doesn't get corrupted.` 以及 `playwright._impl._errors.TargetClosedError: BrowserType.launch_persistent_context: Target page, context or browser has been closed`。
+* **主要根源**：宿主机物理硬盘挂载的 `./data/browser_context` 沙箱目录中残留了上一次异常退出的 Chromium 单例死锁文件 `SingletonLock` / `SingletonCookie` / `SingletonSocket`。即使重新构建镜像，由于 Volume 挂载在宿主机上，这些死锁文件依然保留在本地物理盘中。
+* **解决方案**：
+  * 在 [douyin_crawler.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/pachopngjiaoben/douyin_crawler.py#L839) 与 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L50) 初始化 `launch_persistent_context` 前，自动扫描递归删除 `SingletonLock`、`SingletonSocket` 和 `SingletonCookie`。
+  * 在 [entrypoint.sh](file:///d:/daima/codex/蒸馏/blogger-distiller-main/entrypoint.sh#L20) 开头添加：`find /app/data/browser_context \( -name "SingletonLock" -o -name "SingletonSocket" -o -name "SingletonCookie" \) -delete 2>/dev/null || true`，双重保险防御。
+
 
 
 
