@@ -782,7 +782,16 @@
 * **主要根源**：宿主机物理硬盘挂载的 `./data/browser_context` 沙箱目录中残留了上一次异常退出的 Chromium 单例死锁文件 `SingletonLock` / `SingletonCookie` / `SingletonSocket`。即使重新构建镜像，由于 Volume 挂载在宿主机上，这些死锁文件依然保留在本地物理盘中。
 * **解决方案**：
   * 在 [douyin_crawler.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/pachopngjiaoben/douyin_crawler.py#L839) 与 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L50) 初始化 `launch_persistent_context` 前，自动扫描递归删除 `SingletonLock`、`SingletonSocket` 和 `SingletonCookie`。
-  * 在 [entrypoint.sh](file:///d:/daima/codex/蒸馏/blogger-distiller-main/entrypoint.sh#L20) 开头添加：`find /app/data/browser_context \( -name "SingletonLock" -o -name "SingletonSocket" -o -name "SingletonCookie" \) -delete 2>/dev/null || true`，双重保险防御。
+---
+
+## Bug 63: 在 HTTP 局域网/IP 环境下点击「📋 一键复制全量日志」无响应
+
+* **发生时间**：2026-08-06
+* **问题现象**：通过局域网 IP（如 `http://192.168.110.30:8899`）访问系统时，在全量日志 Modal 弹窗中点击「📋 一键复制全量日志」没有任何响应。
+* **主要根源**：现代 Chrome / Edge 等浏览器将 `navigator.clipboard` API 限制为仅在 **Secure Context（HTTPS 或 localhost）** 下可用。在 HTTP IP 访问环境下 `navigator.clipboard` 为 `undefined`，导致直接调用 `.writeText()` 报错失效。
+* **解决方案**：
+  * 在 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L4090) 中抽象封装通用复制工具函数 `copyTextToClipboard(text)`：自动判断环境，在 HTTPS 环境下优先使用原生的 `navigator.clipboard.writeText`，在 HTTP / 非安全上下文环境中自动降级使用 `document.execCommand('copy')` + 隐藏 `<textarea>` 模拟选择复制，实现 100% 跨浏览器与 HTTP/HTTPS 环境全兼容。
+
 
 
 

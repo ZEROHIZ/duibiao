@@ -4087,6 +4087,35 @@ async function pollCLIInstallLogs() {
     }
 }
 
+// 通用剪贴板复制工具函数 (同时兼容 HTTPS 极速 API 与 HTTP 非安全上下文)
+function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+    } else {
+        return new Promise((resolve, reject) => {
+            try {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                const successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                if (successful) {
+                    resolve();
+                } else {
+                    reject(new Error("浏览器退化复制失败"));
+                }
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+}
+
 // === 全量无截断日志查看器逻辑 ===
 async function openFullLogModal() {
     if (!activeConsoleTaskId) {
@@ -4125,7 +4154,7 @@ async function openFullLogModal() {
         document.getElementById("btn-copy-full-log-modal")?.addEventListener("click", () => {
             const text = document.getElementById("full-log-modal-content")?.textContent;
             if (text) {
-                navigator.clipboard.writeText(text).then(() => {
+                copyTextToClipboard(text).then(() => {
                     showToast("已一键复制全量无截断日志！", "success");
                 }).catch(err => {
                     showToast("复制失败: " + err, "error");
@@ -4169,7 +4198,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnCopyConsoleLog.addEventListener("click", () => {
             const consoleEl = document.getElementById("settings-console-content");
             if (consoleEl && consoleEl.textContent) {
-                navigator.clipboard.writeText(consoleEl.textContent).then(() => {
+                copyTextToClipboard(consoleEl.textContent).then(() => {
                     showToast("已成功复制当前控制台输出！", "success");
                 }).catch(err => {
                     showToast("复制失败: " + err, "error");
@@ -4183,7 +4212,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnCopyFullLogModal.addEventListener("click", () => {
             const modalContent = document.getElementById("full-log-modal-content");
             if (modalContent && modalContent.textContent) {
-                navigator.clipboard.writeText(modalContent.textContent).then(() => {
+                copyTextToClipboard(modalContent.textContent).then(() => {
                     showToast("已一键复制全量无截断日志！", "success");
                 }).catch(err => {
                     showToast("复制失败: " + err, "error");
