@@ -106,12 +106,21 @@ def extract_category_from_html(html_path: str) -> str:
         with open(html_path, "r", encoding="utf-8") as f:
             content = f.read()
         import re
-        # 正则扫描 <div class="card-label">定位领域</div> 紧随其后的 <div class="card-val">定位内容</div>
-        # 兼容 card-label 叫 '定位' 或 '定位领域' 的情况，并允许任意空白符与换行符
-        pattern = r'class="card-label">定位(?:领域)?</div>\s*<div class="card-val">(.*?)</div>'
-        match = re.search(pattern, content)
+        # 1. 优先匹配 AI 蒸馏报告格式: <div class="sys-label">定位 / POSITIONING</div> ... <div class="main-text"...>(.*?)</div>
+        pattern_distill = r'class="sys-label">定位\s*/\s*POSITIONING</div>\s*<div class="main-text"[^>]*>(.*?)</div>'
+        match = re.search(pattern_distill, content, re.IGNORECASE)
         if match:
-            return match.group(1).strip()
+            val = match.group(1).strip()
+            if val:
+                return val
+                
+        # 2. 匹配 AI 诊断报告/老版格式: class="card-label">定位(领域)?</div> ... class="card-val">(.*?)</div>
+        pattern_diag = r'class="card-label">定位(?:领域)?</div>\s*<div class="card-val[^"]*">(.*?)</div>'
+        match = re.search(pattern_diag, content, re.IGNORECASE)
+        if match:
+            val = match.group(1).strip()
+            if val:
+                return val
     except Exception as e:
         print(f"[Category Extraction] Error reading {html_path}: {e}")
     return ""

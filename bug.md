@@ -804,7 +804,16 @@
      - 在启动前自动向同账号运行中的手动浏览器发送平滑关闭指令（`manual_browser_mgr.close_session`）；
      - 自动扫描清理当前账号沙箱路径下的死锁锁文件（`_clean_singleton_locks`）；
      - 内置 3 次自愈重试逻辑，若遇到 `Opening in existing browser session` 自动优雅等待并擦除死锁文件后重试。
-  3. 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2645) `trigger_biji_sync` 路由中，启动 CLI 前自动发起同账号旧会话避让平滑关闭。
+---
+
+## Bug 65: 生成 AI 蒸馏报告后对标灵感表格中「主营定位」依然显示「待诊断」
+
+* **发生时间**：2026-08-10
+* **问题现象**：博主（如“小A”）已经成功生成了 AI 蒸馏报告，但在对标灵感表格列表的“主营定位”一栏依然显示为默认的“待诊断”。
+* **主要根源**：后端 `extract_category_from_html` 函数原有的正则表达式只匹配老版本诊断报告的 `<div class="card-label">定位</div> <div class="card-val">...</div>` 标签结构，无法匹配新版 **AI 蒸馏报告** 中的 `<div class="sys-label">定位 / POSITIONING</div> <div class="main-text">...</div>` 结构，导致正则提取返回为空。
+* **解决方案**：
+  * 重构 [app.py](file:///d:/daima/codex/蒸馏\blogger-distiller-main\web\backend\app.py#L101) 中的 `extract_category_from_html` 函数，新增支持最新 **AI 蒸馏报告**（`sys-label` / `POSITIONING`）与 **AI 诊断报告**（`card-label` / `card-val`）的兼容性正则正则扫描，提取成功后自动写回 SQLite `bloggers` 表，页面刷新即可自动展示准确的主营定位。
+
 
 
 
