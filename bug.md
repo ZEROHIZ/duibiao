@@ -798,11 +798,13 @@
 * **问题现象**：执行得到 (BIJI.com) 自动化数据同步或建库关注时，控制台报错：`playwright._impl._errors.Error: BrowserType.launch_persistent_context: Opening in existing browser session. This usually means that the profile is already in use by another instance of Chromium.`
 * **主要根源**：用户在界面中点击了「手动打开浏览器」或之前运行的得到的同账号沙箱（如 `account_01`）窗口线程未退出。当新自动化任务启动并以独占模式访问 `/app/data/browser_context/account_01` 时，Chromium 防损坏独占保护触发强行退出。
 * **解决方案**：
-  1. 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L90) 的 `BijiBrowserEngine` 类中增加通用 `safe_launch_persistent_context` 启动方法：
+  1. 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L38) 中实现**跨进程/多线程账号级互斥排队锁 `AccountLockQueue`**：
+     - 当多个任务（手动浏览器、同步任务、自动建库关注）同时发起对同一个账号沙箱（如 `account_01`）的访问时，后续任务自动在队列中挂起等待（`⏳ [账号排队] 任务已入队等待中...`），上一个任务释放锁后自动依序拉起，实现 100% 安全串行排队。
+  2. 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L90) 的 `BijiBrowserEngine` 类中增加通用 `safe_launch_persistent_context` 启动方法：
      - 在启动前自动向同账号运行中的手动浏览器发送平滑关闭指令（`manual_browser_mgr.close_session`）；
      - 自动扫描清理当前账号沙箱路径下的死锁锁文件（`_clean_singleton_locks`）；
      - 内置 3 次自愈重试逻辑，若遇到 `Opening in existing browser session` 自动优雅等待并擦除死锁文件后重试。
-  2. 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2645) `trigger_biji_sync` 路由中，启动 CLI 前自动发起同账号旧会话避让平滑关闭。
+  3. 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2645) `trigger_biji_sync` 路由中，启动 CLI 前自动发起同账号旧会话避让平滑关闭。
 
 
 

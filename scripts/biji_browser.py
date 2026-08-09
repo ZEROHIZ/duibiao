@@ -35,7 +35,78 @@ from biji_backfill import backfill_transcripts, extract_video_id_from_url
 BASE_URL = "https://www.biji.com/subject"
 SCREENSHOT_DIR = os.path.join(SKILL_ROOT, "screenshots")
 DATA_DIR = os.path.join(SKILL_ROOT, "data")
-DB_PATH = os.path.join(DATA_DIR, "distiller.db")
+class AccountLockQueue:
+    """
+    账号级跨进程/多线程排队锁 (Per-Account Queue Lock)
+    当多个任务或多线程尝试访问同一个账号沙箱 (account_id) 时，自动在队列中挂起等待，轮流排队安全执行。
+    """
+    def __init__(self, account_id="account_01", timeout_seconds=300, log_func=None):
+        self.account_id = account_id or "account_01"
+        self.timeout_seconds = timeout_seconds
+        self.log_func = log_func
+        self.context_dir = os.path.join(DATA_DIR, "browser_context", self.account_id)
+        os.makedirs(self.context_dir, exist_ok=True)
+        self.lock_file_path = os.path.join(self.context_dir, "account_queue.lock")
+        self._lock_file = None
+
+    def log(self, msg):
+        print(msg)
+        if self.log_func:
+            try:
+                self.log_func(msg)
+            except:
+                pass
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+
+    def acquire(self):
+        start_time = time.time()
+        pid = os.getpid()
+        self.log(f"⏳ [账号排队] 任务 (PID {pid}) 正在申请账号 '{self.account_id}' 的沙箱独占锁...")
+        
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    self._lock_file = open(self.lock_file_path, "a+b")
+                    msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    self._lock_file = open(self.lock_file_path, "a+")
+                    fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                
+                self.log(f"🔒 [账号排队] 任务 (PID {pid}) 成功锁定账号 '{self.account_id}' 沙箱，开始执行！")
+                return True
+            except (IOError, OSError):
+                elapsed = time.time() - start_time
+                if elapsed > self.timeout_seconds:
+                    self.log(f"⚠️ [账号排队] 任务 (PID {pid}) 等待账号 '{self.account_id}' 解锁超时 ({self.timeout_seconds}s)，强制继续。")
+                    return False
+                
+                self.log(f"⏳ [账号排队] 账号 '{self.account_id}' 当前有其他任务在运行，当前任务 (PID {pid}) 已入队等待中... (已排队 {int(elapsed)}s)")
+                time.sleep(2.0)
+
+    def release(self):
+        if self._lock_file:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    self._lock_file.seek(0)
+                    msvcrt.locking(self._lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+                self._lock_file.close()
+            except Exception:
+                pass
+            finally:
+                self._lock_file = None
+                self.log(f"🔓 [账号排队] 任务 (PID {os.getpid()}) 释放账号 '{self.account_id}' 沙箱锁，队列中下一个任务开始执行。")
 
 
 class BijiBrowserEngine:
@@ -274,10 +345,11 @@ class BijiBrowserEngine:
         self.log(f"\n🚀 [得到建库] 正在为账号 '{self.account_id}' 创建知识库: 『{topic_name}』...")
         created_topic_info = {}
 
-        with sync_playwright() as p:
-            self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
-            context = self.safe_launch_persistent_context(p)
-            page = context.new_page()
+        with AccountLockQueue(self.account_id, log_func=self.log_func):
+            with sync_playwright() as p:
+                self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
+                context = self.safe_launch_persistent_context(p)
+                page = context.new_page()
 
             def handle_response(response):
                 try:
@@ -346,10 +418,11 @@ class BijiBrowserEngine:
         biji_url = None
         follow_id = None
 
-        with sync_playwright() as p:
-            self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
-            context = self.safe_launch_persistent_context(p)
-            page = context.new_page()
+        with AccountLockQueue(self.account_id, log_func=self.log_func):
+            with sync_playwright() as p:
+                self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
+                context = self.safe_launch_persistent_context(p)
+                page = context.new_page()
             
             captured_follow_info = {}
             captured_follow_map = {}  # key: home_url or fname, value: (fname, fid, item_url)
@@ -623,10 +696,11 @@ class BijiBrowserEngine:
         print(f"   无头模式: {self.headless}")
         print(f"   存储路径: {self.context_dir}\n")
 
-        with sync_playwright() as p:
-            # 使用持久化 BrowserContext 维持 Session
-            context = self.safe_launch_persistent_context(p)
-            page = context.new_page()
+        with AccountLockQueue(self.account_id, log_func=self.log_func):
+            with sync_playwright() as p:
+                # 使用持久化 BrowserContext 维持 Session
+                context = self.safe_launch_persistent_context(p)
+                page = context.new_page()
 
             # ----------------------------------------------------
             # 监听网络 API 响应
@@ -1067,11 +1141,12 @@ class ManualBrowserManager:
                 context_dir = os.path.join(DATA_DIR, "browser_context", account_id)
                 os.makedirs(context_dir, exist_ok=True)
                 try:
-                    with sync_playwright() as p:
-                        print(f"🌐 [手动浏览器] 正在为账号 '{account_id}' 启动 Chromium 有头窗口 (URL: {target_url})...")
-                        engine = BijiBrowserEngine(account_id=account_id)
-                        context = engine.safe_launch_persistent_context(p, override_headless=False)
-                        page = context.new_page()
+                    with AccountLockQueue(account_id):
+                        with sync_playwright() as p:
+                            print(f"🌐 [手动浏览器] 正在为账号 '{account_id}' 启动 Chromium 有头窗口 (URL: {target_url})...")
+                            engine = BijiBrowserEngine(account_id=account_id)
+                            context = engine.safe_launch_persistent_context(p, override_headless=False)
+                            page = context.new_page()
                         page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
 
                         start_t = time.time()
