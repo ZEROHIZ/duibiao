@@ -2641,6 +2641,14 @@ def trigger_biji_sync_endpoint(body: BijiSyncRequest):
     if isinstance(is_headless, str):
         is_headless = (is_headless.lower() == "true")
 
+    # 优先请求该账号下运行中的手动浏览器窗口优雅关闭，规避沙箱冲突
+    try:
+        from biji_browser import manual_browser_mgr
+        manual_browser_mgr.close_session(body.account_id)
+        time.sleep(0.3)
+    except Exception:
+        pass
+
     cmd = [
         sys.executable,
         os.path.join(ROOT_DIR, "scripts", "biji_browser.py"),

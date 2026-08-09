@@ -49,15 +49,7 @@ class BijiBrowserEngine:
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
         # 自动强力擦除可能存在的 Chromium 单例锁文件，防止浏览器上下文死锁报错
-        for root, dirs, files in os.walk(self.context_dir):
-            for name in files + dirs:
-                if name in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
-                    full_path = os.path.join(root, name)
-                    try:
-                        if os.path.islink(full_path) or os.path.exists(full_path):
-                            os.remove(full_path)
-                    except:
-                        pass
+        self._clean_singleton_locks()
 
         # 若未指定 headless，优先从 config.json 读取配置（默认无头）
         if headless is None:
@@ -78,6 +70,58 @@ class BijiBrowserEngine:
                 except:
                     pass
         self.headless = headless
+
+    def _clean_singleton_locks(self):
+        """清除当前账号沙箱目录中的死锁与占用文件"""
+        if not self.context_dir or not os.path.exists(self.context_dir):
+            return
+        for root, dirs, files in os.walk(self.context_dir):
+            for name in files + dirs:
+                if name in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
+                    full_path = os.path.join(root, name)
+                    try:
+                        if os.path.islink(full_path) or os.path.exists(full_path):
+                            os.remove(full_path)
+                    except:
+                        pass
+
+    def safe_launch_persistent_context(self, p, override_headless=None):
+        """
+        全自动化安全拉起 Chromium 账号沙箱：
+        1. 先优雅避让并请求关闭当前账号旧的手动浏览器窗口；
+        2. 清理当前账号沙箱目录下的 SingletonLock 死锁文件；
+        3. 带有 3 次冲突自愈重试逻辑，防止并发或僵尸进程冲突。
+        """
+        try:
+            manual_browser_mgr.close_session(self.account_id)
+            time.sleep(0.5)
+        except Exception:
+            pass
+
+        self._clean_singleton_locks()
+        is_headless = self.headless if override_headless is None else override_headless
+
+        last_ex = None
+        for attempt in range(3):
+            try:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=self.context_dir,
+                    headless=is_headless,
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    args=["--no-sandbox", "--disable-setuid-sandbox"]
+                )
+                return context
+            except Exception as ex:
+                last_ex = ex
+                err_msg = str(ex)
+                if "Opening in existing browser session" in err_msg or "profile is already in use" in err_msg or "SingletonLock" in err_msg or "TargetClosedError" in err_msg:
+                    self.log(f"⚠️ [沙箱避让] 检测到账号 '{self.account_id}' 沙箱正被旧进程占用 (尝试 {attempt + 1}/3)，正在自动清理死锁文件并重试...")
+                    self._clean_singleton_locks()
+                    time.sleep(1.5)
+                else:
+                    raise ex
+        raise last_ex
 
         # 缓存拦截到的数据
         self.topics_data = []
@@ -232,13 +276,7 @@ class BijiBrowserEngine:
 
         with sync_playwright() as p:
             self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=self.context_dir,
-                headless=self.headless,
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
+            context = self.safe_launch_persistent_context(p)
             page = context.new_page()
 
             def handle_response(response):
@@ -310,13 +348,7 @@ class BijiBrowserEngine:
 
         with sync_playwright() as p:
             self.log(f"🌐 [引擎启动] 正在为账号 '{self.account_id}' 启动 Chromium (Headless={self.headless})...")
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=self.context_dir,
-                headless=self.headless,
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
+            context = self.safe_launch_persistent_context(p)
             page = context.new_page()
             
             captured_follow_info = {}
@@ -593,13 +625,7 @@ class BijiBrowserEngine:
 
         with sync_playwright() as p:
             # 使用持久化 BrowserContext 维持 Session
-            context = p.chromium.launch_persistent_context(
-                user_data_dir=self.context_dir,
-                headless=self.headless,
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
+            context = self.safe_launch_persistent_context(p)
             page = context.new_page()
 
             # ----------------------------------------------------
@@ -1043,13 +1069,8 @@ class ManualBrowserManager:
                 try:
                     with sync_playwright() as p:
                         print(f"🌐 [手动浏览器] 正在为账号 '{account_id}' 启动 Chromium 有头窗口 (URL: {target_url})...")
-                        context = p.chromium.launch_persistent_context(
-                            user_data_dir=context_dir,
-                            headless=False,
-                            viewport={"width": 1280, "height": 800},
-                            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                            args=["--no-sandbox", "--disable-setuid-sandbox"]
-                        )
+                        engine = BijiBrowserEngine(account_id=account_id)
+                        context = engine.safe_launch_persistent_context(p, override_headless=False)
                         page = context.new_page()
                         page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
 

@@ -790,7 +790,20 @@
 * **问题现象**：通过局域网 IP（如 `http://192.168.110.30:8899`）访问系统时，在全量日志 Modal 弹窗中点击「📋 一键复制全量日志」没有任何响应。
 * **主要根源**：现代 Chrome / Edge 等浏览器将 `navigator.clipboard` API 限制为仅在 **Secure Context（HTTPS 或 localhost）** 下可用。在 HTTP IP 访问环境下 `navigator.clipboard` 为 `undefined`，导致直接调用 `.writeText()` 报错失效。
 * **解决方案**：
-  * 在 [app.js](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/frontend/app.js#L4090) 中抽象封装通用复制工具函数 `copyTextToClipboard(text)`：自动判断环境，在 HTTPS 环境下优先使用原生的 `navigator.clipboard.writeText`，在 HTTP / 非安全上下文环境中自动降级使用 `document.execCommand('copy')` + 隐藏 `<textarea>` 模拟选择复制，实现 100% 跨浏览器与 HTTP/HTTPS 环境全兼容。
+---
+
+## Bug 64: 得到 (BIJI) 账号沙箱同账号手动窗口与自动化任务冲突抛出 `Opening in existing browser session` 异常
+
+* **发生时间**：2026-08-10
+* **问题现象**：执行得到 (BIJI.com) 自动化数据同步或建库关注时，控制台报错：`playwright._impl._errors.Error: BrowserType.launch_persistent_context: Opening in existing browser session. This usually means that the profile is already in use by another instance of Chromium.`
+* **主要根源**：用户在界面中点击了「手动打开浏览器」或之前运行的得到的同账号沙箱（如 `account_01`）窗口线程未退出。当新自动化任务启动并以独占模式访问 `/app/data/browser_context/account_01` 时，Chromium 防损坏独占保护触发强行退出。
+* **解决方案**：
+  1. 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L90) 的 `BijiBrowserEngine` 类中增加通用 `safe_launch_persistent_context` 启动方法：
+     - 在启动前自动向同账号运行中的手动浏览器发送平滑关闭指令（`manual_browser_mgr.close_session`）；
+     - 自动扫描清理当前账号沙箱路径下的死锁锁文件（`_clean_singleton_locks`）；
+     - 内置 3 次自愈重试逻辑，若遇到 `Opening in existing browser session` 自动优雅等待并擦除死锁文件后重试。
+  2. 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2645) `trigger_biji_sync` 路由中，启动 CLI 前自动发起同账号旧会话避让平滑关闭。
+
 
 
 
