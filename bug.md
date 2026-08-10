@@ -812,7 +812,19 @@
 * **问题现象**：博主（如“小A”）已经成功生成了 AI 蒸馏报告，但在对标灵感表格列表的“主营定位”一栏依然显示为默认的“待诊断”。
 * **主要根源**：后端 `extract_category_from_html` 函数原有的正则表达式只匹配老版本诊断报告的 `<div class="card-label">定位</div> <div class="card-val">...</div>` 标签结构，无法匹配新版 **AI 蒸馏报告** 中的 `<div class="sys-label">定位 / POSITIONING</div> <div class="main-text">...</div>` 结构，导致正则提取返回为空。
 * **解决方案**：
-  * 重构 [app.py](file:///d:/daima/codex/蒸馏\blogger-distiller-main\web\backend\app.py#L101) 中的 `extract_category_from_html` 函数，新增支持最新 **AI 蒸馏报告**（`sys-label` / `POSITIONING`）与 **AI 诊断报告**（`card-label` / `card-val`）的兼容性正则正则扫描，提取成功后自动写回 SQLite `bloggers` 表，页面刷新即可自动展示准确的主营定位。
+---
+
+## Bug 66: 得到同步任务抛出 `NameError: name 'DB_PATH' is not defined` 且定时任务重复双发
+
+* **发生时间**：2026-08-10
+* **问题现象**：执行得到 (BIJI.com) 同步任务时控制台抛出 `NameError: name 'DB_PATH' is not defined`；同时定时器在 12:00:16 与 12:00:17 连续触发两次任务。
+* **主要根源**：
+  1. 上次新增 `AccountLockQueue` 排队锁代码时，文件顶部的物理路径常量 `DB_PATH = os.path.join(DATA_DIR, "distiller.db")` 被误覆盖抹除。
+  2. `app.py` 中得到的定时器后台守护线程 `threading.Thread(target=biji_auto_sync_scheduler_loop).start()` 写在模块最外层，导致在 Uvicorn 多进程与模块重载时被重复加载启动了双份定时器。
+* **解决方案**：
+  1. 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L38) 顶部补回 `DB_PATH = os.path.join(DATA_DIR, "distiller.db")` 变量定义。
+  2. 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2885) 中移除模块最外层的裸跑线程，封装 `start_biji_auto_sync_scheduler()` 函数并增加全局 `_biji_scheduler_started` 单例防重锁，统一挂载在 `@app.on_event("startup")` 生命周期钩子下启动，确保全局有且仅有 1 个定时守护线程。
+
 
 
 

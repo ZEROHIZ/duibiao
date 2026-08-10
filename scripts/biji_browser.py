@@ -35,6 +35,9 @@ from biji_backfill import backfill_transcripts, extract_video_id_from_url
 BASE_URL = "https://www.biji.com/subject"
 SCREENSHOT_DIR = os.path.join(SKILL_ROOT, "screenshots")
 DATA_DIR = os.path.join(SKILL_ROOT, "data")
+DB_PATH = os.path.join(DATA_DIR, "distiller.db")
+
+
 class AccountLockQueue:
     """
     账号级跨进程/多线程排队锁 (Per-Account Queue Lock)

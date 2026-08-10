@@ -398,6 +398,8 @@ def startup_event():
     start_transcription_worker()
     # 5. 启动自动定时对标更新调度器
     start_auto_crawl_scheduler()
+    # 6. 启动得到自动定时更新调度器
+    start_biji_auto_sync_scheduler()
 
 
 class KnowledgeCreate(BaseModel):
@@ -2882,7 +2884,14 @@ def biji_auto_sync_scheduler_loop():
 
         time.sleep(30)
 
-threading.Thread(target=biji_auto_sync_scheduler_loop, daemon=True).start()
+_biji_scheduler_started = False
+
+def start_biji_auto_sync_scheduler():
+    global _biji_scheduler_started
+    if _biji_scheduler_started:
+        return
+    _biji_scheduler_started = True
+    threading.Thread(target=biji_auto_sync_scheduler_loop, daemon=True).start()
 
 @app.get("/api/biji/accounts")
 def get_biji_accounts_endpoint():
