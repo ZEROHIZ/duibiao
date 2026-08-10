@@ -354,61 +354,61 @@ class BijiBrowserEngine:
                 context = self.safe_launch_persistent_context(p)
                 page = context.new_page()
 
-            def handle_response(response):
+                def handle_response(response):
+                    try:
+                        if "v1/web/topic" in response.url and response.status == 200:
+                            data = response.json()
+                            c = data.get("c") or {}
+                            if isinstance(c, dict) and (c.get("id_alias") or c.get("topic_id")):
+                                created_topic_info["alias"] = c.get("id_alias") or c.get("alias")
+                                created_topic_info["id"] = c.get("topic_id") or c.get("id")
+                                created_topic_info["name"] = c.get("topic_name") or c.get("name") or topic_name
+                                self.log(f"📡 [网络拦截] 成功拦截 1.json 创建建库响应! TopicAlias: {created_topic_info['alias']}")
+                    except:
+                        pass
+
+                page.on("response", handle_response)
+
                 try:
-                    if "v1/web/topic" in response.url and response.status == 200:
-                        data = response.json()
-                        c = data.get("c") or {}
-                        if isinstance(c, dict) and (c.get("id_alias") or c.get("topic_id")):
-                            created_topic_info["alias"] = c.get("id_alias") or c.get("alias")
-                            created_topic_info["id"] = c.get("topic_id") or c.get("id")
-                            created_topic_info["name"] = c.get("topic_name") or c.get("name") or topic_name
-                            self.log(f"📡 [网络拦截] 成功拦截 1.json 创建建库响应! TopicAlias: {created_topic_info['alias']}")
-                except:
-                    pass
+                    self.log("🌐 正在打开得到知识库总揽主页: https://www.biji.com/subject...")
+                    page.goto("https://www.biji.com/subject", wait_until="domcontentloaded")
+                    time.sleep(2)
 
-            page.on("response", handle_response)
+                    self.log("🔍 正在查找『创建知识库』新建卡片按钮...")
+                    create_btn = page.locator("div[class*='create-item'], .create-item").first
+                    try:
+                        create_btn.wait_for(state="visible", timeout=8000)
+                        self.log("👆 找到创建卡片按钮，正在点击...")
+                        create_btn.click()
+                    except Exception as ex:
+                        self.log(f"  [提示] 使用 文本选择器 尝试点击创建按钮 ({ex})...")
+                        page.locator("text=创建知识库").first.click()
 
-            try:
-                self.log("🌐 正在打开得到知识库总览主页: https://www.biji.com/subject...")
-                page.goto("https://www.biji.com/subject", wait_until="domcontentloaded")
-                time.sleep(2)
+                    self.log("📱 等待新建知识库弹窗对话框 (.modal-content) 展现...")
+                    page.wait_for_selector(".modal-content", timeout=8000)
+                    
+                    self.log(f"✍️ 在弹窗输入框中填入知识库名称: 『{topic_name}』...")
+                    name_input = page.locator(".modal-content input.n-input__input-el, .modal-content input").first
+                    name_input.click()
+                    name_input.fill(topic_name)
+                    try:
+                        page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", name_input.element_handle())
+                    except:
+                        pass
+                    time.sleep(0.8)
 
-                self.log("🔍 正在查找『创建知识库』新建卡片按钮...")
-                create_btn = page.locator("div[class*='create-item'], .create-item").first
-                try:
-                    create_btn.wait_for(state="visible", timeout=8000)
-                    self.log("👆 找到创建卡片按钮，正在点击...")
-                    create_btn.click()
-                except Exception as ex:
-                    self.log(f"  [提示] 使用 文本选择器 尝试点击创建按钮 ({ex})...")
-                    page.locator("text=创建知识库").first.click()
+                    self.log("🔍 正在定位弹窗『确定』主按钮 (.action-buttons .n-button--primary-type)...")
+                    confirm_btn = page.locator(".modal-content .action-buttons button.n-button--primary-type, .modal-content button.n-button--primary-type, .modal-content button:has-text('确定')").first
+                    confirm_btn.wait_for(state="visible", timeout=6000)
+                    self.log("👆 点击『确定』主按钮...")
+                    confirm_btn.click()
 
-                self.log("📱 等待新建知识库弹窗对话框 (.modal-content) 展现...")
-                page.wait_for_selector(".modal-content", timeout=8000)
-                
-                self.log(f"✍️ 在弹窗输入框中填入知识库名称: 『{topic_name}』...")
-                name_input = page.locator(".modal-content input.n-input__input-el, .modal-content input").first
-                name_input.click()
-                name_input.fill(topic_name)
-                try:
-                    page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", name_input.element_handle())
-                except:
-                    pass
-                time.sleep(0.8)
-
-                self.log("🔍 正在定位弹窗『确定』主按钮 (.action-buttons .n-button--primary-type)...")
-                confirm_btn = page.locator(".modal-content .action-buttons button.n-button--primary-type, .modal-content button.n-button--primary-type, .modal-content button:has-text('确定')").first
-                confirm_btn.wait_for(state="visible", timeout=6000)
-                self.log("👆 点击『确定』主按钮...")
-                confirm_btn.click()
-
-                self.log("⏳ 等待 3 秒进行建库 API (1.json) 响应...")
-                time.sleep(3)
-            except Exception as err:
-                self.log(f"❌ [得到建库过程抛出异常]: {err}")
-            finally:
-                context.close()
+                    self.log("⏳ 等待 3 秒进行建库 API (1.json) 响应...")
+                    time.sleep(3)
+                except Exception as err:
+                    self.log(f"❌ [得到建库过程抛出异常]: {err}")
+                finally:
+                    context.close()
 
         new_topic_alias = created_topic_info.get("alias")
         print(f"✅ [得到建库成功] 知识库名称: 『{topic_name}』 | Alias: {new_topic_alias}")
@@ -427,203 +427,161 @@ class BijiBrowserEngine:
                 context = self.safe_launch_persistent_context(p)
                 page = context.new_page()
             
-            captured_follow_info = {}
-            captured_follow_map = {}  # key: home_url or fname, value: (fname, fid, item_url)
+                captured_follow_info = {}
+                captured_follow_map = {}  # key: home_url or fname, value: (fname, fid, item_url)
 
-            def is_valid_name(name_str):
-                if not name_str:
-                    return False
-                s = str(name_str).strip()
-                if "GET笔记" in s or "正在帮你订阅" in s or s.startswith("待爬取") or s == "待订阅" or s == "订阅中":
-                    return False
-                return True
+                def is_valid_name(name_str):
+                    if not name_str:
+                        return False
+                    s = str(name_str).strip()
+                    if "GET笔记" in s or "正在帮你订阅" in s or s.startswith("待爬取") or s == "待订阅" or s == "订阅中":
+                        return False
+                    return True
 
-            def normalize_url(u):
-                if not u:
-                    return ""
-                return u.split("?")[0].rstrip("/").lower()
+                def normalize_url(u):
+                    if not u:
+                        return ""
+                    return u.split("?")[0].rstrip("/").lower()
 
-            def handle_response(response):
-                try:
-                    if "v1/web/follow" in response.url and response.status == 200:
-                        data = response.json()
-                        c = data.get("c") or {}
-                        
-                        items_to_process = []
-                        if isinstance(c, list):
-                            items_to_process = c
-                        elif isinstance(c, dict):
-                            if "list" in c and isinstance(c["list"], list):
-                                items_to_process = c["list"]
-                            else:
-                                items_to_process = [c]
-
-                        for item in items_to_process:
-                            fid = item.get("follow_id") or item.get("id")
-                            fname = item.get("follow_name") or item.get("name") or ""
-                            item_url = item.get("url") or item.get("home_url") or ""
-                            if fid and is_valid_name(fname):
-                                captured_follow_info[fname] = fid
-                                captured_follow_map[fname] = (fname, fid, item_url)
-                                norm_u = normalize_url(item_url)
-                                if norm_u:
-                                    captured_follow_map[norm_u] = (fname, fid, item_url)
-                                self.log(f"📡 [网络拦截] 拦截到 2.json 有效博主: '{fname}' (ID: {fid}, URL: {item_url})")
-                            elif fid and fname:
-                                self.log(f"  [提示] 忽略过渡态/占位名称: '{fname}' (ID: {fid})")
-                except:
-                    pass
-
-            page.on("response", handle_response)
-
-            try:
-                self.log(f"🌐 打开目标知识库主页: {topic_url}...")
-                page.goto(topic_url, wait_until="domcontentloaded")
-                time.sleep(2)
-
-                # 步骤 1: 点击 "添加"
-                self.log("🔍 正在查找页面『添加』按钮...")
-                try:
-                    add_btn = page.locator("xpath=//*[contains(text(), '添加')]").first
-                    add_btn.wait_for(state="visible", timeout=8000)
-                    self.log("👆 点击『添加』按钮...")
-                    add_btn.click()
-                    time.sleep(1)
-                except Exception as ex:
-                    self.capture_error_screenshot(page, "点击『添加』按钮")
-                    raise RuntimeError(f"无法定位或点击页面『添加』按钮: {ex}")
-
-                # 步骤 2: 点击 "订阅直播/博主"
-                self.log("🔍 正在查找『订阅直播/博主』菜单选项...")
-                try:
-                    sub_btn = page.locator("div[role='menuitem']:has-text('订阅直播/博主'), [role='menuitem']:has-text('订阅直播/博主')").first
-                    sub_btn.wait_for(state="visible", timeout=8000)
-                    self.log("👆 点击『订阅直播/博主』...")
-                    sub_btn.click()
-                    time.sleep(1)
-                except Exception as ex:
-                    self.capture_error_screenshot(page, "点击『订阅直播/博主』菜单")
-                    raise RuntimeError(f"无法定位或点击『订阅直播/博主』菜单: {ex}")
-
-                # 步骤 3: 点击 "抖音博主"
-                self.log("🔍 正在定位『抖音博主』Tab 页签 (data-name='douyin')...")
-                try:
-                    tab_btn = page.locator(".n-tabs-tab[data-name='douyin'], div[data-name='douyin'], .n-tabs-tab:has-text('抖音博主')").first
-                    tab_btn.wait_for(state="visible", timeout=8000)
-                    self.log("👆 点击『抖音博主』Tab...")
-                    tab_btn.click()
-                except Exception as ex:
-                    self.capture_error_screenshot(page, "点击『抖音博主』Tab")
-                    raise RuntimeError(f"无法定位或点击『抖音博主』Tab: {ex}")
-                
-                # 显式等待 Tab 激活动画完成
-                self.log("⏳ 等待 Tab 激活状态变更 (data-name='douyin')...")
-                try:
-                    page.wait_for_selector(".n-tabs-tab--active[data-name='douyin'], .n-tabs-tab--active:has-text('抖音博主')", timeout=5000)
-                except:
-                    pass
-                time.sleep(1)
-
-                # 步骤 4: 填入博主 URL
-                self.log(f"✍️ 在输入框填入抖音博主主页 URL: {home_url}...")
-                try:
-                    url_input = page.locator(".n-tab-pane:not([style*='display: none']) input.n-input__input-el, .n-input__input-el").first
-                    url_input.click()
-                    url_input.fill(home_url)
+                def handle_response(response):
                     try:
-                        page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", url_input.element_handle())
+                        if "v1/web/follow" in response.url and response.status == 200:
+                            data = response.json()
+                            c = data.get("c") or {}
+                            
+                            items_to_process = []
+                            if isinstance(c, list):
+                                items_to_process = c
+                            elif isinstance(c, dict):
+                                if "list" in c and isinstance(c["list"], list):
+                                    items_to_process = c["list"]
+                                else:
+                                    items_to_process = [c]
+
+                            for item in items_to_process:
+                                fid = item.get("follow_id") or item.get("id")
+                                fname = item.get("follow_name") or item.get("name") or ""
+                                item_url = item.get("url") or item.get("home_url") or ""
+                                if fid and is_valid_name(fname):
+                                    captured_follow_info[fname] = fid
+                                    captured_follow_map[fname] = (fname, fid, item_url)
+                                    norm_u = normalize_url(item_url)
+                                    if norm_u:
+                                        captured_follow_map[norm_u] = (fname, fid, item_url)
+                                    self.log(f"📡 [网络拦截] 拦截到 2.json 有效博主: '{fname}' (ID: {fid}, URL: {item_url})")
+                                elif fid and fname:
+                                    self.log(f"  [提示] 忽略过渡态/占位名称: '{fname}' (ID: {fid})")
                     except:
                         pass
-                    time.sleep(0.5)
-                except Exception as ex:
-                    self.capture_error_screenshot(page, "填入博主 URL 输入框")
-                    raise RuntimeError(f"无法填入博主 URL 输入框: {ex}")
 
-                # 步骤 5: 点击 "确定"
-                self.log("👆 点击『确定』提交按钮...")
+                page.on("response", handle_response)
+
                 try:
-                    confirm_btn = page.locator(".n-tab-pane:not([style*='display: none']) button.n-button--primary-type, button.n-button--primary-type, button:has-text('确定')").first
-                    confirm_btn.click()
-                except Exception as ex:
-                    self.capture_error_screenshot(page, "点击『确定』提交按钮")
-                    raise RuntimeError(f"无法定位或点击『确定』提交按钮: {ex}")
-
-                # 显式轮询等待 2.json 网络响应拦截回调 (最长 10 秒)
-                self.log("⏳ 正在等待 2.json 关注响应回调 (最长 10 秒)...")
-                for _ in range(20):
-                    if captured_follow_map or captured_follow_info:
-                        break
-                    time.sleep(0.5)
-
-                # 提取拿到的有效 follow_id 与真实博主名称 (优先通过 home_url 精准比对)
-                # 显式轮询等待 2.json 网络响应拦截回调 (最长 10 秒)
-                self.log("⏳ 正在等待 2.json 关注响应回调 (最长 10 秒)...")
-                for _ in range(20):
-                    if captured_follow_map or captured_follow_info:
-                        break
-                    time.sleep(0.5)
-
-                def match_captured_blogger(target_u, target_n):
-                    norm_h = normalize_url(target_u)
-                    clean_h_key = norm_h.split("/")[-1] if norm_h else ""
-                    
-                    for k, val in captured_follow_map.items():
-                        rname, fid, item_u = val
-                        if not is_valid_name(rname):
-                            continue
-                        norm_item = normalize_url(item_u)
-                        clean_item_key = norm_item.split("/")[-1] if norm_item else ""
-                        
-                        # 1. URL 精确匹配
-                        if norm_h and norm_h == norm_item:
-                            return rname, fid, "URL 精确匹配"
-                        # 2. Key 包含匹配 (防止长短链或 query 参数差异)
-                        if clean_h_key and len(clean_h_key) > 5 and clean_h_key in norm_item:
-                            return rname, fid, "URL Key 匹配"
-                        if clean_item_key and len(clean_item_key) > 5 and clean_item_key in norm_h:
-                            return rname, fid, "URL Key 匹配"
-                        # 3. 博主昵称匹配 (非待爬取占位符)
-                        if target_n and not target_n.startswith("待爬取") and rname:
-                            if target_n == rname:
-                                return rname, fid, "昵称精确匹配"
-                            elif (target_n in rname or rname in target_n) and len(target_n) >= 2:
-                                return rname, fid, "昵称包含匹配"
-                    return None, None, ""
-
-                real_blogger_name, target_fid, match_reason = match_captured_blogger(home_url, blogger_name)
-                
-                if target_fid and real_blogger_name:
-                    import urllib.parse
-                    encoded_name = urllib.parse.quote(real_blogger_name)
-                    biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
-                    follow_id = target_fid
-                    self.log(f"✅ [得到关注成功] ({match_reason}) 匹配到 URL: {biji_url} | 博主名: {real_blogger_name}")
-                else:
-                    self.log(f"⚠️ [尝试自愈重寻] 未能在关注响应中精准匹配目标博主，刷新知识库列表...")
+                    self.log(f"🌐 打开目标知识库主页: {topic_url}...")
                     page.goto(topic_url, wait_until="domcontentloaded")
-                    time.sleep(1.5)
+                    time.sleep(2)
 
-                    # 自愈刷新后主动点击"博主" Tab，触发 2.json (v1/web/follow) 响应
-                    self.log("🔍 [自愈] 正在查找并点击『博主』Tab 以触发 2.json...")
+                    # 步骤 1: 点击 "添加"
+                    self.log("🔍 正在查找页面『添加』按钮...")
                     try:
-                        with page.expect_response(
-                            lambda r: "v1/web/follow" in r.url and r.status == 200,
-                            timeout=8000
-                        ):
-                            blogger_tab = page.locator(
-                                "xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))]"
-                            ).first
-                            if blogger_tab.is_visible(timeout=4000):
-                                self.log("👆 [自愈] 点击『博主』Tab...")
-                                blogger_tab.click()
-                            else:
-                                self.log("  [自愈] 未找到『博主』Tab，等待网络自动触发...")
-                        time.sleep(1.5)
-                    except Exception as tab_ex:
-                        self.log(f"  [自愈] 点击博主 Tab 提示: {tab_ex}...")
-                        time.sleep(2)
+                        add_btn = page.locator("xpath=//*[contains(text(), '添加')]").first
+                        add_btn.wait_for(state="visible", timeout=8000)
+                        self.log("👆 点击『添加』按钮...")
+                        add_btn.click()
+                        time.sleep(1)
+                    except Exception as ex:
+                        self.capture_error_screenshot(page, "点击『添加』按钮")
+                        raise RuntimeError(f"无法定位或点击页面『添加』按钮: {ex}")
 
-                    # 再次精准比对
+                    # 步骤 2: 点击 "订阅直播/博主"
+                    self.log("🔍 正在查找『订阅直播/博主』菜单选项...")
+                    try:
+                        sub_btn = page.locator("div[role='menuitem']:has-text('订阅直播/博主'), [role='menuitem']:has-text('订阅直播/博主')").first
+                        sub_btn.wait_for(state="visible", timeout=8000)
+                        self.log("👆 点击『订阅直播/博主』...")
+                        sub_btn.click()
+                        time.sleep(1)
+                    except Exception as ex:
+                        self.capture_error_screenshot(page, "点击『订阅直播/博主』菜单")
+                        raise RuntimeError(f"无法定位或点击『订阅直播/博主』菜单: {ex}")
+
+                    # 步骤 3: 点击 "抖音博主"
+                    self.log("🔍 正在定位『抖音博主』Tab 页签 (data-name='douyin')...")
+                    try:
+                        tab_btn = page.locator(".n-tabs-tab[data-name='douyin'], div[data-name='douyin'], .n-tabs-tab:has-text('抖音博主')").first
+                        tab_btn.wait_for(state="visible", timeout=8000)
+                        self.log("👆 点击『抖音博主』Tab...")
+                        tab_btn.click()
+                    except Exception as ex:
+                        self.capture_error_screenshot(page, "点击『抖音博主』Tab")
+                        raise RuntimeError(f"无法定位或点击『抖音博主』Tab: {ex}")
+                    
+                    # 显式等待 Tab 激活动画完成
+                    self.log("⏳ 等待 Tab 激活状态变更 (data-name='douyin')...")
+                    try:
+                        page.wait_for_selector(".n-tabs-tab--active[data-name='douyin'], .n-tabs-tab--active:has-text('抖音博主')", timeout=5000)
+                    except:
+                        pass
+                    time.sleep(1)
+
+                    # 步骤 4: 填入博主 URL
+                    self.log(f"✍️ 在输入框填入抖音博主主页 URL: {home_url}...")
+                    try:
+                        url_input = page.locator(".n-tab-pane:not([style*='display: none']) input.n-input__input-el, .n-input__input-el").first
+                        url_input.click()
+                        url_input.fill(home_url)
+                        try:
+                            page.evaluate("(el) => { el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }", url_input.element_handle())
+                        except:
+                            pass
+                        time.sleep(0.5)
+                    except Exception as ex:
+                        self.capture_error_screenshot(page, "填入博主 URL 输入框")
+                        raise RuntimeError(f"无法填入博主 URL 输入框: {ex}")
+
+                    # 步骤 5: 点击 "确定"
+                    self.log("👆 点击『确定』提交按钮...")
+                    try:
+                        confirm_btn = page.locator(".n-tab-pane:not([style*='display: none']) button.n-button--primary-type, button.n-button--primary-type, button:has-text('确定')").first
+                        confirm_btn.click()
+                    except Exception as ex:
+                        self.capture_error_screenshot(page, "点击『确定』提交按钮")
+                        raise RuntimeError(f"无法定位或点击『确定』提交按钮: {ex}")
+
+                    # 显式轮询等待 2.json 网络响应拦截回调 (最长 10 秒)
+                    self.log("⏳ 正在等待 2.json 关注响应回调 (最长 10 秒)...")
+                    for _ in range(20):
+                        if captured_follow_map or captured_follow_info:
+                            break
+                        time.sleep(0.5)
+
+                    def match_captured_blogger(target_u, target_n):
+                        norm_h = normalize_url(target_u)
+                        clean_h_key = norm_h.split("/")[-1] if norm_h else ""
+                        
+                        for k, val in captured_follow_map.items():
+                            rname, fid, item_u = val
+                            if not is_valid_name(rname):
+                                continue
+                            norm_item = normalize_url(item_u)
+                            clean_item_key = norm_item.split("/")[-1] if norm_item else ""
+                            
+                            # 1. URL 精确匹配
+                            if norm_h and norm_h == norm_item:
+                                return rname, fid, "URL 精确匹配"
+                            # 2. Key 包含匹配 (防止长短链或 query 参数差异)
+                            if clean_h_key and len(clean_h_key) > 5 and clean_h_key in norm_item:
+                                return rname, fid, "URL Key 匹配"
+                            if clean_item_key and len(clean_item_key) > 5 and clean_item_key in norm_h:
+                                return rname, fid, "URL Key 匹配"
+                            # 3. 博主昵称匹配 (非待爬取占位符)
+                            if target_n and not target_n.startswith("待爬取") and rname:
+                                if target_n == rname:
+                                    return rname, fid, "昵称精确匹配"
+                                elif (target_n in rname or rname in target_n) and len(target_n) >= 2:
+                                    return rname, fid, "昵称包含匹配"
+                        return None, None, ""
+
                     real_blogger_name, target_fid, match_reason = match_captured_blogger(home_url, blogger_name)
                     
                     if target_fid and real_blogger_name:
@@ -631,13 +589,47 @@ class BijiBrowserEngine:
                         encoded_name = urllib.parse.quote(real_blogger_name)
                         biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
                         follow_id = target_fid
-                        self.log(f"✅ [刷新自愈成功] ({match_reason}) 提取 biji_url: {biji_url}")
+                        self.log(f"✅ [得到关注成功] ({match_reason}) 匹配到 URL: {biji_url} | 博主名: {real_blogger_name}")
                     else:
-                        self.log("ℹ️ 得到的关注节点可能尚处于后台异步处理中，本次跳过回写（防止误绑定其他博主）。")
-            except Exception as err:
-                self.log(f"⚠️ [关注流程提示/异常]: {err}")
-            finally:
-                context.close()
+                        self.log(f"⚠️ [尝试自愈重寻] 未能在关注响应中精准匹配目标博主，刷新知识库列表...")
+                        page.goto(topic_url, wait_until="domcontentloaded")
+                        time.sleep(1.5)
+
+                        # 自愈刷新后主动点击"博主" Tab，触发 2.json (v1/web/follow) 响应
+                        self.log("🔍 [自愈] 正在查找并点击『博主』Tab 以触发 2.json...")
+                        try:
+                            with page.expect_response(
+                                lambda r: "v1/web/follow" in r.url and r.status == 200,
+                                timeout=8000
+                            ):
+                                blogger_tab = page.locator(
+                                    "xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))]"
+                                ).first
+                                if blogger_tab.is_visible(timeout=4000):
+                                    self.log("👆 [自愈] 点击『博主』Tab...")
+                                    blogger_tab.click()
+                                else:
+                                    self.log("  [自愈] 未找到『博主』Tab，等待网络自动触发...")
+                            time.sleep(1.5)
+                        except Exception as tab_ex:
+                            self.log(f"  [自愈] 点击博主 Tab 提示: {tab_ex}...")
+                            time.sleep(2)
+
+                        # 再次精准比对
+                        real_blogger_name, target_fid, match_reason = match_captured_blogger(home_url, blogger_name)
+                        
+                        if target_fid and real_blogger_name:
+                            import urllib.parse
+                            encoded_name = urllib.parse.quote(real_blogger_name)
+                            biji_url = f"https://www.biji.com/subject/{topic_alias}/DEFAULT?followId={target_fid}&followName={encoded_name}"
+                            follow_id = target_fid
+                            self.log(f"✅ [刷新自愈成功] ({match_reason}) 提取 biji_url: {biji_url}")
+                        else:
+                            self.log("ℹ️ 得到的关注节点可能尚处于后台异步处理中，本次跳过回写（防止误绑定其他博主）。")
+                except Exception as err:
+                    self.log(f"⚠️ [关注流程提示/异常]: {err}")
+                finally:
+                    context.close()
 
         if biji_url:
             self.save_biji_url_to_db(blogger_name, topic_alias, follow_id, biji_url, home_url, real_name=real_blogger_name)
@@ -705,50 +697,50 @@ class BijiBrowserEngine:
                 context = self.safe_launch_persistent_context(p)
                 page = context.new_page()
 
-            # ----------------------------------------------------
-            # 监听网络 API 响应
-            # ----------------------------------------------------
-            def handle_response(response):
-                try:
-                    url = response.url
-                    # 1. 知识库列表 (1.json)
-                    if "v1/web/topic/mine/list" in url and response.status == 200:
-                        data = response.json()
-                        if data.get("h", {}).get("c") == 0:
-                            self.topics_data = data.get("c", [])
-                            print(f"  [biji-api] 📚 捕获到 {len(self.topics_data)} 个知识库")
+                # ----------------------------------------------------
+                # 监听网络 API 响应
+                # ----------------------------------------------------
+                def handle_response(response):
+                    try:
+                        url = response.url
+                        # 1. 知识库列表 (1.json)
+                        if "v1/web/topic/mine/list" in url and response.status == 200:
+                            data = response.json()
+                            if data.get("h", {}).get("c") == 0:
+                                self.topics_data = data.get("c", [])
+                                print(f"  [biji-api] 📚 捕获到 {len(self.topics_data)} 个知识库")
 
-                    # 2. 关注博主列表 (2.json)
-                    elif "v1/web/follow/list" in url and response.status == 200:
-                        data = response.json()
-                        if data.get("h", {}).get("c") == 0:
-                            self.follows_data = data.get("c", {}).get("list", [])
-                            print(f"\n  [biji-api] 👤 成功捕获到 {len(self.follows_data)} 个关注博主明细:")
-                            for idx, f in enumerate(self.follows_data, start=1):
-                                f_name = f.get("name") or "未命名"
-                                f_id = f.get("id") or ""
-                                f_url = f.get("url") or "(无原主页链接)"
-                                print(f"     └─ {idx}. 博主姓名: 『{f_name}』 | 得到 ID: {f_id} | 原平台主页: {f_url}")
+                        # 2. 关注博主列表 (2.json)
+                        elif "v1/web/follow/list" in url and response.status == 200:
+                            data = response.json()
+                            if data.get("h", {}).get("c") == 0:
+                                self.follows_data = data.get("c", {}).get("list", [])
+                                print(f"\n  [biji-api] 👤 成功捕获到 {len(self.follows_data)} 个关注博主明细:")
+                                for idx, f in enumerate(self.follows_data, start=1):
+                                    f_name = f.get("name") or "未命名"
+                                    f_id = f.get("id") or ""
+                                    f_url = f.get("url") or "(无原主页链接)"
+                                    print(f"     └─ {idx}. 博主姓名: 『{f_name}』 | 得到 ID: {f_id} | 原平台主页: {f_url}")
 
-                    # 3. 博主作品列表 (3.json)
-                    elif "v1/web/follow/account/posts" in url and response.status == 200:
-                        data = response.json()
-                        if data.get("h", {}).get("c") == 0:
-                            posts = data.get("c", {}).get("posts", [])
-                            self.captured_posts[url] = posts
-                            print(f"  [biji-api] 📝 捕获作品列表 ({len(posts)} 条)")
+                        # 3. 博主作品列表 (3.json)
+                        elif "v1/web/follow/account/posts" in url and response.status == 200:
+                            data = response.json()
+                            if data.get("h", {}).get("c") == 0:
+                                posts = data.get("c", {}).get("posts", [])
+                                self.captured_posts[url] = posts
+                                print(f"  [biji-api] 📝 捕获作品列表 ({len(posts)} 条)")
 
-                    # 4. 作品转录详情 (4.json)
-                    elif "v1/web/topic/post/detail" in url and response.status == 200:
-                        data = response.json()
-                        if data.get("h", {}).get("c") == 0:
-                            c = data.get("c", {})
-                            p_id = str(c.get("post_id_str") or c.get("post_id") or "")
-                            if p_id:
-                                self.captured_details[p_id] = data
-                                print(f"  [biji-api] 📄 捕获作品转录详情 (ID: {p_id})")
-                except Exception:
-                    pass
+                        # 4. 作品转录详情 (4.json)
+                        elif "v1/web/topic/post/detail" in url and response.status == 200:
+                            data = response.json()
+                            if data.get("h", {}).get("c") == 0:
+                                c = data.get("c", {})
+                                p_id = str(c.get("post_id_str") or c.get("post_id") or "")
+                                if p_id:
+                                    self.captured_details[p_id] = data
+                                    print(f"  [biji-api] 📄 捕获作品转录详情 (ID: {p_id})")
+                    except Exception:
+                        pass
 
             page.on("response", handle_response)
 
@@ -1150,29 +1142,29 @@ class ManualBrowserManager:
                             engine = BijiBrowserEngine(account_id=account_id)
                             context = engine.safe_launch_persistent_context(p, override_headless=False)
                             page = context.new_page()
-                        page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
+                            page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
 
-                        start_t = time.time()
-                        while not stop_evt.is_set():
-                            if time.time() - start_t > 900:  # 15 分钟超时自动关闭
-                                print(f"⏳ [手动浏览器] 账号 '{account_id}' 会话已达到 15 分钟无操作超时，自动安全关闭。")
-                                break
+                            start_t = time.time()
+                            while not stop_evt.is_set():
+                                if time.time() - start_t > 900:  # 15 分钟超时自动关闭
+                                    print(f"⏳ [手动浏览器] 账号 '{account_id}' 会话已达到 15 分钟无操作超时，自动安全关闭。")
+                                    break
 
-                            # 尝试自动监控得到登录标志
-                            try:
-                                if "biji.com" in page.url:
-                                    nickname_elem = page.locator(".nickname-row").first
-                                    if nickname_elem.is_visible(timeout=300):
-                                        nickname = nickname_elem.inner_text().strip()
-                                        engine = BijiBrowserEngine(account_id=account_id)
-                                        engine.update_account_status(nickname=nickname, status="LOGGED_IN")
-                            except:
-                                pass
+                                # 尝试自动监控得到登录标志
+                                try:
+                                    if "biji.com" in page.url:
+                                        nickname_elem = page.locator(".nickname-row").first
+                                        if nickname_elem.is_visible(timeout=300):
+                                            nickname = nickname_elem.inner_text().strip()
+                                            engine = BijiBrowserEngine(account_id=account_id)
+                                            engine.update_account_status(nickname=nickname, status="LOGGED_IN")
+                                except:
+                                    pass
 
-                            time.sleep(1)
+                                time.sleep(1)
 
-                        print(f"🛑 [手动浏览器] 关闭账号 '{account_id}' 的 Chromium 会话...")
-                        context.close()
+                            print(f"🛑 [手动浏览器] 关闭账号 '{account_id}' 的 Chromium 会话...")
+                            context.close()
                 except Exception as ex:
                     print(f"⚠️ [手动浏览器提示/退出] 账号 '{account_id}': {ex}")
                 finally:

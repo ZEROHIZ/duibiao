@@ -822,8 +822,16 @@
   1. 上次新增 `AccountLockQueue` 排队锁代码时，文件顶部的物理路径常量 `DB_PATH = os.path.join(DATA_DIR, "distiller.db")` 被误覆盖抹除。
   2. `app.py` 中得到的定时器后台守护线程 `threading.Thread(target=biji_auto_sync_scheduler_loop).start()` 写在模块最外层，导致在 Uvicorn 多进程与模块重载时被重复加载启动了双份定时器。
 * **解决方案**：
-  1. 在 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L38) 顶部补回 `DB_PATH = os.path.join(DATA_DIR, "distiller.db")` 变量定义。
-  2. 在 [app.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/web/backend/app.py#L2885) 中移除模块最外层的裸跑线程，封装 `start_biji_auto_sync_scheduler()` 函数并增加全局 `_biji_scheduler_started` 单例防重锁，统一挂载在 `@app.on_event("startup")` 生命周期钩子下启动，确保全局有且仅有 1 个定时守护线程。
+---
+
+## Bug 67: 得到同步任务拉起 Chromium 后瞬间崩溃抛出 `TargetClosedError`
+
+* **发生时间**：2026-08-10
+* **问题现象**：执行得到同步任务时，显示排队锁独占成功，但刚启动浏览器就瞬间关闭锁，随后在 `page.on("response", ...)` 抛出 `playwright._impl._errors.TargetClosedError: Target page, context or browser has been closed` 报错。
+* **主要根源**：`biji_browser.py` 中 `with sync_playwright() as p:` 作用域在 `page = context.new_page()` 后提前结束缩进，导致 Playwright `p` 上下文瞬间自动关闭并关掉浏览器 `context` / `page`。
+* **解决方案**：
+  * 重构 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L351) 中 `create_biji_topic`、`add_blogger_to_biji`、`run_sync` 和 `ManualBrowserManager` 的 Python 代码缩进，确保 `with sync_playwright() as p:` 完整包裹整个页面的网络拦截与导航流程，直到任务彻底结束才执行 `context.close()`。
+
 
 
 
