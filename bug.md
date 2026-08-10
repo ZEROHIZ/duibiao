@@ -830,7 +830,16 @@
 * **问题现象**：执行得到同步任务时，显示排队锁独占成功，但刚启动浏览器就瞬间关闭锁，随后在 `page.on("response", ...)` 抛出 `playwright._impl._errors.TargetClosedError: Target page, context or browser has been closed` 报错。
 * **主要根源**：`biji_browser.py` 中 `with sync_playwright() as p:` 作用域在 `page = context.new_page()` 后提前结束缩进，导致 Playwright `p` 上下文瞬间自动关闭并关掉浏览器 `context` / `page`。
 * **解决方案**：
-  * 重新整理并重构 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L745) 中 `run_sync` 的第 745~1092 行代码缩进（由原本解包误缩的 12 空格统一修正提升至 16 空格），确保 `page.on("response", handle_response)` 及所有网络打卡流程完整位于 `with sync_playwright() as p:` 闭环作用域内部。
+---
+
+## Bug 68: 得到同步运行至作品列表拦截时抛出 `AttributeError: 'BijiBrowserEngine' object has no attribute 'captured_posts'`
+
+* **发生时间**：2026-08-10
+* **问题现象**：在解决 `TargetClosedError` 浏览器生命周期问题后，自动化引擎顺利登录并跳转至对标博主作品页，但在调用 `self.captured_posts.clear()` 时抛出 `AttributeError` 崩溃。
+* **主要根源**：`BijiBrowserEngine` 中的数据缓存字典变量 `self.captured_posts` / `self.captured_details` 被误放到了 `safe_launch_persistent_context` 方法的 `return context` 语句之后，成为死代码未被执行初始化。
+* **解决方案**：
+  * 将缓存字典变量转移至 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L145) 的 `BijiBrowserEngine.__init__` 构造函数中进行显式声明初始化，确保对象创建即可使用。
+
 
 
 

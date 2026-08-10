@@ -145,6 +145,12 @@ class BijiBrowserEngine:
                     pass
         self.headless = headless
 
+        # 缓存拦截到的数据
+        self.topics_data = []
+        self.follows_data = []
+        self.captured_posts = {}
+        self.captured_details = {}
+
     def _clean_singleton_locks(self):
         """清除当前账号沙箱目录中的死锁与占用文件"""
         if not self.context_dir or not os.path.exists(self.context_dir):
@@ -196,12 +202,6 @@ class BijiBrowserEngine:
                 else:
                     raise ex
         raise last_ex
-
-        # 缓存拦截到的数据
-        self.topics_data = []
-        self.follows_data = []
-        self.captured_posts = {}
-        self.captured_details = {}
 
     def log(self, msg):
         """格式化打印并同时推送给后台日志文件"""
