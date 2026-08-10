@@ -742,354 +742,354 @@ class BijiBrowserEngine:
                     except Exception:
                         pass
 
-            page.on("response", handle_response)
-
-            # ----------------------------------------------------
-            # Step 1: 登录校验与重定向检查
-            # ----------------------------------------------------
-            print(f"[biji-auth] 正在检测登录状态 ({BASE_URL})...")
-            page.goto(BASE_URL, wait_until="networkidle", timeout=30000)
-            time.sleep(2)
-
-            current_url = page.url
-            if current_url.rstrip("/") == "https://www.biji.com":
-                print("\n⚠️  检测到未登录状态 (已被重定向至 biji.com)")
-                # 多重高兼容选择器定位 "注册/登录" 按钮并触发点击
-                login_selectors = [
-                    "xpath=//*[contains(text(),'注册/登录') or contains(text(),'登录/注册') or contains(text(),'登录') or contains(text(),'注册')]",
-                    "button:has-text('登录')",
-                    "button:has-text('注册')",
-                    "a:has-text('登录')",
-                    ".login-btn"
-                ]
-                clicked_login = False
-                for sel in login_selectors:
-                    try:
-                        btn = page.locator(sel).first
-                        if btn.is_visible(timeout=1500):
-                            btn.click()
-                            print(f"  [biji-auth] ✅ 成功点击登录按钮 (选择器: {sel})")
-                            clicked_login = True
-                            time.sleep(1.5)
-                            break
-                    except Exception:
-                        continue
-
-                if not clicked_login:
-                    print("  [biji-auth] ⚠️ 未能精确触发登录按钮，尝试直接检测页面登录弹窗/协议勾选框...")
-
-                # 勾选同意协议按钮 (.agreement-row button 或 #login-agree)
-                try:
-                    agree_btn = page.locator(".agreement-row button, #login-agree, [data-v-2b3c8e7c].peer, .agreement-row [data-state]").first
-                    if agree_btn.is_visible(timeout=2000):
-                        data_state = agree_btn.get_attribute("data-state")
-                        if data_state == "unchecked":
-                            agree_btn.click()
-                            print("  [biji-auth] ✅ 自动勾选得到大脑《用户协议》和《隐私政策》")
-                        else:
-                            print("  [biji-auth] ℹ️ 得到大脑用户协议已被勾选")
-                except Exception as e:
-                    print(f"  [biji-auth] 勾选协议提示: {e}")
-
+                page.on("response", handle_response)
+    
+                # ----------------------------------------------------
+                # Step 1: 登录校验与重定向检查
+                # ----------------------------------------------------
+                print(f"[biji-auth] 正在检测登录状态 ({BASE_URL})...")
+                page.goto(BASE_URL, wait_until="networkidle", timeout=30000)
                 time.sleep(2)
-                # 截图保存二维码文件
-                qr_path = os.path.join(SCREENSHOT_DIR, f"biji_qr_{self.account_id}.png")
-                page.screenshot(path=qr_path)
-                print()
-                print("=" * 60)
-                print(f"📸 登录二维码已截取并保存至：")
-                print(f"   {qr_path}")
-                print("🖥️ 远程桌面操作提示：")
-                print("   若需手动在浏览器中交互、输入手机号或处理验证码，请在浏览器中打开：")
-                print("   👉 http://localhost:6080 (或在 Web 看板页面右上角点击『🖥️ 远程桌面』)")
-                print("💡 提示：若微信没有绑定得到账号，请先在手机/网页端自行登录绑定后再扫码。")
-                print("=" * 60)
-                print()
-
-                # 等待用户扫码 (最长等待 120 秒)
-                print("⏳ 正在等待扫码登录中 (监听 .nickname-row)...")
+    
+                current_url = page.url
+                if current_url.rstrip("/") == "https://www.biji.com":
+                    print("\n⚠️  检测到未登录状态 (已被重定向至 biji.com)")
+                    # 多重高兼容选择器定位 "注册/登录" 按钮并触发点击
+                    login_selectors = [
+                        "xpath=//*[contains(text(),'注册/登录') or contains(text(),'登录/注册') or contains(text(),'登录') or contains(text(),'注册')]",
+                        "button:has-text('登录')",
+                        "button:has-text('注册')",
+                        "a:has-text('登录')",
+                        ".login-btn"
+                    ]
+                    clicked_login = False
+                    for sel in login_selectors:
+                        try:
+                            btn = page.locator(sel).first
+                            if btn.is_visible(timeout=1500):
+                                btn.click()
+                                print(f"  [biji-auth] ✅ 成功点击登录按钮 (选择器: {sel})")
+                                clicked_login = True
+                                time.sleep(1.5)
+                                break
+                        except Exception:
+                            continue
+    
+                    if not clicked_login:
+                        print("  [biji-auth] ⚠️ 未能精确触发登录按钮，尝试直接检测页面登录弹窗/协议勾选框...")
+    
+                    # 勾选同意协议按钮 (.agreement-row button 或 #login-agree)
+                    try:
+                        agree_btn = page.locator(".agreement-row button, #login-agree, [data-v-2b3c8e7c].peer, .agreement-row [data-state]").first
+                        if agree_btn.is_visible(timeout=2000):
+                            data_state = agree_btn.get_attribute("data-state")
+                            if data_state == "unchecked":
+                                agree_btn.click()
+                                print("  [biji-auth] ✅ 自动勾选得到大脑《用户协议》和《隐私政策》")
+                            else:
+                                print("  [biji-auth] ℹ️ 得到大脑用户协议已被勾选")
+                    except Exception as e:
+                        print(f"  [biji-auth] 勾选协议提示: {e}")
+    
+                    time.sleep(2)
+                    # 截图保存二维码文件
+                    qr_path = os.path.join(SCREENSHOT_DIR, f"biji_qr_{self.account_id}.png")
+                    page.screenshot(path=qr_path)
+                    print()
+                    print("=" * 60)
+                    print(f"📸 登录二维码已截取并保存至：")
+                    print(f"   {qr_path}")
+                    print("🖥️ 远程桌面操作提示：")
+                    print("   若需手动在浏览器中交互、输入手机号或处理验证码，请在浏览器中打开：")
+                    print("   👉 http://localhost:6080 (或在 Web 看板页面右上角点击『🖥️ 远程桌面』)")
+                    print("💡 提示：若微信没有绑定得到账号，请先在手机/网页端自行登录绑定后再扫码。")
+                    print("=" * 60)
+                    print()
+    
+                    # 等待用户扫码 (最长等待 120 秒)
+                    print("⏳ 正在等待扫码登录中 (监听 .nickname-row)...")
+                    try:
+                        page.wait_for_selector(".nickname-row", timeout=120000)
+                        print("🎉 扫码登录成功！")
+                    except PlaywrightTimeoutError:
+                        print("❌ 等待扫码超时 (120秒)，请重新触发同步。")
+                        self.update_account_status(status="NEED_LOGIN")
+                        context.close()
+                        return
+    
+                # 确认在 logged_in 状态，提取昵称
                 try:
-                    page.wait_for_selector(".nickname-row", timeout=120000)
-                    print("🎉 扫码登录成功！")
-                except PlaywrightTimeoutError:
-                    print("❌ 等待扫码超时 (120秒)，请重新触发同步。")
-                    self.update_account_status(status="NEED_LOGIN")
+                    page.goto(BASE_URL, wait_until="domcontentloaded")
+                    time.sleep(2)
+                    nickname_elem = page.locator(".nickname-row").first
+                    nickname = nickname_elem.inner_text().strip() if nickname_elem.is_visible() else "已登录用户"
+                    print(f"✅ 得到账号登录正常，昵称: {nickname}")
+                    self.update_account_status(nickname=nickname, status="LOGGED_IN")
+                except Exception:
+                    pass
+    
+                # ----------------------------------------------------
+                # Step 2: 目标驱动：提取本地主表中有【待转录视频】的目标对标博主
+                # ----------------------------------------------------
+                target_bloggers = self.get_pending_target_bloggers()
+                print(f"\n🎯 查找到本地主库共有 {len(target_bloggers)} 个需要同步/待转录的对标博主")
+    
+                if not target_bloggers:
+                    print("ℹ️ 本地数据库中没有需要转录或监控的博主，跳过同步。")
                     context.close()
                     return
-
-            # 确认在 logged_in 状态，提取昵称
-            try:
-                page.goto(BASE_URL, wait_until="domcontentloaded")
-                time.sleep(2)
-                nickname_elem = page.locator(".nickname-row").first
-                nickname = nickname_elem.inner_text().strip() if nickname_elem.is_visible() else "已登录用户"
-                print(f"✅ 得到账号登录正常，昵称: {nickname}")
-                self.update_account_status(nickname=nickname, status="LOGGED_IN")
-            except Exception:
-                pass
-
-            # ----------------------------------------------------
-            # Step 2: 目标驱动：提取本地主表中有【待转录视频】的目标对标博主
-            # ----------------------------------------------------
-            target_bloggers = self.get_pending_target_bloggers()
-            print(f"\n🎯 查找到本地主库共有 {len(target_bloggers)} 个需要同步/待转录的对标博主")
-
-            if not target_bloggers:
-                print("ℹ️ 本地数据库中没有需要转录或监控的博主，跳过同步。")
-                context.close()
-                return
-
-            for b_idx, target_b in enumerate(target_bloggers, start=1):
-                b_id = target_b["id"]
-                b_name = target_b["name"]
-                b_home_url = target_b["home_url"] or ""
-                biji_url = target_b["biji_url"] or ""
-                topic_alias = target_b["biji_topic_alias"] or "DEFAULT"
-
-                print(f"\n==================================================")
-                print(f"👤 [{b_idx}/{len(target_bloggers)}] 正在同步目标博主: 『{b_name}』 (ID: {b_id})")
-
-                # 检查该博主待转录的视频 ID 集合
-                pending_notes_map = self.get_pending_note_ids(b_id)
-                print(f"  📋 该博主在主库中共有 {len(pending_notes_map)} 条【待转录视频】")
-
-                # 校验 biji_url 自身的有效性（防止历史错误数据/污染数据导致的张冠李戴）
-                if biji_url:
-                    try:
-                        import urllib.parse
-                        parsed_url = urllib.parse.urlparse(biji_url)
-                        qs = urllib.parse.parse_qs(parsed_url.query)
-                        url_follow_name = qs.get("followName", [""])[0]
-                        if url_follow_name and url_follow_name != b_name and b_name not in url_follow_name and url_follow_name not in b_name:
-                            print(f"  ⚠️ [链接污染自愈] 博主『{b_name}』库中记录的 biji_url 包含了不匹配的账号 (『{url_follow_name}』)，自动清空旧链接，重转寻路模式！")
-                            biji_url = ""
-                            conn = sqlite3.connect(DB_PATH)
-                            conn.cursor().execute("UPDATE bloggers SET biji_url = NULL, biji_follow_id = NULL WHERE id = ?", (b_id,))
-                            conn.commit()
-                            conn.close()
-                    except Exception:
-                        pass
-
-                # ----------------------------------------------------
-                # 分支 A: 若该博主已绑定 biji_url，直接访问直连！
-                # ----------------------------------------------------
-                if biji_url:
-                    print(f"  ⚡ [直连模式] 博主『{b_name}』已有 biji_url，直接跳转作品页...")
-                    print(f"  🌐 目标链接: {biji_url}")
-                else:
-                    # ----------------------------------------------------
-                    # 分支 B: 若未绑定 biji_url，通过知识库寻路检索 2.json 并自动绑定
-                    # ----------------------------------------------------
-                    print(f"  🔍 [寻路模式] 博主『{b_name}』尚未绑定 biji_url，进入得到知识库寻路...")
-
-                    # 触发/重试加载 1.json 知识库列表
-                    if not self.topics_data:
-                        print("  📚 [寻路] 知识库缓存为空，正在加载主页获取知识库列表 (1.json)...")
+    
+                for b_idx, target_b in enumerate(target_bloggers, start=1):
+                    b_id = target_b["id"]
+                    b_name = target_b["name"]
+                    b_home_url = target_b["home_url"] or ""
+                    biji_url = target_b["biji_url"] or ""
+                    topic_alias = target_b["biji_topic_alias"] or "DEFAULT"
+    
+                    print(f"\n==================================================")
+                    print(f"👤 [{b_idx}/{len(target_bloggers)}] 正在同步目标博主: 『{b_name}』 (ID: {b_id})")
+    
+                    # 检查该博主待转录的视频 ID 集合
+                    pending_notes_map = self.get_pending_note_ids(b_id)
+                    print(f"  📋 该博主在主库中共有 {len(pending_notes_map)} 条【待转录视频】")
+    
+                    # 校验 biji_url 自身的有效性（防止历史错误数据/污染数据导致的张冠李戴）
+                    if biji_url:
                         try:
-                            with page.expect_response(lambda r: "v1/web/topic/mine/list" in r.url and r.status == 200, timeout=6000):
-                                page.goto(BASE_URL, wait_until="domcontentloaded")
+                            import urllib.parse
+                            parsed_url = urllib.parse.urlparse(biji_url)
+                            qs = urllib.parse.parse_qs(parsed_url.query)
+                            url_follow_name = qs.get("followName", [""])[0]
+                            if url_follow_name and url_follow_name != b_name and b_name not in url_follow_name and url_follow_name not in b_name:
+                                print(f"  ⚠️ [链接污染自愈] 博主『{b_name}』库中记录的 biji_url 包含了不匹配的账号 (『{url_follow_name}』)，自动清空旧链接，重转寻路模式！")
+                                biji_url = ""
+                                conn = sqlite3.connect(DB_PATH)
+                                conn.cursor().execute("UPDATE bloggers SET biji_url = NULL, biji_follow_id = NULL WHERE id = ?", (b_id,))
+                                conn.commit()
+                                conn.close()
                         except Exception:
-                            page.goto(BASE_URL, wait_until="domcontentloaded")
-                        time.sleep(2)
-
-                    print(f"  📚 当前账号共捕获到 {len(self.topics_data)} 个知识库")
-
-                    found_url = None
-                    for t_idx, t in enumerate(self.topics_data, start=1):
-                        t_alias = t.get("id_alias")
-                        t_name = t.get("name") or "知识库"
-                        topic_page_url = f"https://www.biji.com/subject/{t_alias}/DEFAULT"
-
-                        print(f"  🔍 [{t_idx}/{len(self.topics_data)}] 正在检索知识库: 『{t_name}』 (Alias: {t_alias})...")
-
-                        self.follows_data = None
-                        print(f"     🌐 打开知识库主页: {topic_page_url}...")
-                        try:
-                            page.goto(topic_page_url, wait_until="domcontentloaded")
-                            time.sleep(1.5)
-                        except Exception as goto_ex:
-                            print(f"     ⚠️ 打开知识库主页提示: {goto_ex}")
-
-                        # 多选择器寻找“博主” Tab
-                        tab_selectors = [
-                            ".n-tabs-tab[data-name='blogger']",
-                            ".n-tabs-tab:has-text('博主')",
-                            "div[role='tab']:has-text('博主')",
-                            "xpath=//*[contains(@class,'n-tabs-tab') and contains(.,'博主')]",
-                            "xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))]",
-                            "text=博主"
-                        ]
-
-                        blogger_tab = None
-                        for sel in tab_selectors:
+                            pass
+    
+                    # ----------------------------------------------------
+                    # 分支 A: 若该博主已绑定 biji_url，直接访问直连！
+                    # ----------------------------------------------------
+                    if biji_url:
+                        print(f"  ⚡ [直连模式] 博主『{b_name}』已有 biji_url，直接跳转作品页...")
+                        print(f"  🌐 目标链接: {biji_url}")
+                    else:
+                        # ----------------------------------------------------
+                        # 分支 B: 若未绑定 biji_url，通过知识库寻路检索 2.json 并自动绑定
+                        # ----------------------------------------------------
+                        print(f"  🔍 [寻路模式] 博主『{b_name}』尚未绑定 biji_url，进入得到知识库寻路...")
+    
+                        # 触发/重试加载 1.json 知识库列表
+                        if not self.topics_data:
+                            print("  📚 [寻路] 知识库缓存为空，正在加载主页获取知识库列表 (1.json)...")
                             try:
-                                elem = page.locator(sel).first
-                                if elem.is_visible(timeout=1500):
-                                    blogger_tab = elem
-                                    print(f"     🔍 定位到『博主』Tab (使用选择器: {sel})")
-                                    break
+                                with page.expect_response(lambda r: "v1/web/topic/mine/list" in r.url and r.status == 200, timeout=6000):
+                                    page.goto(BASE_URL, wait_until="domcontentloaded")
                             except Exception:
-                                continue
-
-                        if blogger_tab:
-                            print(f"     👆 点击『博主』Tab 触发关注列表 (2.json)...")
+                                page.goto(BASE_URL, wait_until="domcontentloaded")
+                            time.sleep(2)
+    
+                        print(f"  📚 当前账号共捕获到 {len(self.topics_data)} 个知识库")
+    
+                        found_url = None
+                        for t_idx, t in enumerate(self.topics_data, start=1):
+                            t_alias = t.get("id_alias")
+                            t_name = t.get("name") or "知识库"
+                            topic_page_url = f"https://www.biji.com/subject/{t_alias}/DEFAULT"
+    
+                            print(f"  🔍 [{t_idx}/{len(self.topics_data)}] 正在检索知识库: 『{t_name}』 (Alias: {t_alias})...")
+    
+                            self.follows_data = None
+                            print(f"     🌐 打开知识库主页: {topic_page_url}...")
                             try:
-                                with page.expect_response(
-                                    lambda r: "v1/web/follow/list" in r.url and r.status == 200,
-                                    timeout=8000
-                                ):
-                                    blogger_tab.click()
+                                page.goto(topic_page_url, wait_until="domcontentloaded")
                                 time.sleep(1.5)
-                            except Exception as click_ex:
-                                self.capture_error_screenshot(page, f"点击『博主』Tab - 知识库『{t_name}』")
-                                print(f"     ❌ [关键步骤异常终止] 点击『博主』Tab 或监听 2.json 失败: {click_ex}")
-                        else:
-                            self.capture_error_screenshot(page, f"定位『博主』Tab - 知识库『{t_name}』")
-                            print(f"     ❌ [关键步骤异常终止] 知识库『{t_name}』中尝试所有选择器均未定位到『博主』Tab，终止该知识库寻路！")
-
-                        if self.follows_data:
-                            print(f"     📋 成功捕获到 {len(self.follows_data)} 个关注卡片，对比目标博主『{b_name}』 (URL: {b_home_url or '未配置'})...")
-                            # 比对 2.json 里的原主页链接 url 与博主名
-                            for follow in self.follows_data:
-                                f_id = str(follow.get("id") or "")
-                                f_name = follow.get("name") or ""
-                                f_url = (follow.get("url") or "").strip()
-
-                                is_match = False
-                                match_reason = ""
-
-                                # 1. 优先 URL 精确/包含比对
-                                if b_home_url and f_url:
-                                    norm_b = b_home_url.rstrip("/").split("?")[0].lower()
-                                    norm_f = f_url.rstrip("/").split("?")[0].lower()
-                                    clean_key_b = norm_b.split("/")[-1]
-                                    clean_key_f = norm_f.split("/")[-1]
-
-                                    if norm_b == norm_f or (clean_key_b and clean_key_b in norm_f) or (clean_key_f and clean_key_f in norm_b):
-                                        is_match = True
-                                        match_reason = f"原主页链接匹配 ({f_url})"
-
-                                # 2. 降级：博主名完全匹配或包含匹配 (如 '小A' 与 '小A学财经')
-                                if not is_match and (f_name and b_name):
-                                    if f_name == b_name:
-                                        is_match = True
-                                        match_reason = f"博主昵称完全匹配 ({f_name})"
-                                    elif (b_name in f_name or f_name in b_name) and len(b_name) >= 2:
-                                        is_match = True
-                                        match_reason = f"博主昵称模糊包含匹配 ({f_name} ↔ {b_name})"
-
-                                print(f"        ├─ 卡片: 『{f_name}』 (ID: {f_id}, URL: {f_url or '无'}) -> 匹配结果: {'✅ 成功 (' + match_reason + ')' if is_match else '❌ 不匹配'}")
-
-                                if is_match:
-                                    topic_alias = t_alias
-                                    found_url = f"https://www.biji.com/subject/{t_alias}/DEFAULT?followId={f_id}&followName={f_name}"
-                                    
-                                    # 回写绑定到数据库
-                                    conn = sqlite3.connect(DB_PATH)
-                                    cursor = conn.cursor()
-                                    cursor.execute("""
-                                        UPDATE bloggers SET 
-                                            data_source = 'biji',
-                                            biji_browser_id = ?,
-                                            biji_topic_alias = ?,
-                                            biji_topic_name = ?,
-                                            biji_follow_id = ?,
-                                            biji_url = ?
-                                        WHERE id = ?
-                                    """, (self.account_id, t_alias, t_name, f_id, found_url, b_id))
-                                    conn.commit()
-                                    conn.close()
-
-                                    print(f"  ✅ [博主绑定成功] ({match_reason}) 已为博主『{b_name}』保存 biji_url: {found_url}")
-                                    break
-                        else:
-                            print(f"     └─ ⚠️ 知识库『{t_name}』未获取到 2.json 关注列表数据 (follows_data 为空)")
-
-                        if found_url:
-                            biji_url = found_url
-                            break
-                        else:
-                            print(f"     └─ ℹ️ 知识库『{t_name}』未成功匹配目标博主『{b_name}』")
-
-                if not biji_url:
-                    print(f"  ⚠️ 未在得到中找到博主『{b_name}』的对应关注卡片，跳过。")
-                    continue
-
-                # ----------------------------------------------------
-                # Step 3: 打开博主作品页链接，监听 3.json
-                # ----------------------------------------------------
-                self.captured_posts.clear()
-                print(f"  🌐 [打开作品页] 正在访问: {biji_url}")
-                try:
-                    with page.expect_response(lambda r: "v1/web/follow/account/posts" in r.url and r.status == 200, timeout=8000):
-                        page.goto(biji_url, wait_until="networkidle")
-                except Exception as e:
-                    print(f"  [biji-posts] 打开博主作品页等待 3.json 响应提示: {e}")
-
-                time.sleep(2)
-
-                # 获取 3.json 拦截到的作品列表
-                latest_posts = []
-                for url, posts_list in self.captured_posts.items():
-                    if posts_list:
-                        latest_posts = posts_list
-
-                print(f"  [biji-posts] 博主『{b_name}』在得到共有 {len(latest_posts)} 条作品")
-
-                # 过滤出只匹配主库【待转录视频】的新作品
-                target_posts_to_fetch = []
-                for post in latest_posts:
-                    p_id_str = str(post.get("post_id_str") or post.get("post_id") or "")
-                    p_url = post.get("post_url") or ""
-                    p_title = post.get("post_name") or post.get("post_title") or ""
-
-                    # 正则提取原视频 aweme_id
-                    extracted_aweme_id = None
-                    if p_url:
-                        match = re.search(r'(?:video/|modal_id=|group_id=|aweme_id=)(\d+)', p_url)
-                        if match:
-                            extracted_aweme_id = match.group(1)
-
-                    # 100% 绝对精确比对 aweme_id 是否属于待转录列表
-                    if (extracted_aweme_id and extracted_aweme_id in pending_notes_map) or (p_id_str in pending_notes_map):
-                        print(f"  🎯 [匹配成功] 对应待转录视频 ID: {extracted_aweme_id or p_id_str} | 标题: 『{p_title[:20]}』")
-                        target_posts_to_fetch.append(post)
-                    else:
-                        # 降级尝试前缀匹配标题
-                        for p_nid, p_ntitle in pending_notes_map.items():
-                            clean_title = p_ntitle.rstrip(".").rstrip("…").strip()
-                            if clean_title and (clean_title in p_title or p_title in clean_title):
-                                print(f"  🎯 [标题前缀匹配成功] 对应待转录视频 ID: {p_nid} | 标题: 『{p_title[:20]}』")
-                                target_posts_to_fetch.append(post)
+                            except Exception as goto_ex:
+                                print(f"     ⚠️ 打开知识库主页提示: {goto_ex}")
+    
+                            # 多选择器寻找“博主” Tab
+                            tab_selectors = [
+                                ".n-tabs-tab[data-name='blogger']",
+                                ".n-tabs-tab:has-text('博主')",
+                                "div[role='tab']:has-text('博主')",
+                                "xpath=//*[contains(@class,'n-tabs-tab') and contains(.,'博主')]",
+                                "xpath=//*[contains(text(),'博主') and not(contains(text(),'订阅'))]",
+                                "text=博主"
+                            ]
+    
+                            blogger_tab = None
+                            for sel in tab_selectors:
+                                try:
+                                    elem = page.locator(sel).first
+                                    if elem.is_visible(timeout=1500):
+                                        blogger_tab = elem
+                                        print(f"     🔍 定位到『博主』Tab (使用选择器: {sel})")
+                                        break
+                                except Exception:
+                                    continue
+    
+                            if blogger_tab:
+                                print(f"     👆 点击『博主』Tab 触发关注列表 (2.json)...")
+                                try:
+                                    with page.expect_response(
+                                        lambda r: "v1/web/follow/list" in r.url and r.status == 200,
+                                        timeout=8000
+                                    ):
+                                        blogger_tab.click()
+                                    time.sleep(1.5)
+                                except Exception as click_ex:
+                                    self.capture_error_screenshot(page, f"点击『博主』Tab - 知识库『{t_name}』")
+                                    print(f"     ❌ [关键步骤异常终止] 点击『博主』Tab 或监听 2.json 失败: {click_ex}")
+                            else:
+                                self.capture_error_screenshot(page, f"定位『博主』Tab - 知识库『{t_name}』")
+                                print(f"     ❌ [关键步骤异常终止] 知识库『{t_name}』中尝试所有选择器均未定位到『博主』Tab，终止该知识库寻路！")
+    
+                            if self.follows_data:
+                                print(f"     📋 成功捕获到 {len(self.follows_data)} 个关注卡片，对比目标博主『{b_name}』 (URL: {b_home_url or '未配置'})...")
+                                # 比对 2.json 里的原主页链接 url 与博主名
+                                for follow in self.follows_data:
+                                    f_id = str(follow.get("id") or "")
+                                    f_name = follow.get("name") or ""
+                                    f_url = (follow.get("url") or "").strip()
+    
+                                    is_match = False
+                                    match_reason = ""
+    
+                                    # 1. 优先 URL 精确/包含比对
+                                    if b_home_url and f_url:
+                                        norm_b = b_home_url.rstrip("/").split("?")[0].lower()
+                                        norm_f = f_url.rstrip("/").split("?")[0].lower()
+                                        clean_key_b = norm_b.split("/")[-1]
+                                        clean_key_f = norm_f.split("/")[-1]
+    
+                                        if norm_b == norm_f or (clean_key_b and clean_key_b in norm_f) or (clean_key_f and clean_key_f in norm_b):
+                                            is_match = True
+                                            match_reason = f"原主页链接匹配 ({f_url})"
+    
+                                    # 2. 降级：博主名完全匹配或包含匹配 (如 '小A' 与 '小A学财经')
+                                    if not is_match and (f_name and b_name):
+                                        if f_name == b_name:
+                                            is_match = True
+                                            match_reason = f"博主昵称完全匹配 ({f_name})"
+                                        elif (b_name in f_name or f_name in b_name) and len(b_name) >= 2:
+                                            is_match = True
+                                            match_reason = f"博主昵称模糊包含匹配 ({f_name} ↔ {b_name})"
+    
+                                    print(f"        ├─ 卡片: 『{f_name}』 (ID: {f_id}, URL: {f_url or '无'}) -> 匹配结果: {'✅ 成功 (' + match_reason + ')' if is_match else '❌ 不匹配'}")
+    
+                                    if is_match:
+                                        topic_alias = t_alias
+                                        found_url = f"https://www.biji.com/subject/{t_alias}/DEFAULT?followId={f_id}&followName={f_name}"
+                                        
+                                        # 回写绑定到数据库
+                                        conn = sqlite3.connect(DB_PATH)
+                                        cursor = conn.cursor()
+                                        cursor.execute("""
+                                            UPDATE bloggers SET 
+                                                data_source = 'biji',
+                                                biji_browser_id = ?,
+                                                biji_topic_alias = ?,
+                                                biji_topic_name = ?,
+                                                biji_follow_id = ?,
+                                                biji_url = ?
+                                            WHERE id = ?
+                                        """, (self.account_id, t_alias, t_name, f_id, found_url, b_id))
+                                        conn.commit()
+                                        conn.close()
+    
+                                        print(f"  ✅ [博主绑定成功] ({match_reason}) 已为博主『{b_name}』保存 biji_url: {found_url}")
+                                        break
+                            else:
+                                print(f"     └─ ⚠️ 知识库『{t_name}』未获取到 2.json 关注列表数据 (follows_data 为空)")
+    
+                            if found_url:
+                                biji_url = found_url
                                 break
-
-                print(f"  [精准筛选] 博主『{b_name}』需打开详情提取文案的作品数: {len(target_posts_to_fetch)}")
-
-                # ----------------------------------------------------
-                # Step 4: 打开待转录作品详情页，监听 4.json
-                # ----------------------------------------------------
-                for post in target_posts_to_fetch[:max_posts_per_blogger]:
-                    p_id_str = str(post.get("post_id_str") or post.get("post_id") or "")
-                    post_detail_url = f"https://www.biji.com/post/{topic_alias}/{p_id_str}/web"
-
-                    print(f"  🌐 [打开作品详情页] 正在访问: {post_detail_url}")
+                            else:
+                                print(f"     └─ ℹ️ 知识库『{t_name}』未成功匹配目标博主『{b_name}』")
+    
+                    if not biji_url:
+                        print(f"  ⚠️ 未在得到中找到博主『{b_name}』的对应关注卡片，跳过。")
+                        continue
+    
+                    # ----------------------------------------------------
+                    # Step 3: 打开博主作品页链接，监听 3.json
+                    # ----------------------------------------------------
+                    self.captured_posts.clear()
+                    print(f"  🌐 [打开作品页] 正在访问: {biji_url}")
                     try:
-                        with page.expect_response(lambda r: "v1/web/topic/post/detail" in r.url and r.status == 200, timeout=8000):
-                            page.goto(post_detail_url, wait_until="networkidle")
+                        with page.expect_response(lambda r: "v1/web/follow/account/posts" in r.url and r.status == 200, timeout=8000):
+                            page.goto(biji_url, wait_until="networkidle")
                     except Exception as e:
-                        print(f"  [biji-detail] 打开作品详情页等待 4.json 响应提示: {e}")
-
+                        print(f"  [biji-posts] 打开博主作品页等待 3.json 响应提示: {e}")
+    
                     time.sleep(2)
-
-                    if p_id_str in self.captured_details:
-                        detail_json = self.captured_details[p_id_str]
-                        self.save_transcript_to_db(detail_json, blogger_name=b_name)
-                    else:
-                        print("  [提示] 使用 3.json 现有摘要兜底存储")
-                        self.save_transcript_to_db({"c": post}, blogger_name=b_name)
-
-            context.close()
-            print("\n🎉 得到 Playwright 抓取流程全部完成！")
+    
+                    # 获取 3.json 拦截到的作品列表
+                    latest_posts = []
+                    for url, posts_list in self.captured_posts.items():
+                        if posts_list:
+                            latest_posts = posts_list
+    
+                    print(f"  [biji-posts] 博主『{b_name}』在得到共有 {len(latest_posts)} 条作品")
+    
+                    # 过滤出只匹配主库【待转录视频】的新作品
+                    target_posts_to_fetch = []
+                    for post in latest_posts:
+                        p_id_str = str(post.get("post_id_str") or post.get("post_id") or "")
+                        p_url = post.get("post_url") or ""
+                        p_title = post.get("post_name") or post.get("post_title") or ""
+    
+                        # 正则提取原视频 aweme_id
+                        extracted_aweme_id = None
+                        if p_url:
+                            match = re.search(r'(?:video/|modal_id=|group_id=|aweme_id=)(\d+)', p_url)
+                            if match:
+                                extracted_aweme_id = match.group(1)
+    
+                        # 100% 绝对精确比对 aweme_id 是否属于待转录列表
+                        if (extracted_aweme_id and extracted_aweme_id in pending_notes_map) or (p_id_str in pending_notes_map):
+                            print(f"  🎯 [匹配成功] 对应待转录视频 ID: {extracted_aweme_id or p_id_str} | 标题: 『{p_title[:20]}』")
+                            target_posts_to_fetch.append(post)
+                        else:
+                            # 降级尝试前缀匹配标题
+                            for p_nid, p_ntitle in pending_notes_map.items():
+                                clean_title = p_ntitle.rstrip(".").rstrip("…").strip()
+                                if clean_title and (clean_title in p_title or p_title in clean_title):
+                                    print(f"  🎯 [标题前缀匹配成功] 对应待转录视频 ID: {p_nid} | 标题: 『{p_title[:20]}』")
+                                    target_posts_to_fetch.append(post)
+                                    break
+    
+                    print(f"  [精准筛选] 博主『{b_name}』需打开详情提取文案的作品数: {len(target_posts_to_fetch)}")
+    
+                    # ----------------------------------------------------
+                    # Step 4: 打开待转录作品详情页，监听 4.json
+                    # ----------------------------------------------------
+                    for post in target_posts_to_fetch[:max_posts_per_blogger]:
+                        p_id_str = str(post.get("post_id_str") or post.get("post_id") or "")
+                        post_detail_url = f"https://www.biji.com/post/{topic_alias}/{p_id_str}/web"
+    
+                        print(f"  🌐 [打开作品详情页] 正在访问: {post_detail_url}")
+                        try:
+                            with page.expect_response(lambda r: "v1/web/topic/post/detail" in r.url and r.status == 200, timeout=8000):
+                                page.goto(post_detail_url, wait_until="networkidle")
+                        except Exception as e:
+                            print(f"  [biji-detail] 打开作品详情页等待 4.json 响应提示: {e}")
+    
+                        time.sleep(2)
+    
+                        if p_id_str in self.captured_details:
+                            detail_json = self.captured_details[p_id_str]
+                            self.save_transcript_to_db(detail_json, blogger_name=b_name)
+                        else:
+                            print("  [提示] 使用 3.json 现有摘要兜底存储")
+                            self.save_transcript_to_db({"c": post}, blogger_name=b_name)
+    
+                context.close()
+                print("\n🎉 得到 Playwright 抓取流程全部完成！")
 
         # ----------------------------------------------------
         # 抓取结束后，自动调用 backfill 回写至主作品表 (blogger_notes)

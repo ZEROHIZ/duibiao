@@ -830,7 +830,8 @@
 * **问题现象**：执行得到同步任务时，显示排队锁独占成功，但刚启动浏览器就瞬间关闭锁，随后在 `page.on("response", ...)` 抛出 `playwright._impl._errors.TargetClosedError: Target page, context or browser has been closed` 报错。
 * **主要根源**：`biji_browser.py` 中 `with sync_playwright() as p:` 作用域在 `page = context.new_page()` 后提前结束缩进，导致 Playwright `p` 上下文瞬间自动关闭并关掉浏览器 `context` / `page`。
 * **解决方案**：
-  * 重构 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L351) 中 `create_biji_topic`、`add_blogger_to_biji`、`run_sync` 和 `ManualBrowserManager` 的 Python 代码缩进，确保 `with sync_playwright() as p:` 完整包裹整个页面的网络拦截与导航流程，直到任务彻底结束才执行 `context.close()`。
+  * 重新整理并重构 [biji_browser.py](file:///d:/daima/codex/蒸馏/blogger-distiller-main/scripts/biji_browser.py#L745) 中 `run_sync` 的第 745~1092 行代码缩进（由原本解包误缩的 12 空格统一修正提升至 16 空格），确保 `page.on("response", handle_response)` 及所有网络打卡流程完整位于 `with sync_playwright() as p:` 闭环作用域内部。
+
 
 
 
