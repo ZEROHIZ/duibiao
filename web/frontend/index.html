@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Serif+SC:wght@400;500;700&display=swap" rel="stylesheet">
     
     <!-- Custom Style Sheet -->
-    <link rel="stylesheet" href="style.css?v=20260727_4">
+    <link rel="stylesheet" href="style.css?v=20261115_1">
     
     <!-- GSAP for Smooth Stagger Animations -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
@@ -58,6 +58,7 @@
                 <button class="nav-tab" data-tab="trending">全网热点</button>
                 <button class="nav-tab" data-tab="logs">任务日志</button>
                 <button class="nav-tab" data-tab="oauth">智能体授权</button>
+                <button class="nav-tab" data-tab="api-docs">API 文档</button>
                 <button class="nav-tab" data-tab="novnc" style="color: var(--accent-primary); font-weight: 600;">🖥️ 远程桌面</button>
                 <button class="nav-tab" data-tab="settings">系统设置</button>
             </nav>
@@ -840,6 +841,7 @@
                             <p id="console-screenshots-desc" class="lead-text" style="font-size: 0.82rem; margin-bottom: 0.75rem;">如果在网页爬取时遇到滑动验证码或操作报错，下方将显示对应的浏览器截图。请在服务器/浏览器窗口中配合操作，或根据截图更新规则。</p>
                             <div id="console-screenshots-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                                 <!-- Dynamic screenshots img elements -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1038,7 +1040,43 @@
                             <button type="button" id="btn-openai-disconnect" class="btn-text" style="width: 100%; border-color: var(--accent-primary); color: var(--accent-primary); display: none; height: 2.2rem; font-size: 0.82rem; font-weight: bold; cursor: pointer;">断开 OpenAI 账号连接</button>
                         </div>
                     </div>
+            </section>
 
+            <!-- PAGE 10: API DOCUMENTATION -->
+            <section id="page-api-docs" class="page-section">
+                <div class="section-header-flex">
+                    <div>
+                        <span class="section-label">API REFERENCE</span>
+                        <h2 class="page-header-title">系统对外接口文档</h2>
+                        <p class="lead-text" style="margin-bottom: 0;">展示核心蒸馏自动化流、博主对标数据、思维模型与热点趋势的 HTTP 接口规约，支持一键复制调用地址与请求示例。</p>
+                    </div>
+                </div>
+
+                <!-- 顶部 Base URL 与快捷操作栏 -->
+                <div class="api-docs-toolbar">
+                    <div class="api-docs-baseurl-box">
+                        <span class="api-docs-meta-label">BASE URL</span>
+                        <code id="api-docs-base-url" class="api-docs-baseurl-code">—</code>
+                        <button id="btn-copy-api-base-url" class="btn-text api-docs-mini-btn" type="button">复制地址</button>
+                    </div>
+                    <div class="api-docs-actions">
+                        <button id="btn-reload-api-docs" class="btn-text api-docs-mini-btn" type="button">↻ 刷新文档</button>
+                        <a href="/docs" target="_blank" class="btn-text api-docs-mini-btn api-docs-link-accent">↗ Swagger 在线调试 (/docs)</a>
+                        <a href="/redoc" target="_blank" class="btn-text api-docs-mini-btn">↗ ReDoc (/redoc)</a>
+                    </div>
+                </div>
+
+                <!-- 双栏杂志排版：左侧目录 + 右侧文档正文 -->
+                <div class="api-docs-layout">
+                    <aside class="api-docs-sidebar">
+                        <div class="api-docs-toc-header">接口目录 / CONTENTS</div>
+                        <nav id="api-docs-toc" class="api-docs-toc">
+                            <div class="api-docs-loading">正在生成目录...</div>
+                        </nav>
+                    </aside>
+                    <article id="api-docs-content" class="api-docs-markdown">
+                        <div class="api-docs-loading">正在加载 API 文档...</div>
+                    </article>
                 </div>
             </section>
 

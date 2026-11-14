@@ -1283,14 +1283,13 @@ def create_blogger_shortcut(body: BloggerShortcutCreate):
     # 2. 提取/生成博主昵称
     extracted_name = body.name.strip()
     if not extracted_name:
-        # 尝试通过正则寻找类似 【xxx的作品】 或 【xxx的个人主页】 或 xxx的作品 或 xxx的个人主页
-        name_match = re.search(r'【([^】]+)的作品】|【([^】]+)的个人主页】', raw_text)
+        # 仅匹配明确方括号包裹的分享格式，避免将口令中的“查看TA的更多作品”“2.com”等噪声误判为昵称
+        name_match = re.search(r'【([^】]+)的作品】|【([^】]+)的个人主页】|【([^】]+)的主页】', raw_text)
         if name_match:
-            extracted_name = name_match.group(1) or name_match.group(2)
-        else:
-            name_match2 = re.search(r'([^【】\s]+)的作品|([^【】\s]+)的个人主页', raw_text)
-            if name_match2:
-                extracted_name = name_match2.group(1) or name_match2.group(2)
+            candidate = (name_match.group(1) or name_match.group(2) or name_match.group(3) or "").strip()
+            # 二次过滤明显属于分享口令模板词或域名/邮箱的噪声
+            if candidate and not re.search(r'(查看TA|更多作品|复制此条|打开抖音|\.com|@|https?://)', candidate, re.IGNORECASE):
+                extracted_name = candidate
                 
     # 3. 如果仍未找到昵称，分配“未命名_[唯一ID]”
     if not extracted_name:
@@ -4855,6 +4854,26 @@ def analyze_task_step(logs):
     return "正在执行"
 
 
+
+
+# ----------------------------------------------------------
+# API 文档读取接口
+# ----------------------------------------------------------
+@app.get("/api/docs/markdown")
+def get_api_documentation_markdown():
+    """读取并返回项目根目录的 api_documentation.md 原文，供前端看板渲染展示"""
+    doc_path = os.path.join(ROOT_DIR, "api_documentation.md")
+    if not os.path.exists(doc_path):
+        raise HTTPException(status_code=404, detail="api_documentation.md 文件不存在")
+    try:
+        with open(doc_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {
+            "filename": "api_documentation.md",
+            "content": content,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取 API 文档失败: {e}")
 
 
 # ----------------------------------------------------------

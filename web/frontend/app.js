@@ -1106,6 +1106,9 @@ function loadTabData(tabId) {
         case "oauth":
             loadOAuthPageData();
             break;
+        case "api-docs":
+            loadApiDocsPageData();
+            break;
         case "novnc":
             loadTabNoVncData();
             break;
@@ -4227,6 +4230,149 @@ document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("modal-full-log").style.display = "none";
         });
     }
+
+    const btnCopyApiBaseUrl = document.getElementById("btn-copy-api-base-url");
+    if (btnCopyApiBaseUrl) {
+        btnCopyApiBaseUrl.addEventListener("click", () => {
+            const baseUrl = window.location.origin;
+            copyTextToClipboard(baseUrl).then(() => {
+                showToast(`已复制 Base URL: ${baseUrl}`, "success");
+            }).catch(err => {
+                showToast("复制失败: " + err, "error");
+            });
+        });
+    }
+
+    const btnReloadApiDocs = document.getElementById("btn-reload-api-docs");
+    if (btnReloadApiDocs) {
+        btnReloadApiDocs.addEventListener("click", () => {
+            loadApiDocsPageData(true);
+        });
+    }
 });
+
+// ==========================================================
+// API 文档页面渲染逻辑
+// ==========================================================
+let apiDocsLoaded = false;
+
+async function loadApiDocsPageData(forceReload = false) {
+    const baseUrlEl = document.getElementById("api-docs-base-url");
+    const contentEl = document.getElementById("api-docs-content");
+    const tocEl = document.getElementById("api-docs-toc");
+    if (!contentEl || !tocEl) return;
+
+    const currentOrigin = window.location.origin;
+    if (baseUrlEl) baseUrlEl.textContent = currentOrigin;
+
+    if (apiDocsLoaded && !forceReload) {
+        return;
+    }
+
+    contentEl.innerHTML = `<div class="api-docs-loading">正在加载 API 文档...</div>`;
+    tocEl.innerHTML = `<div class="api-docs-loading">正在生成目录...</div>`;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/docs/markdown`);
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        let mdText = data.content || "";
+
+        // 将文档中的默认示例地址替换为当前实际访问地址
+        mdText = mdText.replace(/http:\/\/192\.168\.110\.30:8899/g, currentOrigin);
+
+        if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+            contentEl.innerHTML = marked.parse(mdText);
+        } else {
+            contentEl.textContent = mdText;
+        }
+
+        enhanceApiDocsContent(contentEl, tocEl);
+        apiDocsLoaded = true;
+        if (forceReload) {
+            showToast("API 文档已刷新", "success");
+        }
+    } catch (err) {
+        console.error("加载 API 文档失败:", err);
+        contentEl.innerHTML = `<div class="api-docs-error">加载 API 文档失败：${err.message}</div>`;
+        tocEl.innerHTML = `<div class="api-docs-loading">暂无目录</div>`;
+    }
+}
+
+function enhanceApiDocsContent(contentEl, tocEl) {
+    // 1. 高亮 HTTP 方法关键字 (GET / POST / PUT / DELETE)
+    contentEl.querySelectorAll("li code, p code").forEach(codeEl => {
+        const text = codeEl.textContent.trim();
+        if (/^(GET|POST|PUT|DELETE|PATCH)$/.test(text)) {
+            codeEl.classList.add("http-method-badge", `method-${text.toLowerCase()}`);
+        }
+    });
+
+    // 2. 美化 GitHub 风格的 > [!TIP] / [!NOTE] / [!WARNING] 引用块
+    contentEl.querySelectorAll("blockquote").forEach(bq => {
+        const html = bq.innerHTML;
+        const match = html.match(/\[!(TIP|NOTE|IMPORTANT|WARNING|CAUTION)\]/i);
+        if (match) {
+            const kind = match[1].toUpperCase();
+            bq.classList.add("api-docs-callout", `callout-${kind.toLowerCase()}`);
+            bq.innerHTML = html.replace(
+                /\[!(TIP|NOTE|IMPORTANT|WARNING|CAUTION)\]\s*(<br\s*\/?>)?/i,
+                `<span class="callout-badge">${kind}</span> `
+            );
+        }
+    });
+
+    // 3. 为代码块添加右上角「复制」按钮
+    contentEl.querySelectorAll("pre").forEach(preEl => {
+        const codeEl = preEl.querySelector("code");
+        if (!codeEl) return;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "api-code-block-wrapper";
+        preEl.parentNode.insertBefore(wrapper, preEl);
+        wrapper.appendChild(preEl);
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "api-code-copy-btn";
+        copyBtn.textContent = "复制";
+        copyBtn.addEventListener("click", () => {
+            copyTextToClipboard(codeEl.textContent).then(() => {
+                copyBtn.textContent = "已复制";
+                setTimeout(() => { copyBtn.textContent = "复制"; }, 1500);
+            }).catch(err => {
+                showToast("复制失败: " + err, "error");
+            });
+        });
+        wrapper.appendChild(copyBtn);
+    });
+
+    // 4. 提取 h2 / h3 生成左侧目录锚点
+    const headings = contentEl.querySelectorAll("h2, h3");
+    tocEl.innerHTML = "";
+    if (headings.length === 0) {
+        tocEl.innerHTML = `<div class="api-docs-loading">暂无目录</div>`;
+        return;
+    }
+
+    headings.forEach((heading, index) => {
+        const slug = `api-doc-sec-${index}`;
+        heading.id = slug;
+
+        const link = document.createElement("a");
+        link.href = `#${slug}`;
+        link.className = heading.tagName === "H2" ? "toc-item toc-h2" : "toc-item toc-h3";
+        link.textContent = heading.textContent;
+        link.addEventListener("click", (e) => {
+            e.preventDefault();
+            tocEl.querySelectorAll(".toc-item").forEach(item => item.classList.remove("active"));
+            link.classList.add("active");
+            heading.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        tocEl.appendChild(link);
+    });
+}
 
 
