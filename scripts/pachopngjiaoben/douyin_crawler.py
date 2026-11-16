@@ -661,10 +661,74 @@ async def scroll_comments_container(page, scroll_times=4):
             print(f"  [交互] 按键下滚失败: {se}")
 
 
+def parse_douyin_name_from_meta(description: str = "", keywords: str = "", title: str = ""):
+    """不依赖易变 CSS 类名，从抖音主页 meta/title 中提取纯博主昵称。"""
+    import re
+
+    desc = (description or "").strip()
+    kw = (keywords or "").strip()
+    page_title = (title or "").strip()
+
+    # 1. keywords 常见格式: "日行一扇,日行一扇的抖音,..."
+    if kw:
+        kw_match = re.match(r'^([^,，]+),\1的抖音', kw)
+        if kw_match:
+            name = kw_match.group(1).strip()
+            if name:
+                return name
+
+    # 2. description 常见格式: "个人简介。博主名的抖音主页、视频、合集..."
+    if desc and "的抖音主页" in desc:
+        before = desc.split("的抖音主页", 1)[0].strip()
+        if before:
+            # 去掉个人简介前缀（按最后一个句号/换行/感叹号/问号/竖线切分）
+            parts = [p.strip() for p in re.split(r'[。\n\r！？!?|]+', before) if p.strip()]
+            if parts:
+                candidate = parts[-1]
+                if candidate and candidate != "抖音":
+                    return candidate
+
+    # 3. title 常见格式: "博主名的抖音 - 抖音" 或 "博主名的主页 - 抖音"
+    if page_title:
+        title_match = re.match(r'^(.+?)(?:的抖音|的主页)\s*[-–|]\s*抖音$', page_title)
+        if title_match:
+            candidate = title_match.group(1).strip()
+            if candidate and candidate != "抖音":
+                return candidate
+
+    return None
+
+
 async def extract_blogger_name(page):
-    """从页面底部的 Schema.org BreadcrumbList 提取博主昵称"""
+    """不依赖易变 CSS 类名，按 meta(description/keywords) -> title -> ld+json 顺序提取博主昵称"""
     try:
-        # 查找包含 ld+json 且 data-rh="true" 的 script 标签
+        desc = ""
+        kw = ""
+        try:
+            desc_loc = page.locator('meta[name="description"]').first
+            if await desc_loc.count() > 0:
+                desc = (await desc_loc.get_attribute("content")) or ""
+        except Exception:
+            pass
+        try:
+            kw_loc = page.locator('meta[name="keywords"]').first
+            if await kw_loc.count() > 0:
+                kw = (await kw_loc.get_attribute("content")) or ""
+        except Exception:
+            pass
+        try:
+            page_title = await page.title()
+        except Exception:
+            page_title = ""
+
+        meta_name = parse_douyin_name_from_meta(desc, kw, page_title)
+        if meta_name:
+            return meta_name
+    except Exception as e:
+        print(f"[提取昵称] 解析网页 meta/title 失败: {e}")
+
+    try:
+        # 兜底：查找包含 ld+json 且 data-rh="true" 的 script 标签
         scripts = await page.locator('script[type="application/ld+json"][data-rh="true"]').all()
         for script in scripts:
             try:
@@ -684,6 +748,34 @@ async def extract_blogger_name(page):
     except Exception as e:
         print(f"[提取昵称] 获取网页 ld+json 失败: {e}")
     return None
+
+
+def should_auto_resolve_name(name: str) -> bool:
+    """判断博主是否需要自动从网页解析真实昵称（基于 name_verified 字段与临时前缀双保险）"""
+    if not name:
+        return True
+    if name.startswith(("未命名_", "待爬取博主_")):
+        return True
+    import sqlite3
+    db_path = os.path.join(ROOT_DIR, "data", "distiller.db")
+    if not os.path.exists(db_path):
+        return False
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(bloggers);")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "name_verified" in columns:
+            cursor.execute("SELECT name_verified FROM bloggers WHERE name = ?;", (name,))
+            row = cursor.fetchone()
+            conn.close()
+            if row is not None and row[0] == 0:
+                return True
+        else:
+            conn.close()
+    except Exception:
+        pass
+    return False
 
 
 def update_db_blogger_name(old_name, new_name):
@@ -712,8 +804,13 @@ def update_db_blogger_name(old_name, new_name):
         if candidate_name != new_name:
             print(f"[DB更新] 博主昵称 '{new_name}' 已在数据库中存在，自动更新候选名为 '{candidate_name}'。")
             
-        # 2. 执行更新
-        cursor.execute("UPDATE bloggers SET name = ? WHERE name = ?", (candidate_name, old_name))
+        # 2. 执行更新（同时将 name_verified 标记为 1）
+        cursor.execute("PRAGMA table_info(bloggers);")
+        columns = [col[1] for col in cursor.fetchall()]
+        if "name_verified" in columns:
+            cursor.execute("UPDATE bloggers SET name = ?, name_verified = 1 WHERE name = ?", (candidate_name, old_name))
+        else:
+            cursor.execute("UPDATE bloggers SET name = ? WHERE name = ?", (candidate_name, old_name))
         conn.commit()
         conn.close()
         print(f"[DB更新] 成功将博主名称从 '{old_name}' 更新为 '{candidate_name}'。")
@@ -889,8 +986,8 @@ async def collect_douyin_data(url, name, max_videos=5, filename="douyin_data.jso
             # 登录成功，启用自动清理弹窗协程
             ENABLE_POPUP_MONITOR = True
             
-            # 如果是临时名字，尝试从网页中提取真实昵称并更新数据库
-            if name.startswith("未命名_"):
+            # 如果是未确认的临时名字（name_verified == 0 或临时前缀），尝试从网页中提取真实昵称并更新数据库
+            if should_auto_resolve_name(name):
                 real_name = await extract_blogger_name(page)
                 if real_name:
                     print(f"[提取昵称] 成功从网页中解析出博主真实昵称: {real_name}")

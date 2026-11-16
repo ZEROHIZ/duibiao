@@ -71,6 +71,7 @@ def init_db():
         total_comments INTEGER,
         is_transcribe INTEGER DEFAULT 1,
         platform TEXT DEFAULT 'douyin',
+        name_verified INTEGER DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     """)

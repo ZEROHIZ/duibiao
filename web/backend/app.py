@@ -66,6 +66,11 @@ def upgrade_db_schema():
                 print("[Database Upgrade] Adding 'platform' column to 'bloggers' table...")
                 cursor.execute("ALTER TABLE bloggers ADD COLUMN platform TEXT DEFAULT 'douyin';")
                 modified = True
+            if "name_verified" not in columns:
+                print("[Database Upgrade] Adding 'name_verified' column to 'bloggers' table...")
+                cursor.execute("ALTER TABLE bloggers ADD COLUMN name_verified INTEGER DEFAULT 1;")
+                cursor.execute("UPDATE bloggers SET name_verified = 0 WHERE name LIKE '未命名_%' OR name LIKE '待爬取博主_%';")
+                modified = True
                 
             if modified:
                 conn.commit()
@@ -1039,34 +1044,81 @@ def get_novnc_info_api():
     }
 
 
+def parse_blogger_input(raw_text: str, explicit_name: str = ""):
+    """统一解析录入文本中的主页链接、博主昵称、是否已确认昵称(name_verified)及平台类型。"""
+    import hashlib
+    import re
+    import urllib.parse
+    import uuid
+
+    text = (raw_text or "").strip()
+    url_match = re.search(r'https?://[^\s]+', text)
+    clean_url = url_match.group(0).rstrip('}>＞》,，。') if url_match else text
+
+    blogger_name = (explicit_name or "").strip()
+    name_verified = 1 if blogger_name else 0
+
+    if not blogger_name and text:
+        name_match = re.search(r'(?<![0-9A-Za-z.])@([^\s\n【】＞>]+)', text)
+        if name_match:
+            candidate = name_match.group(1).strip()
+            if candidate and not re.search(r'\.(com|cn|net|org)$', candidate, re.IGNORECASE):
+                blogger_name = candidate
+                name_verified = 1
+
+        if not blogger_name:
+            name_match2 = re.search(r'【([^】]+)的作品】|【([^】]+)的个人主页】|【([^】]+)的主页】', text)
+            if name_match2:
+                candidate = (name_match2.group(1) or name_match2.group(2) or name_match2.group(3) or "").strip()
+                if candidate and not re.search(r'(查看TA|更多作品|复制此条|打开抖音|\.com|@|https?://)', candidate, re.IGNORECASE):
+                    blogger_name = candidate
+                    name_verified = 1
+
+    if not blogger_name:
+        short_id = ""
+        try:
+            parsed = urllib.parse.urlparse(clean_url)
+            parts = [p for p in parsed.path.strip('/').split('/') if p]
+            if parts:
+                last_part = parts[-1]
+                short_id = last_part[-8:] if len(last_part) > 15 else last_part
+            elif clean_url:
+                short_id = hashlib.md5(clean_url.encode('utf-8')).hexdigest()[:8]
+        except Exception:
+            pass
+        if not short_id:
+            short_id = uuid.uuid4().hex[:6]
+        blogger_name = f"未命名_{short_id}"
+        name_verified = 0
+
+    url_lower = clean_url.lower()
+    text_lower = text.lower()
+    if "xhslink." in url_lower or "xiaohongshu.com" in url_lower or "小红书" in text:
+        detected_platform = "xiaohongshu"
+    elif "b23.tv" in url_lower or "bilibili.com" in url_lower or "b站" in text_lower:
+        detected_platform = "bilibili"
+    elif "channels.weixin" in url_lower:
+        detected_platform = "wechat_channels"
+    else:
+        detected_platform = "douyin"
+
+    return clean_url, blogger_name, name_verified, detected_platform
+
+
 @app.post("/api/bloggers")
 def create_blogger(body: BloggerCreate):
     """录入新对标博主 (先录入数据库，后台注册任务并可视化推流)"""
     import sqlite3
     import threading
     import uuid
-    import re
 
     raw_input_text = body.home_url.strip() if body.home_url else ""
     if not raw_input_text:
         raise HTTPException(status_code=400, detail="主页链接 (home_url) 不能为空")
 
-    # 1. 核心 URL 提取：自动从复制的复杂文本中正则解析出标准的 http/https 链接
-    url_match = re.search(r'https?://[^\s]+', raw_input_text)
-    clean_home_url = url_match.group(0).rstrip('}>＞》,，。') if url_match else raw_input_text
-
-    # 2. 博主昵称智能提取：若未提供 name，尝试从分享文本（如 @你好我是大Jerry 或 【xxx的作品】）中提取
-    blogger_name = body.name.strip() if (body.name and body.name.strip()) else ""
-    if not blogger_name:
-        name_match = re.search(r'@([^\s\n【】＞>]+)', raw_input_text)
-        if name_match:
-            blogger_name = name_match.group(1).strip()
-        else:
-            name_match2 = re.search(r'【([^】]+)的作品】|【([^】]+)的个人主页】', raw_input_text)
-            if name_match2:
-                blogger_name = (name_match2.group(1) or name_match2.group(2)).strip()
-    if not blogger_name:
-        blogger_name = f"待爬取博主_{str(uuid.uuid4())[:6]}"
+    clean_home_url, blogger_name, name_verified, detected_platform = parse_blogger_input(
+        raw_input_text, body.name or ""
+    )
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1079,14 +1131,7 @@ def create_blogger(body: BloggerCreate):
             "b站": "bilibili", "bili": "bilibili", "bilibili": "bilibili"
         }
         if not raw_platform or raw_platform == "douyin":
-            if "xhslink.cn" in raw_input_text or "xiaohongshu.com" in raw_input_text or "小红书" in raw_input_text:
-                platform_val = "xiaohongshu"
-            elif "b23.tv" in raw_input_text or "bilibili.com" in raw_input_text or "b站" in raw_input_text.lower():
-                platform_val = "bilibili"
-            elif "douyin.com" in raw_input_text or "抖音" in raw_input_text:
-                platform_val = "douyin"
-            else:
-                platform_val = PLATFORM_MAP.get(raw_platform, "douyin")
+            platform_val = detected_platform if detected_platform != "douyin" else PLATFORM_MAP.get(raw_platform, "douyin")
         else:
             platform_val = PLATFORM_MAP.get(raw_platform, raw_platform)
 
@@ -1142,14 +1187,15 @@ def create_blogger(body: BloggerCreate):
         INSERT INTO bloggers (
             name, home_url, total_notes, video_count, normal_count, 
             avg_likes, avg_collects, avg_comments, 
-            total_likes, total_collects, total_comments, is_transcribe, platform,
+            total_likes, total_collects, total_comments, is_transcribe, platform, name_verified,
             biji_browser_id, biji_topic_alias, biji_topic_name
-        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?, ?, ?, ?);
         """, (
             blogger_name, 
             clean_home_url, 
             body.is_transcribe if body.is_transcribe is not None else 1,
             platform_val,
+            name_verified,
             b_account,
             b_topic_alias if b_topic_alias != "new" else "",
             b_topic_name
@@ -1264,55 +1310,19 @@ def create_blogger_shortcut(body: BloggerShortcutCreate):
     """通过快捷指令/剪贴板文本快速录入对标博主"""
     import re
     import sqlite3
-    import urllib.parse
-    
+
     raw_text = body.text.strip()
     if not raw_text:
         raise HTTPException(status_code=400, detail="输入文本不能为空")
-        
-    # 1. 提取 URL (以 http:// 或 https:// 开头)
-    url_match = re.search(r'https?://[^\s]+', raw_text)
-    if not url_match:
+
+    if not re.search(r'https?://[^\s]+', raw_text):
         raise HTTPException(status_code=400, detail="未在输入文本中找到合法的链接")
-        
-    extracted_url = url_match.group(0)
-    # 处理花括号包裹的情况，如 {https://v.douyin.com/...}
-    if extracted_url.endswith('}'):
-        extracted_url = extracted_url[:-1]
-        
-    # 2. 提取/生成博主昵称
-    extracted_name = body.name.strip()
-    if not extracted_name:
-        # 仅匹配明确方括号包裹的分享格式，避免将口令中的“查看TA的更多作品”“2.com”等噪声误判为昵称
-        name_match = re.search(r'【([^】]+)的作品】|【([^】]+)的个人主页】|【([^】]+)的主页】', raw_text)
-        if name_match:
-            candidate = (name_match.group(1) or name_match.group(2) or name_match.group(3) or "").strip()
-            # 二次过滤明显属于分享口令模板词或域名/邮箱的噪声
-            if candidate and not re.search(r'(查看TA|更多作品|复制此条|打开抖音|\.com|@|https?://)', candidate, re.IGNORECASE):
-                extracted_name = candidate
-                
-    # 3. 如果仍未找到昵称，分配“未命名_[唯一ID]”
-    if not extracted_name:
-        try:
-            parsed = urllib.parse.urlparse(extracted_url)
-            path = parsed.path.strip('/')
-            parts = [p for p in path.split('/') if p]
-            if parts:
-                last_part = parts[-1]
-                if len(last_part) > 15:
-                    short_id = last_part[-8:]
-                else:
-                    short_id = last_part
-            else:
-                import hashlib
-                short_id = hashlib.md5(extracted_url.encode('utf-8')).hexdigest()[:8]
-        except Exception:
-            import hashlib
-            short_id = hashlib.md5(extracted_url.encode('utf-8')).hexdigest()[:8]
-            
-        extracted_name = f"未命名_{short_id}"
-        
-    # 4. 写入数据库
+
+    extracted_url, extracted_name, name_verified, detected_platform = parse_blogger_input(
+        raw_text, body.name or ""
+    )
+
+    # 写入数据库
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1324,25 +1334,14 @@ def create_blogger_shortcut(body: BloggerShortcutCreate):
                 status_code=400, 
                 detail=f"该主页链接已录入，博主名称为: {existing_url['name']}"
             )
-            
-        # 自动识别平台类型
-        url_lower = extracted_url.lower()
-        if "bilibili.com" in url_lower or "b23.tv" in url_lower:
-            detected_platform = "bilibili"
-        elif "xiaohongshu.com" in url_lower or "xhslink.com" in url_lower:
-            detected_platform = "xiaohongshu"
-        elif "channels.weixin" in url_lower:
-            detected_platform = "wechat_channels"
-        else:
-            detected_platform = "douyin"
 
         cursor.execute("""
         INSERT INTO bloggers (
             name, home_url, total_notes, video_count, normal_count, 
             avg_likes, avg_collects, avg_comments, 
-            total_likes, total_collects, total_comments, platform
-        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?);
-        """, (extracted_name, extracted_url, detected_platform))
+            total_likes, total_collects, total_comments, platform, name_verified
+        ) VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?);
+        """, (extracted_name, extracted_url, detected_platform, name_verified))
         conn.commit()
         
         cursor.execute("SELECT id, platform FROM bloggers WHERE name = ?;", (extracted_name,))
@@ -1406,7 +1405,7 @@ def update_blogger_name(blogger_id: int, body: BloggerNameUpdate):
 
         cursor.execute("""
         UPDATE bloggers
-        SET name = ?
+        SET name = ?, name_verified = 1
         WHERE id = ?;
         """, (body.name, blogger_id))
         conn.commit()
