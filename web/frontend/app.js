@@ -469,11 +469,19 @@ function setupEventListeners() {
     }
     const btnGoogleCliInstall = document.getElementById("btn-google-cli-install");
     if (btnGoogleCliInstall) {
-        btnGoogleCliInstall.addEventListener("click", () => triggerCLIInstall("google"));
+        btnGoogleCliInstall.addEventListener("click", () => triggerCLIInstall("google", "install"));
+    }
+    const btnGoogleCliUpgrade = document.getElementById("btn-google-cli-upgrade");
+    if (btnGoogleCliUpgrade) {
+        btnGoogleCliUpgrade.addEventListener("click", () => triggerCLIInstall("google", "upgrade"));
     }
     const btnOpenaiCliInstall = document.getElementById("btn-openai-cli-install");
     if (btnOpenaiCliInstall) {
-        btnOpenaiCliInstall.addEventListener("click", () => triggerCLIInstall("openai"));
+        btnOpenaiCliInstall.addEventListener("click", () => triggerCLIInstall("openai", "install"));
+    }
+    const btnOpenaiCliUpgrade = document.getElementById("btn-openai-cli-upgrade");
+    if (btnOpenaiCliUpgrade) {
+        btnOpenaiCliUpgrade.addEventListener("click", () => triggerCLIInstall("openai", "upgrade"));
     }
 
     // 智能体授权 终端登录与 Token 页面事件绑定
@@ -954,25 +962,6 @@ function setupEventListeners() {
     const btnRefreshNiches = document.getElementById("btn-refresh-niches");
     if (btnRefreshNiches) {
         btnRefreshNiches.addEventListener("click", handleRefreshNichesClick);
-    }
-
-    // 一键复制发散赛道专业搜索词
-    const btnCopyNicheKeywords = document.getElementById("btn-copy-niche-keywords");
-    if (btnCopyNicheKeywords) {
-        btnCopyNicheKeywords.addEventListener("click", () => {
-            const container = document.getElementById("selected-niche-keywords");
-            if (!container) return;
-            const keywords = Array.from(container.querySelectorAll(".filter-tag")).map(el => el.innerText.trim());
-            if (keywords.length === 0) return;
-            
-            // 拼接为空格分隔
-            const textToCopy = keywords.join(" ");
-            navigator.clipboard.writeText(textToCopy).then(() => {
-                showToast("✓ 找号搜索词已复制到剪贴板！可直接粘贴搜索。", "success");
-            }).catch(() => {
-                showToast("复制失败，请手动选择复制", "error");
-            });
-        });
     }
 }
 
@@ -3472,11 +3461,32 @@ function selectNicheExploration(niche) {
         </p>
     `;
     
-    // 渲染精准搜索词标签
+    // 渲染精准搜索词标签（点击即复制单个词）
     if (niche.keywords && niche.keywords.length > 0) {
-        keywordsEl.innerHTML = niche.keywords.map(kw => 
-            `<span class="filter-tag" style="border: 1px solid var(--border-primary); padding: 0.25rem 0.6rem; cursor: pointer; transition: all 0.15s; font-size: 0.8rem;" onclick="navigator.clipboard.writeText('${kw.trim()}').then(() => showToast('✓ 已复制词: ${kw.trim()}', 'success'))" title="点击复制单个词">${kw}</span>`
-        ).join("");
+        keywordsEl.innerHTML = "";
+        niche.keywords.forEach(rawKw => {
+            const kw = String(rawKw || "").trim();
+            if (!kw) return;
+            const tag = document.createElement("span");
+            tag.className = "filter-tag";
+            tag.style.cssText = "border: 1px solid var(--border-primary); padding: 0.25rem 0.6rem; cursor: pointer; transition: all 0.15s; font-size: 0.8rem;";
+            tag.title = "点击复制该搜索词";
+            tag.textContent = kw;
+            tag.addEventListener("click", () => {
+                copyTextToClipboard(kw).then(() => {
+                    tag.style.borderColor = "var(--accent-primary)";
+                    tag.style.color = "var(--accent-primary)";
+                    setTimeout(() => {
+                        tag.style.borderColor = "var(--border-primary)";
+                        tag.style.color = "";
+                    }, 800);
+                    showToast(`✓ 已复制搜索词: ${kw}`, "success");
+                }).catch(() => {
+                    showToast("复制失败，请手动选择复制", "error");
+                });
+            });
+            keywordsEl.appendChild(tag);
+        });
         copyContainer.style.display = "block";
         
         // 绑定微动效
@@ -3995,6 +4005,7 @@ async function runCLIDiagnostics() {
             const googlePath = document.getElementById("google-diag-path");
             const googleVersion = document.getElementById("google-diag-version");
             const googleInstallBtn = document.getElementById("btn-google-cli-install");
+            const googleUpgradeBtn = document.getElementById("btn-google-cli-upgrade");
             
             googlePath.textContent = data.google.path;
             googleVersion.textContent = data.google.version;
@@ -4002,10 +4013,12 @@ async function runCLIDiagnostics() {
                 googleStatus.textContent = "已就绪";
                 googleStatus.className = "status-badge success";
                 googleInstallBtn.style.display = "none";
+                if (googleUpgradeBtn) googleUpgradeBtn.style.display = "inline-block";
             } else {
                 googleStatus.textContent = "未安装";
                 googleStatus.className = "status-badge failed";
                 googleInstallBtn.style.display = "inline-block";
+                if (googleUpgradeBtn) googleUpgradeBtn.style.display = "none";
             }
             
             // 渲染 OpenAI CLI 状态
@@ -4013,6 +4026,7 @@ async function runCLIDiagnostics() {
             const openaiPath = document.getElementById("openai-diag-path");
             const openaiVersion = document.getElementById("openai-diag-version");
             const openaiInstallBtn = document.getElementById("btn-openai-cli-install");
+            const openaiUpgradeBtn = document.getElementById("btn-openai-cli-upgrade");
             
             openaiPath.textContent = data.openai.path;
             openaiVersion.textContent = data.openai.version;
@@ -4020,10 +4034,12 @@ async function runCLIDiagnostics() {
                 openaiStatus.textContent = "已就绪";
                 openaiStatus.className = "status-badge success";
                 openaiInstallBtn.style.display = "none";
+                if (openaiUpgradeBtn) openaiUpgradeBtn.style.display = "inline-block";
             } else {
                 openaiStatus.textContent = "未安装";
                 openaiStatus.className = "status-badge failed";
                 openaiInstallBtn.style.display = "inline-block";
+                if (openaiUpgradeBtn) openaiUpgradeBtn.style.display = "none";
             }
         }
     } catch (e) {
@@ -4031,9 +4047,15 @@ async function runCLIDiagnostics() {
     }
 }
 
-// 触发一键安装
-async function triggerCLIInstall(provider) {
-    if (!confirm(`确定要启动 ${provider === 'google' ? 'Google Antigravity' : 'OpenAI Codex'} CLI 客户端的自动化部署安装吗？\n\n如果在容器/Linux 环境中，这会自动下载并补全 Node.js、NPM 等运行基建，需要一定的时间。`)) {
+// 触发一键安装或更新升级
+async function triggerCLIInstall(provider, mode = "install") {
+    const providerName = provider === "google" ? "Google Antigravity" : "OpenAI Codex";
+    const actionLabel = mode === "upgrade" ? "更新升级" : "自动化部署安装";
+    const confirmMsg = mode === "upgrade"
+        ? `确定要将 ${providerName} CLI 更新升级到最新版本吗？`
+        : `确定要启动 ${providerName} CLI 客户端的自动化部署安装吗？\n\n如果在容器/Linux 环境中，这会自动下载并补全 Node.js、NPM 等运行基建，需要一定的时间。`;
+
+    if (!confirm(confirmMsg)) {
         return;
     }
     
@@ -4041,21 +4063,21 @@ async function triggerCLIInstall(provider) {
     const logBox = document.getElementById("cli-installer-logs-view");
     
     consoleBox.style.display = "block";
-    logBox.textContent = "[System] 正在拉起后台安装线程，请稍候...\n";
+    logBox.textContent = `[System] 正在拉起后台${actionLabel}线程，请稍候...\n`;
     
     try {
         const res = await fetch(`${API_BASE}/api/auth/cli/install`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider })
+            body: JSON.stringify({ provider, mode })
         });
         const json = await res.json();
         if (res.ok && json.status === "success") {
-            showToast("后台安装任务已拉起，正在实时监视部署进度！", "info");
+            showToast(`后台${actionLabel}任务已拉起，正在实时监视进度！`, "info");
             if (cliInstallPollTimer) clearInterval(cliInstallPollTimer);
             cliInstallPollTimer = setInterval(pollCLIInstallLogs, 1000);
         } else {
-            showToast(`拉起安装任务失败: ${json.detail || "未知异常"}`, "error");
+            showToast(`拉起${actionLabel}任务失败: ${json.detail || "未知异常"}`, "error");
         }
     } catch (err) {
         showToast(`网络请求异常: ${err.message}`, "error");

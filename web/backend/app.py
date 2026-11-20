@@ -3638,42 +3638,61 @@ global_cli_install = CLIInstallState()
 
 class CLIInstallRequest(BaseModel):
     provider: str
+    mode: str = "install"  # "install" 或 "upgrade"
 
 @app.post("/api/auth/cli/install")
 def cli_install_endpoint(body: CLIInstallRequest):
     import subprocess
     import re
     provider = body.provider.lower()
+    mode = (body.mode or "install").lower()
+    is_upgrade = mode == "upgrade"
+    action_label = "更新升级" if is_upgrade else "安装"
     is_windows = os.name == "nt"
     
-    # 不同平台的安装命令
+    # 不同平台的安装/升级命令
     if provider == "google":
         if is_windows:
-            # Windows: 用 npm 安装 opencode（必须），尝试 winget 安装 agy（可选）
-            full_cmd = (
-                "npm install -g opencode-ai"
-                " & echo [System] opencode 安装完成，正在尝试通过 winget 安装 agy..."
-                " & winget install --id Google.Antigravity --silent --accept-source-agreements --accept-package-agreements"
-                " & echo [System] 全部安装流程完成（agy 若 winget 不可用可忽略）"
-            )
+            if is_upgrade:
+                full_cmd = (
+                    "winget upgrade --id Google.Antigravity --silent --accept-source-agreements --accept-package-agreements"
+                    " & echo [System] 正在更新 opencode-ai..."
+                    " & npm install -g opencode-ai@latest"
+                    " & echo [System] Google Antigravity CLI 更新流程完成"
+                )
+            else:
+                # Windows: 用 npm 安装 opencode（必须），尝试 winget 安装 agy（可选）
+                full_cmd = (
+                    "npm install -g opencode-ai"
+                    " & echo [System] opencode 安装完成，正在尝试通过 winget 安装 agy..."
+                    " & winget install --id Google.Antigravity --silent --accept-source-agreements --accept-package-agreements"
+                    " & echo [System] 全部安装流程完成（agy 若 winget 不可用可忽略）"
+                )
         else:
-            # Linux/macOS
-            full_cmd = (
-                "npm install -g opencode-ai"
-                " && echo '[System] opencode 安装完成，正在安装 agy...'"
-                " && curl -fsSL https://antigravity.google/cli/install.sh | bash"
-            )
+            if is_upgrade:
+                full_cmd = (
+                    "curl -fsSL https://antigravity.google/cli/install.sh | bash"
+                    " && echo '[System] agy 更新完成，正在更新 opencode-ai...'"
+                    " && npm install -g opencode-ai@latest"
+                )
+            else:
+                # Linux/macOS
+                full_cmd = (
+                    "npm install -g opencode-ai"
+                    " && echo '[System] opencode 安装完成，正在安装 agy...'"
+                    " && curl -fsSL https://antigravity.google/cli/install.sh | bash"
+                )
 
     elif provider == "openai":
-        full_cmd = "npm install -g @openai/codex"
+        full_cmd = "npm install -g @openai/codex@latest" if is_upgrade else "npm install -g @openai/codex"
     else:
         raise HTTPException(status_code=400, detail="未知的服务商")
     
     with global_cli_install.lock:
         if global_cli_install.process and global_cli_install.process.poll() is None:
-            return {"status": "success", "message": "安装任务已在运行中"}
+            return {"status": "success", "message": f"{action_label}任务已在运行中"}
         
-        global_cli_install.output_buffer = [f"[System] 正在拉起安装: {full_cmd}\n"]
+        global_cli_install.output_buffer = [f"[System] 正在拉起{action_label}: {full_cmd}\n"]
         
         ansi_escape = re.compile(r'\x1b(?:\[[0-9;?]*[A-Za-z]|\([A-Z]|[^\[(])')
 
@@ -3690,7 +3709,7 @@ def cli_install_endpoint(body: CLIInstallRequest):
             )
             global_cli_install.process = proc
 
-            def _read(p, state):
+            def _read(p, state, label):
                 for line in p.stdout:
                     clean = ansi_escape.sub('', line)
                     with state.lock:
@@ -3702,12 +3721,12 @@ def cli_install_endpoint(body: CLIInstallRequest):
                 except:
                     pass
                 with state.lock:
-                    state.output_buffer.append(f"\n[System] 安装命令已完成，退出码: {p.returncode}\n")
+                    state.output_buffer.append(f"\n[System] {label}命令已完成，退出码: {p.returncode}\n")
             
-            threading.Thread(target=_read, args=(proc, global_cli_install), daemon=True).start()
-            return {"status": "success", "message": "安装任务已启动"}
+            threading.Thread(target=_read, args=(proc, global_cli_install, action_label), daemon=True).start()
+            return {"status": "success", "message": f"{action_label}任务已启动"}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"启动安装失败: {e}")
+            raise HTTPException(status_code=500, detail=f"启动{action_label}失败: {e}")
 
 @app.get("/api/auth/cli/install-logs")
 def cli_install_logs_endpoint():
